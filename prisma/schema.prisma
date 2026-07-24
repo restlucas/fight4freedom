@@ -1,0 +1,150 @@
+// Prisma schema — applied with `pnpm db:push` (schema-first, no migration history,
+// matching the plan's "push" workflow). See docs/plano.md "Modelo de dados".
+// K/D, win-rate and rankings are DERIVED in query/RSC, never persisted.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: connection URLs live in prisma.config.ts (CLI) and the driver
+  // adapter in src/lib/db/index.ts (runtime).
+}
+
+enum Platform {
+  ea
+  xbox
+  psn
+
+  @@map("platform")
+}
+
+enum MemberRole {
+  member
+  officer
+  admin
+
+  @@map("member_role")
+}
+
+enum MedalTier {
+  bronze
+  silver
+  gold
+  legendary
+
+  @@map("medal_tier")
+}
+
+enum StatSource {
+  scraper
+  manual
+  api
+
+  @@map("stat_source")
+}
+
+model Member {
+  id            String     @id @default(uuid())
+  nickname      String
+  platform      Platform
+  trackerHandle String?    @map("tracker_handle")
+  discordId     String?    @map("discord_id")
+  avatarUrl     String?    @map("avatar_url")
+  role          MemberRole @default(member)
+  joinedAt      DateTime?  @map("joined_at") @db.Date
+  active        Boolean    @default(true)
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  medals     MemberMedal[]
+  snapshots  StatSnapshot[]
+  highlights Highlight[]
+  profiles   Profile[]
+
+  @@map("member")
+}
+
+model Medal {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  criteria    String?
+  // A lucide icon name or an image URL.
+  icon        String?
+  tier        MedalTier @default(bronze)
+  createdBy   String?   @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  members MemberMedal[]
+
+  @@map("medal")
+}
+
+model MemberMedal {
+  id        String   @id @default(uuid())
+  memberId  String   @map("member_id")
+  medalId   String   @map("medal_id")
+  awardedAt DateTime @default(now()) @map("awarded_at") @db.Timestamptz(6)
+  awardedBy String?  @map("awarded_by")
+  note      String?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  medal  Medal  @relation(fields: [medalId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, medalId], map: "member_medal_unique")
+  @@map("member_medal")
+}
+
+model StatSnapshot {
+  id                String     @id @default(uuid())
+  memberId          String     @map("member_id")
+  capturedAt        DateTime   @default(now()) @map("captured_at") @db.Timestamptz(6)
+  source            StatSource
+  kills             Int        @default(0)
+  deaths            Int        @default(0)
+  matchesPlayed     Int        @default(0) @map("matches_played")
+  wins              Int        @default(0)
+  score             Int        @default(0)
+  timePlayedMinutes Int        @default(0) @map("time_played_minutes")
+  // Extra BF6 metrics without a migration.
+  extra             Json?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, capturedAt], map: "stat_snapshot_member_captured_idx")
+  @@map("stat_snapshot")
+}
+
+model Highlight {
+  id              String    @id @default(uuid())
+  title           String
+  description     String?
+  memberId        String?   @map("member_id")
+  // Path inside the Supabase Storage bucket.
+  videoPath       String    @map("video_path")
+  thumbnailPath   String?   @map("thumbnail_path")
+  durationSeconds Int       @map("duration_seconds")
+  playedAt        DateTime? @map("played_at") @db.Date
+  featured        Boolean   @default(false)
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@map("highlight")
+}
+
+// Fase 2 — maps a Supabase auth user to a system role. `id` = auth.users.id.
+model Profile {
+  id        String   @id
+  isAdmin   Boolean  @default(false) @map("is_admin")
+  memberId  String?  @map("member_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@map("profile")
+}
