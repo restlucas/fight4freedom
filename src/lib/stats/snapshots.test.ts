@@ -4,8 +4,11 @@ import {
   computeKd,
   computeWinRate,
   deltaForMonth,
+  hoursPlayed,
+  killsPerMatch,
   latestSnapshot,
   rankMembers,
+  totalMatches,
   type RankableMember,
   type SnapshotLike,
   type StatTotals,
@@ -15,9 +18,12 @@ function totals(partial: Partial<StatTotals>): StatTotals {
   return {
     kills: 0,
     deaths: 0,
-    matchesPlayed: 0,
     wins: 0,
-    score: 0,
+    losses: 0,
+    assists: 0,
+    revives: 0,
+    headshots: 0,
+    objectivesCaptured: 0,
     timePlayedMinutes: 0,
     ...partial,
   };
@@ -38,13 +44,25 @@ describe("computeKd", () => {
   });
 });
 
-describe("computeWinRate", () => {
-  it("returns wins over matches", () => {
-    expect(computeWinRate(3, 4)).toBe(0.75);
+describe("totalMatches / computeWinRate / killsPerMatch", () => {
+  it("derives matches from wins + losses", () => {
+    expect(totalMatches(totals({ wins: 12, losses: 8 }))).toBe(20);
   });
 
-  it("returns 0 with no matches", () => {
+  it("computes win rate over total matches", () => {
+    expect(computeWinRate(3, 1)).toBe(0.75);
     expect(computeWinRate(0, 0)).toBe(0);
+  });
+
+  it("computes kills per match", () => {
+    expect(killsPerMatch(totals({ kills: 200, wins: 12, losses: 8 }))).toBe(10);
+    expect(killsPerMatch(totals({ kills: 5 }))).toBe(0);
+  });
+});
+
+describe("hoursPlayed", () => {
+  it("converts minutes to hours", () => {
+    expect(hoursPlayed(120)).toBe(2);
   });
 });
 
@@ -66,25 +84,18 @@ describe("deltaForMonth", () => {
 
   it("subtracts the first in-month snapshot from the last", () => {
     const snaps = [
-      snapshot("2026-06-30T00:00:00Z", { kills: 100, matchesPlayed: 10 }),
-      snapshot("2026-07-02T00:00:00Z", { kills: 120, matchesPlayed: 12 }),
-      snapshot("2026-07-28T00:00:00Z", { kills: 200, matchesPlayed: 20 }),
+      snapshot("2026-06-30T00:00:00Z", { kills: 100, wins: 10 }),
+      snapshot("2026-07-02T00:00:00Z", { kills: 120, wins: 12 }),
+      snapshot("2026-07-28T00:00:00Z", { kills: 200, wins: 20 }),
     ];
     const delta = deltaForMonth(snaps, july);
     expect(delta.kills).toBe(80);
-    expect(delta.matchesPlayed).toBe(8);
+    expect(delta.wins).toBe(8);
   });
 
   it("returns zeros when the month has fewer than two snapshots", () => {
     const snaps = [snapshot("2026-07-02T00:00:00Z", { kills: 120 })];
-    expect(deltaForMonth(snaps, july)).toEqual({
-      kills: 0,
-      deaths: 0,
-      matchesPlayed: 0,
-      wins: 0,
-      score: 0,
-      timePlayedMinutes: 0,
-    });
+    expect(deltaForMonth(snaps, july).kills).toBe(0);
   });
 
   it("ignores snapshots from other months", () => {
@@ -99,20 +110,20 @@ describe("deltaForMonth", () => {
 
 describe("rankMembers", () => {
   const members: RankableMember[] = [
-    { memberId: "a", totals: totals({ score: 100, matchesPlayed: 10 }), medalCount: 1 },
-    { memberId: "b", totals: totals({ score: 300, matchesPlayed: 5 }), medalCount: 3 },
-    { memberId: "c", totals: totals({ score: 300, matchesPlayed: 8 }), medalCount: 2 },
+    { memberId: "a", totals: totals({ kills: 100, wins: 10 }), medalCount: 1 },
+    { memberId: "b", totals: totals({ kills: 300, wins: 5 }), medalCount: 3 },
+    { memberId: "c", totals: totals({ kills: 300, wins: 8 }), medalCount: 2 },
   ];
 
-  it("orders by the metric, highest first", () => {
-    const ranked = rankMembers(members, "matchesPlayed");
+  it("orders by matches (wins + losses), highest first", () => {
+    // matches: a=10, c=8, b=5
+    const ranked = rankMembers(members, "matches");
     expect(ranked.map((m) => m.memberId)).toEqual(["a", "c", "b"]);
-    expect(ranked[0].value).toBe(10);
+    expect(ranked.map((m) => m.value)).toEqual([10, 8, 5]);
   });
 
-  it("uses competition ranking for ties", () => {
-    const ranked = rankMembers(members, "score");
-    // b and c tie at 300 (ranks 1 and 1), a is 100 (rank 3).
+  it("orders by kills with competition ranking for ties", () => {
+    const ranked = rankMembers(members, "kills");
     const ranks = Object.fromEntries(ranked.map((m) => [m.memberId, m.rank]));
     expect(ranks.b).toBe(1);
     expect(ranks.c).toBe(1);

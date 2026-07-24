@@ -18,7 +18,7 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 ### Decisões firmadas com o usuário
 - **Fonte de dados:** híbrido — scraper (tracker.gg) automatizado + edição manual, atrás de `StatsProvider`.
 - **MVP (Fase 1):** vitrine pública com dados semeados manualmente. Admin e scraper vêm depois.
-- **Auth admin:** Discord + Google OAuth (via Supabase Auth).
+- **Auth admin:** Discord OAuth (via Supabase Auth).
 - **Scraping:** todos os membros a cada 1h, via worker dedicado (Railway/Fly).
 - Sem pressão de prazo; entregue em fases ("o que der pra fazer").
 
@@ -68,7 +68,7 @@ Pendente na Fase 0:
 ## Stack a adicionar sobre o nextjs-starter
 
 Instalar por projeto (o starter não traz nada disso):
-- **Supabase**: Postgres + Auth (Discord + Google OAuth) + **Storage** (vídeos de melhores jogadas).
+- **Supabase**: Postgres + Auth (Discord OAuth) + **Storage** (vídeos de melhores jogadas).
 - **Prisma 7** (`@prisma/client` + `@prisma/adapter-pg` + `prisma`): schema em
   `prisma/schema.prisma`, aplicado com `pnpm db:push` (schema-first, sem histórico de migrations).
   URLs no `prisma.config.ts`; client com driver adapter em `src/lib/db/index.ts`.
@@ -161,8 +161,11 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - Testes: unit (Vitest) na lógica de ranking/derivados; E2E (Playwright) navegando as 6 páginas.
 
 ### Fase 2 — Auth + Painel administrativo
-- Supabase Auth com **Discord + Google OAuth**; `middleware.ts` protegendo `/admin`;
+- Supabase Auth com **Discord OAuth**; `middleware.ts` protegendo `/admin`;
   tabela `profile` + guard `requireAdmin()` (análogo ao `requireUserId()` do Routina).
+- **Avatar do membro via Discord:** importar a foto de perfil do Discord (do usuário logado /
+  do `discordId` do membro) e gravar em `member.avatarUrl`. Enquanto não houver imagem, a UI usa
+  o fallback `public/member-default.png` (já aplicado em `MemberCard` e no perfil na Fase 1).
 - `/admin` (dashboard) e sub-rotas:
   - Cadastrar/editar membros (form Zod + react-hook-form).
   - Criar/editar medalhas.
@@ -211,7 +214,7 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - **Fase 1:** as 6 rotas renderizam com dados do seed; ranking "mês" vs "geral" bate com os snapshots;
   `/melhores-jogadas` filtra por semana/mês e toca o vídeo; testes puros de ranking/filtro passam;
   E2E navega as páginas; visual conferido em light/dark.
-- **Fase 2:** login Discord e Google funciona; `/admin` bloqueado para não-admin; CRUD de membro/medalha
+- **Fase 2:** login Discord funciona; `/admin` bloqueado para não-admin; CRUD de membro/medalha
   e atribuição persistem e refletem na vitrine; edição manual de stats gera snapshot `source: manual`;
   upload de vídeo (≤ 1 min) grava no Storage, cria o `highlight` e aparece em `/melhores-jogadas`.
 - **Fase 3:** rodar o script local contra 1 handle real insere snapshot correto; cron agenda; falha de

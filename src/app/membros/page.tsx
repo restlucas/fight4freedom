@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { MemberCard } from "@/features/clan/components/member-card";
+import { MembersList } from "@/features/clan/components/members-list";
 import { getMembersOverview } from "@/features/clan/lib/queries";
 
 export const metadata: Metadata = {
@@ -30,11 +30,7 @@ export default async function MembersPage() {
           Nenhum membro cadastrado ainda.
         </p>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {members.map((member) => (
-            <MemberCard key={member.id} member={member} />
-          ))}
-        </div>
+        <MembersList members={members} />
       )}
     </main>
   );

@@ -15,7 +15,7 @@ Projeto criado a partir do template [`nextjs-starter`](https://github.com/restlu
 
 - **Next.js 16** (App Router) + **React 19** + **TypeScript** (strict)
 - **Tailwind CSS v4** + **shadcn/ui** (base color `neutral`, style `new-york`)
-- **Supabase** (Postgres + Auth Discord/Google + Storage) — _adicionado por fase_
+- **Supabase** (Postgres + Auth Discord + Storage) — _adicionado por fase_
 - **Drizzle ORM** (`pnpm db:push`) — _adicionado por fase_
 - **ESLint** (flat config) + **Prettier**
 - **Vitest** + Testing Library (unit) e **Playwright** (E2E)
@@ -62,6 +62,6 @@ As convenções de arquitetura estão documentadas nos arquivos `CLAUDE.md` de c
 
 - **Fase 0** — Fundação: template, branding, env, Supabase + Drizzle, schema, seed.
 - **Fase 1** — Vitrine pública (home, membros, medalhas, ranking, melhores jogadas) com dados semeados.
-- **Fase 2** — Auth (Discord + Google) + painel administrativo.
+- **Fase 2** — Auth (Discord) + painel administrativo.
 - **Fase 3** — Worker de scraping do tracker.gg (hora em hora) no Railway/Fly.
 - **Fase 4** — Progressão (gráficos), membro do mês e polimento.

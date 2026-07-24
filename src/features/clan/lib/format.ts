@@ -1,6 +1,11 @@
 // Display helpers for the clan vitrine (pt-BR labels and number formatting).
 
-import type { MedalTier, MemberRole, Platform } from "@prisma/client";
+import type {
+  MedalTier,
+  MemberRole,
+  Platform,
+  PlayerClass,
+} from "@prisma/client";
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   ea: "EA",
@@ -21,6 +26,13 @@ export const TIER_LABEL: Record<MedalTier, string> = {
   legendary: "Lendária",
 };
 
+export const CLASS_LABEL: Record<PlayerClass, string> = {
+  assault: "Assalto",
+  engineer: "Engenheiro",
+  support: "Suporte",
+  recon: "Recon",
+};
+
 const numberFormatter = new Intl.NumberFormat("pt-BR");
 
 export function formatNumber(value: number): string {
@@ -33,4 +45,12 @@ export function formatKd(kd: number): string {
 
 export function formatPercent(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
+}
+
+export function formatHours(timePlayedMinutes: number): string {
+  return `${numberFormatter.format(Math.round(timePlayedMinutes / 60))} h`;
+}
+
+export function formatKillsPerMatch(value: number): string {
+  return value.toFixed(1);
 }

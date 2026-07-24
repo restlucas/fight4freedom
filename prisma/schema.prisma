@@ -45,6 +45,15 @@ enum StatSource {
   @@map("stat_source")
 }
 
+enum PlayerClass {
+  assault
+  engineer
+  support
+  recon
+
+  @@map("player_class")
+}
+
 model Member {
   id            String     @id @default(uuid())
   nickname      String
@@ -102,14 +111,20 @@ model StatSnapshot {
   memberId          String     @map("member_id")
   capturedAt        DateTime   @default(now()) @map("captured_at") @db.Timestamptz(6)
   source            StatSource
-  kills             Int        @default(0)
-  deaths            Int        @default(0)
-  matchesPlayed     Int        @default(0) @map("matches_played")
-  wins              Int        @default(0)
-  score             Int        @default(0)
-  timePlayedMinutes Int        @default(0) @map("time_played_minutes")
+  // Raw counters. Matches (wins+losses), K/D, kills-per-match and hours are
+  // DERIVED in src/lib/stats/snapshots.ts, never stored.
+  kills              Int          @default(0)
+  deaths             Int          @default(0)
+  wins               Int          @default(0)
+  losses             Int          @default(0)
+  assists            Int          @default(0)
+  revives            Int          @default(0)
+  headshots          Int          @default(0)
+  objectivesCaptured Int          @default(0) @map("objectives_captured")
+  timePlayedMinutes  Int          @default(0) @map("time_played_minutes")
+  bestClass          PlayerClass? @map("best_class")
   // Extra BF6 metrics without a migration.
-  extra             Json?
+  extra              Json?
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 

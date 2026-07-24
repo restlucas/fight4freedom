@@ -8,7 +8,13 @@
 //
 // Idempotent: clears the tables it owns (FK-safe order) before inserting.
 
-import type { MedalTier, MemberRole, Platform, StatSource } from "@prisma/client";
+import type {
+  MedalTier,
+  MemberRole,
+  Platform,
+  PlayerClass,
+  StatSource,
+} from "@prisma/client";
 
 import { db } from "./index";
 
@@ -19,12 +25,16 @@ const NOW = new Date("2026-07-23T20:00:00Z");
 const PREV_MONTH = new Date("2026-06-15T12:00:00Z");
 const MANUAL: StatSource = "manual";
 
+// Raw counters only (matches, K/D, kills-per-match and hours are derived).
 type Stats = {
   kills: number;
   deaths: number;
-  matchesPlayed: number;
   wins: number;
-  score: number;
+  losses: number;
+  assists: number;
+  revives: number;
+  headshots: number;
+  objectivesCaptured: number;
   timePlayedMinutes: number;
 };
 
@@ -34,6 +44,7 @@ type SeedMember = {
   trackerHandle: string;
   role: MemberRole;
   joinedAt: string;
+  bestClass: PlayerClass;
   stats: Stats; // PLACEHOLDER numbers — see file header.
 };
 
@@ -44,7 +55,18 @@ const MEMBERS: SeedMember[] = [
     trackerHandle: "RRRRRRRREST",
     role: "admin",
     joinedAt: "2025-10-01",
-    stats: { kills: 5210, deaths: 2480, matchesPlayed: 430, wins: 274, score: 1_402_800, timePlayedMinutes: 6120 },
+    bestClass: "assault",
+    stats: {
+      kills: 5210,
+      deaths: 2480,
+      wins: 274,
+      losses: 156,
+      assists: 1830,
+      revives: 940,
+      headshots: 1120,
+      objectivesCaptured: 610,
+      timePlayedMinutes: 6120,
+    },
   },
 ];
 
@@ -66,6 +88,14 @@ const AWARDS: [string, string][] = [
   ["RRRRRRRREST", "Sharpshooter"],
   ["RRRRRRRREST", "Clutch King"],
 ];
+
+function scaleStats(stats: Stats, factor: number): Stats {
+  const scaled = {} as Stats;
+  for (const key of Object.keys(stats) as (keyof Stats)[]) {
+    scaled[key] = Math.round(stats[key] * factor);
+  }
+  return scaled;
+}
 
 async function seed() {
   console.log("Clearing existing data...");
@@ -93,15 +123,12 @@ async function seed() {
   const medalByName = new Map(medals.map((m) => [m.name, m]));
 
   console.log("Inserting stat snapshots...");
-  const earlier = (n: number) => Math.round(n * 0.85); // earlier this month
-  const lastMonth = (n: number) => Math.round(n * 0.65); // previous month
   const snapshots = MEMBERS.flatMap((m) => {
     const id = memberByNick.get(m.nickname)!.id;
-    const { stats } = m;
     return [
-      { memberId: id, capturedAt: PREV_MONTH, source: MANUAL, kills: lastMonth(stats.kills), deaths: lastMonth(stats.deaths), matchesPlayed: lastMonth(stats.matchesPlayed), wins: lastMonth(stats.wins), score: lastMonth(stats.score), timePlayedMinutes: lastMonth(stats.timePlayedMinutes) },
-      { memberId: id, capturedAt: MONTH_START, source: MANUAL, kills: earlier(stats.kills), deaths: earlier(stats.deaths), matchesPlayed: earlier(stats.matchesPlayed), wins: earlier(stats.wins), score: earlier(stats.score), timePlayedMinutes: earlier(stats.timePlayedMinutes) },
-      { memberId: id, capturedAt: NOW, source: MANUAL, ...stats },
+      { memberId: id, capturedAt: PREV_MONTH, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, 0.65) },
+      { memberId: id, capturedAt: MONTH_START, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, 0.85) },
+      { memberId: id, capturedAt: NOW, source: MANUAL, bestClass: m.bestClass, ...m.stats },
     ];
   });
   await db.statSnapshot.createMany({ data: snapshots });

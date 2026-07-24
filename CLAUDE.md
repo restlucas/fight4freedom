@@ -39,6 +39,10 @@ plus `pnpm build` and the E2E job (see `.github/workflows/ci.yml`).
 - Server Components by default. Add `"use client"` only when a component needs interactivity,
   state, effects or browser APIs.
 - Compose Tailwind classes with `cn()` from `@/lib/utils`, never string concatenation.
+- Loading states: `loading.tsx` and every Suspense fallback must be a **skeleton that mirrors
+  the real component's layout and proportions** (same structure, element sizes, grid/columns) —
+  never a generic spinner or a single grey box. Build them from the shadcn `Skeleton` primitive
+  and keep them next to (or matching) the component they stand in for.
 - Colocate unit tests next to the file under test (`foo.tsx` -> `foo.test.tsx`). Keep E2E specs
   in `tests/e2e/`.
 - All code, comments and identifiers in English.

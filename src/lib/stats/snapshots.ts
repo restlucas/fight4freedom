@@ -1,15 +1,19 @@
 // Pure, testable stat derivations. No DB, no React — feed it plain data.
-// K/D, win-rate and rankings are computed here (never persisted). "This month"
-// = latest snapshot minus the earliest snapshot within the reference month.
+// Only raw counters are stored; matches (wins+losses), K/D, kills-per-match,
+// win rate and hours are derived here. "This month" = latest snapshot minus the
+// earliest snapshot within the reference month.
 
 import { isSameMonth } from "date-fns";
 
 export type StatTotals = {
   kills: number;
   deaths: number;
-  matchesPlayed: number;
   wins: number;
-  score: number;
+  losses: number;
+  assists: number;
+  revives: number;
+  headshots: number;
+  objectivesCaptured: number;
   timePlayedMinutes: number;
 };
 
@@ -18,9 +22,12 @@ export type SnapshotLike = StatTotals & { capturedAt: Date };
 const STAT_KEYS: (keyof StatTotals)[] = [
   "kills",
   "deaths",
-  "matchesPlayed",
   "wins",
-  "score",
+  "losses",
+  "assists",
+  "revives",
+  "headshots",
+  "objectivesCaptured",
   "timePlayedMinutes",
 ];
 
@@ -28,11 +35,19 @@ export function emptyTotals(): StatTotals {
   return {
     kills: 0,
     deaths: 0,
-    matchesPlayed: 0,
     wins: 0,
-    score: 0,
+    losses: 0,
+    assists: 0,
+    revives: 0,
+    headshots: 0,
+    objectivesCaptured: 0,
     timePlayedMinutes: 0,
   };
+}
+
+/** Matches played = wins + losses (BF6 has no draws in ranked modes). */
+export function totalMatches(totals: StatTotals): number {
+  return totals.wins + totals.losses;
 }
 
 /** Kill/death ratio. With no deaths, the ratio is the kill count itself. */
@@ -42,9 +57,22 @@ export function computeKd(kills: number, deaths: number): number {
 }
 
 /** Win rate as a 0..1 fraction. Zero matches → 0. */
-export function computeWinRate(wins: number, matchesPlayed: number): number {
-  if (matchesPlayed <= 0) return 0;
-  return wins / matchesPlayed;
+export function computeWinRate(wins: number, losses: number): number {
+  const matches = wins + losses;
+  if (matches <= 0) return 0;
+  return wins / matches;
+}
+
+/** Average kills per match. Zero matches → 0. */
+export function killsPerMatch(totals: StatTotals): number {
+  const matches = totalMatches(totals);
+  if (matches <= 0) return 0;
+  return totals.kills / matches;
+}
+
+/** Hours played from stored minutes. */
+export function hoursPlayed(timePlayedMinutes: number): number {
+  return timePlayedMinutes / 60;
 }
 
 /** Most recent snapshot (cumulative totals), or null when there are none. */
@@ -79,9 +107,10 @@ export function deltaForMonth(
 }
 
 export type RankMetric =
-  | "matchesPlayed"
   | "kills"
-  | "score"
+  | "matches"
+  | "revives"
+  | "assists"
   | "kd"
   | "winRate"
   | "medals";
@@ -96,16 +125,18 @@ export type Ranked<T> = T & { rank: number; value: number };
 
 export function metricValue(member: RankableMember, metric: RankMetric): number {
   switch (metric) {
-    case "matchesPlayed":
-      return member.totals.matchesPlayed;
     case "kills":
       return member.totals.kills;
-    case "score":
-      return member.totals.score;
+    case "matches":
+      return totalMatches(member.totals);
+    case "revives":
+      return member.totals.revives;
+    case "assists":
+      return member.totals.assists;
     case "kd":
       return computeKd(member.totals.kills, member.totals.deaths);
     case "winRate":
-      return computeWinRate(member.totals.wins, member.totals.matchesPlayed);
+      return computeWinRate(member.totals.wins, member.totals.losses);
     case "medals":
       return member.medalCount;
   }

@@ -11,16 +11,18 @@ const member: MemberOverview = {
   role: "admin",
   avatarUrl: null,
   medalCount: 2,
+  bestClass: "assault",
   totals: {
-    kills: 100,
-    deaths: 50,
-    matchesPlayed: 30,
-    wins: 15,
-    score: 1000,
-    timePlayedMinutes: 600,
+    kills: 200,
+    deaths: 100,
+    wins: 12,
+    losses: 8,
+    assists: 50,
+    revives: 30,
+    headshots: 40,
+    objectivesCaptured: 15,
+    timePlayedMinutes: 120,
   },
-  kd: 2,
-  winRate: 0.5,
 };
 
 describe("MemberCard", () => {
@@ -30,12 +32,13 @@ describe("MemberCard", () => {
     expect(screen.getByRole("link")).toHaveAttribute("href", "/membros/m1");
   });
 
-  it("renders derived stats, role and platform", () => {
+  it("shows the platform badge (not the role) and the compact stats", () => {
     render(<MemberCard member={member} />);
-    expect(screen.getByText("2.00")).toBeInTheDocument(); // K/D
-    expect(screen.getByText("50%")).toBeInTheDocument(); // win rate
-    expect(screen.getByText("Admin")).toBeInTheDocument();
     expect(screen.getByText("EA")).toBeInTheDocument();
-    expect(screen.getByText(/2 medalhas/)).toBeInTheDocument();
+    expect(screen.queryByText("Admin")).not.toBeInTheDocument();
+    expect(screen.getByText("K/D")).toBeInTheDocument();
+    expect(screen.getByText("2.00")).toBeInTheDocument(); // K/D = 200/100
+    expect(screen.getByText("Partidas")).toBeInTheDocument();
+    expect(screen.getByText("Horas")).toBeInTheDocument();
   });
 });
