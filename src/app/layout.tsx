@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Barlow, Barlow_Condensed, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+
 // BF6 UI type is proprietary (BF Body is based on the open-source Barlow), so we
 // use Barlow for body/UI and Barlow Condensed for the technical, condensed
 // headings/display, keeping the same design DNA.
@@ -46,7 +49,11 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${fontSans.variable} ${fontHeading.variable} ${fontMono.variable} dark`}
     >
-      <body className="font-sans antialiased">{children}</body>
+      <body className="flex min-h-dvh flex-col font-sans antialiased">
+        <SiteHeader />
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
+      </body>
     </html>
   );
 }
