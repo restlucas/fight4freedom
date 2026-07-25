@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,11 +17,7 @@ import {
   updateMedalAction,
 } from "@/features/admin/lib/medal-actions";
 import type { AdminMedal } from "@/features/admin/lib/queries";
-import {
-  MEDAL_ICONS,
-  MEDAL_TIERS,
-  type ActionResult,
-} from "@/features/admin/lib/schemas";
+import { MEDAL_ICONS, MEDAL_TIERS } from "@/features/admin/lib/schemas";
 
 interface MedalFormProps {
   medal?: AdminMedal;
@@ -42,10 +38,8 @@ function FieldError({ messages }: { messages?: string[] }) {
 
 export function MedalForm({ medal, storageEnabled, onDone }: MedalFormProps) {
   const editing = Boolean(medal);
-  const [state, action, pending] = useActionState<
-    ActionResult<{ medalId: string }> | null,
-    FormData
-  >(editing ? updateMedalAction : createMedalAction, null);
+  const [pending, startTransition] = useTransition();
+  const [errors, setErrors] = useState<Record<string, string[]> | undefined>();
 
   // Live preview, so the admin sees the emblem they are creating.
   const [tier, setTier] = useState(medal?.tier ?? "common");
@@ -70,19 +64,31 @@ export function MedalForm({ medal, storageEnabled, onDone }: MedalFormProps) {
   // wins over the icon.
   const previewArt = pickedArt ?? medal?.imageUrl ?? null;
 
-  useEffect(() => {
-    if (state?.ok) {
-      toast.success(editing ? "Medalha atualizada." : "Medalha criada.");
-      onDone();
-    } else if (state && !state.ok && !state.fieldErrors) {
-      toast.error(state.error);
-    }
-  }, [state, editing, onDone]);
+  // The result is handled where it arrives, NOT in an effect keyed on the action
+  // state. With `onDone` in an effect's dependency list the toast fired twice: the
+  // parent re-renders after onDone (router.refresh + closing the dialog), Radix
+  // keeps the content mounted through the close animation, and the fresh `onDone`
+  // identity re-ran the effect with the same successful state.
+  function submit(formData: FormData) {
+    startTransition(async () => {
+      const result = editing
+        ? await updateMedalAction(null, formData)
+        : await createMedalAction(null, formData);
 
-  const errors = state && !state.ok ? state.fieldErrors : undefined;
+      if (result.ok) {
+        toast.success(editing ? "Medalha atualizada." : "Medalha criada.");
+        onDone();
+        return;
+      }
+
+      setErrors(result.fieldErrors);
+      // Field errors render next to the inputs; anything else needs the toast.
+      if (!result.fieldErrors) toast.error(result.error);
+    });
+  }
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={submit} className="space-y-4">
       {medal ? <input type="hidden" name="medalId" value={medal.id} /> : null}
 
       <div className="flex flex-col items-center gap-2">

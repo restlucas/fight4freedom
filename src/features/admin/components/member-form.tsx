@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import {
   updateMemberAction,
 } from "@/features/admin/lib/actions";
 import type { AdminMember } from "@/features/admin/lib/queries";
-import { MEMBER_ROLES, PLATFORMS, type ActionResult } from "@/features/admin/lib/schemas";
+import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
 
 interface MemberFormProps {
   /** Absent for a new member. */
@@ -32,31 +32,36 @@ function FieldError({ messages }: { messages?: string[] }) {
 }
 
 /**
- * Server Action + useActionState instead of react-hook-form: validation has to
- * run on the server anyway (a crafted POST bypasses any client check), so a
- * second copy of the rules in the browser would buy UX only. The form also works
- * without JavaScript this way.
+ * Server Action instead of react-hook-form: validation has to run on the server
+ * anyway (a crafted POST bypasses any client check), so a second copy of the rules
+ * in the browser would buy UX only.
  */
 export function MemberForm({ member, onDone }: MemberFormProps) {
   const editing = Boolean(member);
-  const [state, action, pending] = useActionState<
-    ActionResult<{ memberId: string }> | null,
-    FormData
-  >(editing ? updateMemberAction : createMemberAction, null);
+  const [pending, startTransition] = useTransition();
+  const [errors, setErrors] = useState<Record<string, string[]> | undefined>();
 
-  useEffect(() => {
-    if (state?.ok) {
-      toast.success(editing ? "Membro atualizado." : "Membro cadastrado.");
-      onDone();
-    } else if (state && !state.ok && !state.fieldErrors) {
-      toast.error(state.error);
-    }
-  }, [state, editing, onDone]);
+  // Handled here rather than in an effect on the action state — see the comment in
+  // medal-form.tsx: `onDone` in an effect's deps makes the toast fire twice.
+  function submit(formData: FormData) {
+    startTransition(async () => {
+      const result = editing
+        ? await updateMemberAction(null, formData)
+        : await createMemberAction(null, formData);
 
-  const errors = state && !state.ok ? state.fieldErrors : undefined;
+      if (result.ok) {
+        toast.success(editing ? "Membro atualizado." : "Membro cadastrado.");
+        onDone();
+        return;
+      }
+
+      setErrors(result.fieldErrors);
+      if (!result.fieldErrors) toast.error(result.error);
+    });
+  }
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={submit} className="space-y-4">
       {member ? (
         <input type="hidden" name="memberId" value={member.id} />
       ) : null}

@@ -84,6 +84,28 @@ export const memberIdSchema = z.object({
   memberId: z.string().uuid("Membro inválido"),
 });
 
+/**
+ * Granting a medal. The pair (memberId, medalId) is the natural key — the table
+ * has a unique index on it, so a member never holds the same medal twice.
+ */
+export const awardFormSchema = z.object({
+  memberId: z.string().uuid("Membro inválido"),
+  medalId: z.string().uuid("Medalha inválida"),
+  /** Internal note ("20 kills na Empire State"). Not shown on the vitrine. */
+  note: z
+    .string()
+    .trim()
+    .max(140, "A nota deve ter no máximo 140 caracteres")
+    .optional()
+    .transform((value) => (value ? value : null)),
+});
+
+/** Revoking needs only the same pair, so the client never sends a row id. */
+export const awardKeySchema = awardFormSchema.pick({
+  memberId: true,
+  medalId: true,
+});
+
 export const inviteIdSchema = z.object({
   inviteId: z.string().uuid("Convite inválido"),
 });
@@ -98,4 +120,20 @@ export function actionError(
   fieldErrors?: Record<string, string[]>,
 ): ActionResult<never> {
   return { ok: false, error, fieldErrors };
+}
+
+/**
+ * Zod issues keyed by field name, the shape `ActionResult.fieldErrors` uses.
+ * Lives here (and not in an action file) because a `"use server"` module may only
+ * export async functions.
+ */
+export function fieldErrorsOf(error: {
+  issues: { path: (string | number | symbol)[]; message: string }[];
+}): Record<string, string[]> {
+  const map: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const key = String(issue.path[0] ?? "form");
+    map[key] = [...(map[key] ?? []), issue.message];
+  }
+  return map;
 }

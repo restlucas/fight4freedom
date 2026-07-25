@@ -12,21 +12,11 @@ import { serverEnv } from "@/lib/env";
 import { deleteMedalImage, uploadMedalImage } from "./medal-storage";
 import {
   actionError,
+  fieldErrorsOf,
   medalFormSchema,
   medalIdSchema,
   type ActionResult,
 } from "./schemas";
-
-function fieldErrorsOf(error: {
-  issues: { path: (string | number | symbol)[]; message: string }[];
-}): Record<string, string[]> {
-  const map: Record<string, string[]> = {};
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? "form");
-    map[key] = [...(map[key] ?? []), issue.message];
-  }
-  return map;
-}
 
 function parseForm(formData: FormData) {
   return medalFormSchema.safeParse({

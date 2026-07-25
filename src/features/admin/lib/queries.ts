@@ -13,6 +13,14 @@ export type AdminInvite = {
   usedAt: string | null;
 };
 
+export type AdminAward = {
+  medalId: string;
+  /** ISO instant, so the value survives serialization to the client component. */
+  awardedAt: string;
+  /** Internal note written by the admin who granted it. */
+  note: string | null;
+};
+
 export type AdminMember = {
   id: string;
   nickname: string;
@@ -28,6 +36,8 @@ export type AdminMember = {
   isAdmin: boolean;
   /** The live invite, if any (used ones are not listed). */
   pendingInvite: AdminInvite | null;
+  /** Medals the member holds, newest first. Drives the medal dialog. */
+  awards: AdminAward[];
 };
 
 export async function getAdminMembers(): Promise<AdminMember[]> {
@@ -44,6 +54,10 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       avatarUrl: true,
       discordId: true,
       profiles: { select: { isAdmin: true } },
+      medals: {
+        orderBy: { awardedAt: "desc" },
+        select: { medalId: true, awardedAt: true, note: true },
+      },
       invites: {
         where: { usedAt: null },
         orderBy: { createdAt: "desc" },
@@ -80,6 +94,11 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
           usedAt: null,
         }
       : null,
+    awards: m.medals.map((award) => ({
+      medalId: award.medalId,
+      awardedAt: award.awardedAt.toISOString(),
+      note: award.note,
+    })),
   }));
 }
 
@@ -129,20 +148,30 @@ export type AdminOverview = {
   admins: number;
   pendingInvites: number;
   medals: number;
+  /** Medals actually handed out, across all members. */
+  awards: number;
 };
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const [members, inactiveMembers, linkedAccounts, admins, pendingInvites, medals] =
-    await Promise.all([
-      db.member.count(),
-      db.member.count({ where: { active: false } }),
-      db.profile.count({ where: { memberId: { not: null } } }),
-      db.profile.count({ where: { isAdmin: true } }),
-      db.memberInvite.count({
-        where: { usedAt: null, expiresAt: { gt: new Date() } },
-      }),
-      db.medal.count(),
-    ]);
+  const [
+    members,
+    inactiveMembers,
+    linkedAccounts,
+    admins,
+    pendingInvites,
+    medals,
+    awards,
+  ] = await Promise.all([
+    db.member.count(),
+    db.member.count({ where: { active: false } }),
+    db.profile.count({ where: { memberId: { not: null } } }),
+    db.profile.count({ where: { isAdmin: true } }),
+    db.memberInvite.count({
+      where: { usedAt: null, expiresAt: { gt: new Date() } },
+    }),
+    db.medal.count(),
+    db.memberMedal.count(),
+  ]);
 
   return {
     members,
@@ -151,5 +180,6 @@ export async function getAdminOverview(): Promise<AdminOverview> {
     admins,
     pendingInvites,
     medals,
+    awards,
   };
 }

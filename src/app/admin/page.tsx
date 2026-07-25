@@ -1,4 +1,12 @@
-import { KeyRound, Medal, ShieldCheck, UserCheck, Users, UserX } from "lucide-react";
+import {
+  Award,
+  KeyRound,
+  Medal,
+  ShieldCheck,
+  UserCheck,
+  Users,
+  UserX,
+} from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +25,7 @@ export default async function AdminHomePage() {
     { icon: ShieldCheck, label: "Administradores", value: overview.admins, hint: "acesso ao painel" },
     { icon: KeyRound, label: "Convites pendentes", value: overview.pendingInvites, hint: "ainda válidos" },
     { icon: Medal, label: "Medalhas", value: overview.medals, hint: "no catálogo" },
+    { icon: Award, label: "Concessões", value: overview.awards, hint: "medalhas entregues" },
     {
       icon: UserX,
       label: "Sem conta",
