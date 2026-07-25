@@ -2,12 +2,7 @@ import type { Metadata } from "next";
 import { Barlow, Barlow_Condensed, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DiscordLoginButton } from "@/features/auth/components/discord-login-button";
-import { UserMenu } from "@/features/auth/components/user-menu";
-import { getSessionProfile } from "@/lib/auth/session";
 
 // BF6 UI type is proprietary (BF Body is based on the open-source Barlow), so we
 // use Barlow for body/UI and Barlow Condensed for the technical, condensed
@@ -43,13 +38,16 @@ export const metadata: Metadata = {
     "Vitrine do clã Fight4Freedom de Battlefield 6: membros, medalhas, ranking, estatísticas e melhores jogadas.",
 };
 
-export default async function RootLayout({
+/**
+ * Root shell only: html, fonts and providers. The public header and footer live
+ * in the (site) group, so /admin can have its own chrome instead of rendering a
+ * sidebar inside the public navigation.
+ */
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const profile = await getSessionProfile();
-
   return (
     <html
       lang="pt-BR"
@@ -58,19 +56,7 @@ export default async function RootLayout({
       <body className="flex min-h-dvh flex-col font-sans antialiased">
         {/* Shorter than the 700ms default: these tooltips reveal reference data
             (platform ids), so waiting feels broken. */}
-        <TooltipProvider delayDuration={200}>
-          <SiteHeader
-            account={
-              profile ? (
-                <UserMenu profile={profile} />
-              ) : (
-                <DiscordLoginButton />
-              )
-            }
-          />
-          <div className="flex-1">{children}</div>
-          <SiteFooter />
-        </TooltipProvider>
+        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
       </body>
     </html>
   );

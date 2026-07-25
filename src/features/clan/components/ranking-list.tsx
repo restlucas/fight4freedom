@@ -1,8 +1,9 @@
 "use client";
 
-import { Loader2, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DotsLoader } from "@/components/dots-loader";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -123,7 +124,11 @@ export function RankingList({
             className="bg-background/50 pl-9"
           />
           {searching ? (
-            <Loader2 className="text-muted-foreground absolute top-1/2 right-3 size-4 -translate-y-1/2 animate-spin" />
+            <DotsLoader
+              size="sm"
+              label="Buscando"
+              className="text-muted-foreground absolute top-1/2 right-3 -translate-y-1/2"
+            />
           ) : null}
         </div>
         <p className="text-muted-foreground text-sm" role="status">
