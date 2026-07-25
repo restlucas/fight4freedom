@@ -70,21 +70,23 @@ export default async function MemberProfilePage({ params }: Params) {
           Membros
         </Link>
 
-        {/* Header — background reflects the member's best class */}
+        {/* Header — background reflects the member's best class, falling back to
+            the app's default art so a member with no snapshot yet does not get an
+            empty band. */}
         <header className="relative overflow-hidden rounded-xl border">
-          {member.bestClass ? (
-            <>
-              <Image
-                src={`/images/classes/${member.bestClass}.avif`}
-                alt=""
-                fill
-                priority
-                sizes="(max-width: 1024px) 100vw, 1024px"
-                className="object-cover object-top"
-              />
-              <div className="from-background via-background/85 to-background/40 absolute inset-0 bg-gradient-to-r" />
-            </>
-          ) : null}
+          <Image
+            src={
+              member.bestClass
+                ? `/images/classes/${member.bestClass}.avif`
+                : "/background.avif"
+            }
+            alt=""
+            fill
+            priority
+            sizes="(max-width: 1024px) 100vw, 1024px"
+            className="object-cover object-top"
+          />
+          <div className="from-background via-background/85 to-background/40 absolute inset-0 bg-gradient-to-r" />
 
           <div className="relative z-10 flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:p-8 sm:text-left">
             <Avatar className="border-primary/50 size-24 rounded-xl border-2 sm:size-28">

@@ -4,6 +4,7 @@
 // only guards navigation, so without this an anonymous POST straight to the
 // action would go through (see src/lib/auth/session.ts).
 
+import { getRequestOrigin } from "@/lib/app-url";
 import { requireAdmin } from "@/lib/auth/session";
 import {
   generateInviteToken,
@@ -13,7 +14,6 @@ import {
 } from "@/lib/auth/invite";
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { db } from "@/lib/db";
-import { publicEnv } from "@/lib/env";
 
 import {
   actionError,
@@ -143,7 +143,9 @@ export async function createInviteAction(
     }),
   ]);
 
-  return { ok: true, data: { url: inviteUrl(publicEnv.appUrl, token) } };
+  // Built from the request origin, so the link always points at the deployment
+  // the admin is actually using (production, preview or local).
+  return { ok: true, data: { url: inviteUrl(await getRequestOrigin(), token) } };
 }
 
 export async function revokeInviteAction(

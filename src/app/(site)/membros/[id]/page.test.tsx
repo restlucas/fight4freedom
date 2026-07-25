@@ -76,6 +76,22 @@ describe("MemberProfilePage", () => {
     expect(screen.queryByText(/13\.000/)).not.toBeInTheDocument();
   });
 
+  it("falls back to the default artwork when there is no best class", async () => {
+    const { getMemberProfile } = await import("@/features/clan/lib/queries");
+    const base = await (
+      getMemberProfile as unknown as () => Promise<Record<string, unknown>>
+    )();
+    vi.mocked(
+      getMemberProfile as unknown as (id: string) => Promise<unknown>,
+    ).mockResolvedValueOnce({ ...base, bestClass: null });
+
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+    const header = screen.getByRole("banner");
+    const background = header.querySelector("img");
+    expect(background?.getAttribute("src")).toContain("background.avif");
+  });
+
   it("shows the platform icon with the platform id", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
     expect(

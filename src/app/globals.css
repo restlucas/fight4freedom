@@ -126,6 +126,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    /* Keeps the scrollbar's space reserved even while a Radix overlay (dropdown,
+       dialog, sheet) locks body scroll. Without it the scrollbar vanishes, the
+       viewport gets ~15px wider, and every `fixed inset-0` background on the site
+       jumps sideways. Radix compensates with padding on <body>, which does
+       nothing for fixed-position elements. */
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground font-sans;
   }

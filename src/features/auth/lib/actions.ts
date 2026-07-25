@@ -7,6 +7,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { getRequestOrigin } from "@/lib/app-url";
 import { INVITE_COOKIE, INVITE_TTL_DAYS } from "@/lib/auth/invite";
 import { publicEnv } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -21,7 +22,9 @@ async function discordAuthorizeUrl(next: string): Promise<string | null> {
   if (!publicEnv.supabaseConfigured) return null;
 
   const supabase = await createSupabaseServerClient();
-  const callback = new URL("/auth/callback", publicEnv.appUrl);
+  // Origin from the request, not from config: a wrong NEXT_PUBLIC_APP_URL used to
+  // send production logins to localhost.
+  const callback = new URL("/auth/callback", await getRequestOrigin());
   callback.searchParams.set("next", next);
 
   const { data, error } = await supabase.auth.signInWithOAuth({
