@@ -92,9 +92,17 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
   `discordId` (nullable), `avatarUrl` (nullable), `role` (`member | officer | admin` — cargo no clã,
   só exibição; acesso de sistema é o `profile.isAdmin`),
   `joinedAt` (date), `active` (bool default true), `createdAt`, `updatedAt`.
-- **`medal`**: `id`, `name`, `description`, `criteria` (texto, ex.: "20 kills sem morrer"),
-  `icon` (nome de ícone lucide ou `imageUrl`), `tier` (`bronze | silver | gold | legendary`,
-  para estilizar), `createdAt`, `createdBy` (nullable até a Fase 2).
+- **`member` (patentes):** `platformId` (id público na plataforma, exibido no hover do ícone e
+  copiável no clique) e `rankPoints` (pontos acumulados de carreira, **mockados** até a regra de
+  acúmulo ser definida). A escada de 16 patentes vive em `src/lib/ranks.ts`, seguindo a hierarquia
+  real do Exército (Soldado → Marechal, sem "Recruta", que não é graduação). Limiares provisórios,
+  começando em 30 pontos para a primeira promoção (Cabo) e terminando em 20.000 (Marechal).
+  Insígnias em `public/patentes/<slug>.webp`.
+- **`medal`**: `id`, `name`, `description`, `criteria` (opcional, ex.: "20 kills sem morrer"),
+  `imageUrl` (arte enviada pelo admin na Fase 2), `icon` (nome de ícone lucide, fallback enquanto
+  não há arte), `tier` (`common | rare | legendary | special` — `special` só para medalhas de
+  evento, interno ou externo; declarado do mais comum ao mais raro para ordenar o catálogo),
+  `createdAt`, `createdBy` (nullable até a Fase 2).
 - **`memberMedal`** (junção): `id`, `memberId` (FK cascade), `medalId` (FK cascade),
   `awardedAt`, `awardedBy` (nullable), `note` (nullable). Índice único `(memberId, medalId)`.
 - **`statSnapshot`** (série temporal — o diferencial vs. site atual): `id`, `memberId`
@@ -149,8 +157,14 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
   medalhas em destaque. Link para perfil individual.
 - `/membros/[id]` — perfil: stats atuais (do último snapshot), medalhas, mini-gráfico de progressão.
 - `/medalhas` — **catálogo de medalhas** do clã: nome, critério, tier, quem já conquistou.
-- `/ranking` — **rankings**: mais partidas no mês, melhor K/D, maior score, mais medalhas.
-  Toggle "mês atual" vs "geral". Calculado a partir de `statSnapshot`.
+- `/ranking` — **ranking mensal por pontos** (decidido com o usuário na Fase 1): cada membro
+  pontua pelo **progresso dentro do mês** (delta de `statSnapshot`), não pelo acumulado, com
+  contador de encerramento da temporada (precisão progressiva: dias+horas, +minutos nos últimos
+  7 dias, +segundos nas últimas 24 h), busca e scroll infinito de 15 em 15 via
+  `GET /api/ranking`. Pesos em `src/lib/stats/points.ts` (`POINT_WEIGHTS`) são **provisórios**
+  e serão definidos com o clã. Sem toggle "mês vs geral": o acumulado já vive em `/membros`,
+  que ordena por K/D, kills, partidas e horas (crescente/decrescente) e **coroa o líder** de
+  cada uma dessas quatro estatísticas onde ela aparecer (derivado em query, nada persistido).
 - `/melhores-jogadas` — **highlights em vídeo**: grade de clipes curtos (≤ 1 min) com player,
   título, autor (membro) e data. Filtro **por semana / por mês** (deriva de `playedAt` com
   `date-fns`). Vídeo servido do Supabase Storage; destaque para os `featured`. Na Fase 1

@@ -19,11 +19,12 @@ export const ROLE_LABEL: Record<MemberRole, string> = {
   admin: "Admin",
 };
 
+// Feminine forms to agree with "medalha".
 export const TIER_LABEL: Record<MedalTier, string> = {
-  bronze: "Bronze",
-  silver: "Prata",
-  gold: "Ouro",
+  common: "Comum",
+  rare: "Rara",
   legendary: "Lendária",
+  special: "Especial",
 };
 
 export const CLASS_LABEL: Record<PlayerClass, string> = {
@@ -53,4 +54,40 @@ export function formatHours(timePlayedMinutes: number): string {
 
 export function formatKillsPerMatch(value: number): string {
   return value.toFixed(1);
+}
+
+/** Ranking score, e.g. "1.240". */
+export function formatPoints(points: number): string {
+  return numberFormatter.format(points);
+}
+
+/** Month label for the ranking season, e.g. "julho de 2026". */
+export function formatMonthLabel(date: Date): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
+  }).format(date);
+}
+
+/** Avatar fallback: up to two alphanumeric characters from the gamertag. */
+export function memberInitials(nickname: string): string {
+  return (
+    nickname
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 2)
+      .toUpperCase() || "?"
+  );
+}
+
+/**
+ * Lowercases and strips diacritics so searching "criterio" also matches
+ * "critério" (medal names and descriptions are written in pt-BR).
+ */
+export function normalizeSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
 }

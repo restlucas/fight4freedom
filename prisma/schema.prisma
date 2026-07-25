@@ -28,11 +28,14 @@ enum MemberRole {
   @@map("member_role")
 }
 
+// Rarity, declared from most common to rarest so `orderBy: { tier: "desc" }`
+// lists the rarest first. `special` is reserved for event medals (internal or
+// external tournaments), which is why it sits at the top.
 enum MedalTier {
-  bronze
-  silver
-  gold
+  common
+  rare
   legendary
+  special
 
   @@map("medal_tier")
 }
@@ -55,13 +58,20 @@ enum PlayerClass {
 }
 
 model Member {
-  id            String     @id @default(uuid())
-  nickname      String
-  platform      Platform
+  id       String   @id @default(uuid())
+  nickname String
+  platform Platform
+  /// The member's public id on that platform (EA ID, gamertag, PSN ID). Shown on
+  /// hover over the platform icon. Distinct from trackerHandle, which is the
+  /// scraping identifier.
+  platformId    String?    @map("platform_id")
   trackerHandle String?    @map("tracker_handle")
   discordId     String?    @map("discord_id")
   avatarUrl     String?    @map("avatar_url")
   role          MemberRole @default(member)
+  /// Cumulative career points driving the rank ladder in src/lib/ranks.ts.
+  /// Seeded with mock values until the scoring rules are defined.
+  rankPoints    Int        @default(0) @map("rank_points")
   joinedAt      DateTime?  @map("joined_at") @db.Date
   active        Boolean    @default(true)
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -79,10 +89,14 @@ model Medal {
   id          String    @id @default(uuid())
   name        String
   description String?
+  // Optional: how to earn it ("20 kills without dying").
   criteria    String?
-  // A lucide icon name or an image URL.
+  // Artwork uploaded by an admin (Fase 2: path in the Supabase Storage bucket).
+  imageUrl    String?   @map("image_url")
+  // Fallback when there is no artwork yet: a curated lucide icon name.
+  // See ICONS in src/features/clan/components/medal-emblem.tsx.
   icon        String?
-  tier        MedalTier @default(bronze)
+  tier        MedalTier @default(common)
   createdBy   String?   @map("created_by")
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 

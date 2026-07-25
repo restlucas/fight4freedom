@@ -1,33 +1,61 @@
-import { Award, Crosshair, Crown, Medal, Shield, Trophy, Users, Zap } from "lucide-react";
+import { Crosshair, Shield, Trophy, Users, Zap } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { VideoBackground } from "@/components/video-background";
 import { JoinChannels } from "@/features/clan/components/join-channels";
+import { MedalsCarousel } from "@/features/clan/components/medals-carousel";
 import { formatKd, formatNumber, formatPercent } from "@/features/clan/lib/format";
-import { getClanStats } from "@/features/clan/lib/queries";
+import { getClanStats, getMedalsCatalog } from "@/features/clan/lib/queries";
 import { FORM_URL } from "@/lib/site-config";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const stats = await getClanStats();
+  const [stats, medals] = await Promise.all([
+    getClanStats(),
+    getMedalsCatalog(),
+  ]);
 
   return (
     <>
-      {/* Hero */}
-      <section className="relative w-full">
-        <Image
-          src="/hero.avif"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover"
-        />
-        <div className="from-background/60 via-background/70 to-background absolute inset-0 bg-gradient-to-b" />
-        <div className="relative mx-auto flex max-w-4xl flex-col items-center px-4 py-28 text-center sm:py-36">
+      {/* Hero — looping in-game footage, muted and decorative. The poster below
+          is also the fallback for reduced-motion users (see VideoBackground). */}
+      {/* Full viewport minus the 4rem sticky header, so the hero fills the first
+          screen exactly instead of pushing the page 4rem past it. dvh (not vh)
+          so mobile browser chrome does not cut it off. */}
+      <section className="bg-background relative flex min-h-[calc(100dvh-4rem)] w-full overflow-hidden">
+        {/* The media fades out through a MASK instead of being covered by a
+            gradient. A gradient painted over the flat page background gets
+            dithered by the browser (pixels alternating by 1/255) and that noise
+            stopped dead at the section edge, which reads as a line under the
+            hero. Masking fades the footage itself, so the bottom of the section
+            is plain background with nothing painted over it. */}
+        <div
+          aria-hidden
+          className="absolute inset-0 [-webkit-mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)] [mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)]"
+        >
+          <Image
+            src="/background.avif"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+          <VideoBackground
+            src="/bf6-season-4-ingame.webm"
+            poster="/background.avif"
+          />
+          {/* Flat scrim for text contrast, INSIDE the mask so it fades out with
+              the footage. Left outside, it also tinted the empty bottom of the
+              section and the rounding of that blend against the plain page
+              background produced a visible step. */}
+          <div aria-hidden className="bg-background/45 absolute inset-0" />
+        </div>
+        <div className="relative z-10 mx-auto flex max-w-4xl flex-1 flex-col items-center justify-center px-4 py-20 text-center">
           <h1 className="sr-only">Fight 4 Freedom</h1>
           <p className="font-heading text-4xl font-bold tracking-tight sm:text-6xl">
             BEM-VINDO AO <span className="text-primary">F4F</span>
@@ -54,7 +82,7 @@ export default async function Home() {
               alt="Fight 4 Freedom"
               width={273}
               height={271}
-              className="mx-auto h-24 w-auto drop-shadow-lg"
+              className="mx-auto h-40 w-auto drop-shadow-lg sm:h-52"
             />
             <p className="mt-6 text-lg leading-relaxed">
               O clã <strong>[F4F] Fight 4 Freedom</strong> nasceu para construir
@@ -105,28 +133,7 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <TierCard
-              icon={<Crown className="size-7 text-violet-300" />}
-              title="Lendária"
-              description="As conquistas mais raras e prestigiadas."
-            />
-            <TierCard
-              icon={<Trophy className="size-7 text-yellow-400" />}
-              title="Ouro"
-              description="Feitos extraordinários de combate."
-            />
-            <TierCard
-              icon={<Medal className="size-7 text-zinc-300" />}
-              title="Prata"
-              description="Conquistas significativas em campo."
-            />
-            <TierCard
-              icon={<Award className="size-7 text-amber-500" />}
-              title="Bronze"
-              description="Marcos de progresso essenciais."
-            />
-          </div>
+          <MedalsCarousel medals={medals} />
 
           <div className="mt-12 text-center">
             <Button asChild size="lg" variant="outline">
@@ -205,26 +212,6 @@ function FeatureCard({
       </span>
       <h3 className="font-heading mt-4 text-2xl font-semibold">{title}</h3>
       <p className="text-muted-foreground mt-1 leading-relaxed">{description}</p>
-    </Card>
-  );
-}
-
-function TierCard({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card className="items-center p-6 text-center">
-      <span className="bg-secondary flex size-14 items-center justify-center rounded-full">
-        {icon}
-      </span>
-      <h3 className="font-heading mt-3 text-lg font-semibold">{title}</h3>
-      <p className="text-muted-foreground mt-1 text-sm">{description}</p>
     </Card>
   );
 }

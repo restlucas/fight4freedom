@@ -143,24 +143,32 @@ export function metricValue(member: RankableMember, metric: RankMetric): number 
 }
 
 /**
- * Rank members by a metric, highest first, using competition ranking so ties
- * share a rank (1, 2, 2, 4). Does not mutate the input array.
+ * Sort by a value, highest first, and attach competition ranks so ties share a
+ * rank (1, 2, 2, 4). Does not mutate the input array.
  */
-export function rankMembers<T extends RankableMember>(
-  members: T[],
-  metric: RankMetric,
+export function withCompetitionRanks<T>(
+  items: T[],
+  valueOf: (item: T) => number,
 ): Ranked<T>[] {
-  const scored = members
-    .map((m) => ({ ...m, value: metricValue(m, metric) }))
+  const scored = items
+    .map((item) => ({ ...item, value: valueOf(item) }))
     .sort((a, b) => b.value - a.value);
 
   let rank = 0;
   let previous: number | null = null;
-  return scored.map((m, index) => {
-    if (previous === null || m.value !== previous) {
+  return scored.map((item, index) => {
+    if (previous === null || item.value !== previous) {
       rank = index + 1;
-      previous = m.value;
+      previous = item.value;
     }
-    return { ...m, rank };
+    return { ...item, rank };
   });
+}
+
+/** Rank members by one of the predefined metrics, highest first. */
+export function rankMembers<T extends RankableMember>(
+  members: T[],
+  metric: RankMetric,
+): Ranked<T>[] {
+  return withCompetitionRanks(members, (m) => metricValue(m, metric));
 }

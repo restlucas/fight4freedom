@@ -41,17 +41,28 @@ type Stats = {
 type SeedMember = {
   nickname: string;
   platform: Platform;
+  /** Public id on the platform, shown on hover over the platform icon. */
+  platformId: string;
   trackerHandle: string;
   role: MemberRole;
   joinedAt: string;
   bestClass: PlayerClass;
   stats: Stats; // PLACEHOLDER numbers — see file header.
+  /**
+   * Share of the lifetime stats earned during the current month. Drives the
+   * monthly ranking, so it varies per member — otherwise the ranking would be
+   * an exact copy of the all-time kill leaderboard.
+   */
+  monthShare: number;
+  /** MOCK cumulative career points driving the rank in src/lib/ranks.ts. */
+  rankPoints: number;
 };
 
-const MEMBERS: SeedMember[] = [
+const REAL_MEMBERS: SeedMember[] = [
   {
     nickname: "RRRRRRRREST",
     platform: "ea",
+    platformId: "RRRRRRRREST",
     trackerHandle: "RRRRRRRREST",
     role: "admin",
     joinedAt: "2025-10-01",
@@ -67,9 +78,93 @@ const MEMBERS: SeedMember[] = [
       objectivesCaptured: 610,
       timePlayedMinutes: 6120,
     },
+    monthShare: 0.15,
+    // General de Divisão (12.500), partway to General de Exército (16.000).
+    rankPoints: 13_000,
   },
 ];
 
+// EXAMPLE ROSTER — placeholders so the ranking, the infinite scroll (15 per
+// page) and the sort filters have enough data to exercise. Replace with the
+// real roster from fight4freedom.com.br.
+const EXAMPLE_NICKNAMES = [
+  "Vortex", "TangoDown", "BlackWolf", "Reaper", "GhostBR", "Panzer",
+  "Falcao", "ZeusPrime", "Nomad", "Viper", "Havoc", "Sabotage",
+  "IronHand", "NightOwl", "Kraken", "Bandido", "Trovao", "Cascavel",
+  "Predador", "Sentinela", "Fantasma", "Tempestade", "Aguia", "Lobo",
+  "Escorpiao", "Chumbo", "Rajada", "Coyote", "Meteoro",
+];
+
+const PLATFORMS: Platform[] = ["ea", "xbox", "psn"];
+const CLASSES: PlayerClass[] = ["assault", "engineer", "support", "recon"];
+
+/** Deterministic PRNG so every reseed produces the same board. */
+function pseudoRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+/** Plausible platform id per platform, so the hover has something real to show. */
+function examplePlatformId(
+  nickname: string,
+  platform: Platform,
+  index: number,
+): string {
+  switch (platform) {
+    case "ea":
+      return `${nickname}BR`;
+    case "xbox":
+      return `${nickname} ${100 + index}`;
+    case "psn":
+      return `${nickname}_${index}`;
+  }
+}
+
+function exampleMember(nickname: string, index: number): SeedMember {
+  const random = pseudoRandom(index + 1);
+  const skill = 0.4 + random() * 1.6; // overall volume multiplier
+  const accuracy = 0.8 + random() * 1.1; // kills per death
+  const matches = Math.round(90 + random() * 420);
+  const kills = Math.round(matches * (6 + random() * 9) * accuracy);
+  const platform = PLATFORMS[index % PLATFORMS.length];
+
+  return {
+    nickname,
+    platform,
+    platformId: examplePlatformId(nickname, platform, index),
+    trackerHandle: nickname,
+    role: index % 9 === 0 ? "officer" : "member",
+    joinedAt: `2025-1${(index % 2) + 1}-${String((index % 27) + 1).padStart(2, "0")}`,
+    bestClass: CLASSES[index % CLASSES.length],
+    stats: {
+      kills,
+      deaths: Math.round(kills / accuracy),
+      wins: Math.round(matches * (0.4 + random() * 0.25)),
+      losses: Math.round(matches * (0.35 + random() * 0.2)),
+      assists: Math.round(kills * (0.25 + random() * 0.3)),
+      revives: Math.round(matches * (0.6 + random() * 2.4) * skill),
+      headshots: Math.round(kills * (0.12 + random() * 0.18)),
+      objectivesCaptured: Math.round(matches * (0.5 + random() * 1.8)),
+      timePlayedMinutes: Math.round(matches * (14 + random() * 10)),
+    },
+    // 2% to 32% of the lifetime numbers happened this month.
+    monthShare: 0.02 + random() * 0.3,
+    // MOCK: curved so the roster spreads across the whole ladder, from Soldado
+    // up to the generals, instead of bunching in the middle.
+    rankPoints: Math.round(20_500 * random() ** 1.6),
+  };
+}
+
+const MEMBERS: SeedMember[] = [
+  ...REAL_MEMBERS,
+  ...EXAMPLE_NICKNAMES.map(exampleMember),
+];
+
+// Public-facing copy is pt-BR (the vitrine's language); `icon` is a curated
+// lucide name used as fallback until an admin uploads artwork (`imageUrl`).
 const MEDALS: {
   name: string;
   description: string;
@@ -77,16 +172,36 @@ const MEDALS: {
   icon: string;
   tier: MedalTier;
 }[] = [
-  { name: "Sharpshooter", description: "Consistent high-accuracy fragging across a full session.", criteria: "20 kills without dying in a single match", icon: "crosshair", tier: "gold" },
-  { name: "Anchor", description: "Held the objective when it mattered most.", criteria: "Top objective score in 5 ranked wins", icon: "shield", tier: "silver" },
-  { name: "First Blood", description: "Set the pace from the opening seconds.", criteria: "First kill of the match, 10 times", icon: "swords", tier: "bronze" },
-  { name: "Clutch King", description: "Turned a lost round into a win, solo.", criteria: "Win a 1vX (X >= 3) clutch", icon: "crown", tier: "legendary" },
+  { name: "Sharpshooter", description: "Precisão cirúrgica do começo ao fim da sessão.", criteria: "20 kills sem morrer em uma única partida", icon: "crosshair", tier: "legendary" },
+  { name: "Anchor", description: "Segurou o objetivo na hora em que mais importava.", criteria: "Maior pontuação de objetivo em 5 vitórias", icon: "shield", tier: "rare" },
+  { name: "First Blood", description: "Ditou o ritmo desde os primeiros segundos.", criteria: "Primeira kill da partida, 10 vezes", icon: "swords", tier: "common" },
+  { name: "Clutch King", description: "Virou um round perdido sozinho.", criteria: "Vencer um clutch 1vX (X >= 3)", icon: "crown", tier: "legendary" },
+  { name: "Operação Liberdade", description: "Campeão do torneio interno do clã.", criteria: "Vencer um evento oficial do Fight4Freedom", icon: "trophy", tier: "special" },
+  { name: "Médico de Guerra", description: "Manteve o esquadrão de pé sob fogo.", criteria: "50 revives em uma semana", icon: "star", tier: "rare" },
 ];
 
 // [memberNickname, medalName]
 const AWARDS: [string, string][] = [
+  // Six medals on one member, so the listing exercises the "+N" overflow
+  // (the stack previews five).
   ["RRRRRRRREST", "Sharpshooter"],
   ["RRRRRRRREST", "Clutch King"],
+  ["RRRRRRRREST", "Operação Liberdade"],
+  ["RRRRRRRREST", "Anchor"],
+  ["RRRRRRRREST", "First Blood"],
+  ["RRRRRRRREST", "Médico de Guerra"],
+  // Spread across the example roster so the catalog shows avatar stacks.
+  ["Vortex", "Sharpshooter"],
+  ["Reaper", "Sharpshooter"],
+  ["GhostBR", "Sharpshooter"],
+  ["Panzer", "Sharpshooter"],
+  ["Falcao", "Sharpshooter"],
+  ["Viper", "Sharpshooter"],
+  ["Vortex", "Anchor"],
+  ["Kraken", "Anchor"],
+  ["Trovao", "First Blood"],
+  ["Predador", "First Blood"],
+  ["Vortex", "Operação Liberdade"],
 ];
 
 function scaleStats(stats: Stats, factor: number): Stats {
@@ -111,9 +226,11 @@ async function seed() {
     data: MEMBERS.map((m) => ({
       nickname: m.nickname,
       platform: m.platform,
+      platformId: m.platformId,
       trackerHandle: m.trackerHandle,
       role: m.role,
       joinedAt: new Date(m.joinedAt),
+      rankPoints: m.rankPoints,
     })),
   });
   const memberByNick = new Map(members.map((m) => [m.nickname, m]));
@@ -123,11 +240,15 @@ async function seed() {
   const medalByName = new Map(medals.map((m) => [m.name, m]));
 
   console.log("Inserting stat snapshots...");
+  // Three snapshots per member. The month delta (MONTH_START -> NOW) is what the
+  // ranking scores, and each member's monthShare makes it different from their
+  // lifetime totals.
   const snapshots = MEMBERS.flatMap((m) => {
     const id = memberByNick.get(m.nickname)!.id;
+    const startOfMonth = 1 - m.monthShare;
     return [
-      { memberId: id, capturedAt: PREV_MONTH, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, 0.65) },
-      { memberId: id, capturedAt: MONTH_START, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, 0.85) },
+      { memberId: id, capturedAt: PREV_MONTH, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, startOfMonth * 0.8) },
+      { memberId: id, capturedAt: MONTH_START, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, startOfMonth) },
       { memberId: id, capturedAt: NOW, source: MANUAL, bestClass: m.bestClass, ...m.stats },
     ];
   });
@@ -141,7 +262,7 @@ async function seed() {
     })),
   });
 
-  console.log(`Seed complete: ${members.length} member, ${medals.length} medals, ${snapshots.length} snapshots.`);
+  console.log(`Seed complete: ${members.length} members, ${medals.length} medals, ${snapshots.length} snapshots.`);
 }
 
 seed()

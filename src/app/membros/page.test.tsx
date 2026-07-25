@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+import { render, screen } from "@/test-utils";
 
 vi.mock("@/features/clan/lib/queries", () => ({
   getMembersOverview: vi.fn().mockResolvedValue([
@@ -8,8 +9,19 @@ vi.mock("@/features/clan/lib/queries", () => ({
       nickname: "RRRRRRRREST",
       platform: "ea",
       role: "admin",
+      platformId: "RRRRRRRREST",
       avatarUrl: null,
+      rankPoints: 13_000,
       medalCount: 2,
+      medals: [
+        {
+          id: "md1",
+          name: "Sharpshooter",
+          tier: "legendary",
+          icon: "crosshair",
+          imageUrl: null,
+        },
+      ],
       bestClass: "assault",
       totals: {
         kills: 200,

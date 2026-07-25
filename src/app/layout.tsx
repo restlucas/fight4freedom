@@ -4,6 +4,7 @@ import "./globals.css";
 
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 // BF6 UI type is proprietary (BF Body is based on the open-source Barlow), so we
 // use Barlow for body/UI and Barlow Condensed for the technical, condensed
@@ -50,9 +51,13 @@ export default function RootLayout({
       className={`${fontSans.variable} ${fontHeading.variable} ${fontMono.variable} dark`}
     >
       <body className="flex min-h-dvh flex-col font-sans antialiased">
-        <SiteHeader />
-        <div className="flex-1">{children}</div>
-        <SiteFooter />
+        {/* Shorter than the 700ms default: these tooltips reveal reference data
+            (platform ids), so waiting feels broken. */}
+        <TooltipProvider delayDuration={200}>
+          <SiteHeader />
+          <div className="flex-1">{children}</div>
+          <SiteFooter />
+        </TooltipProvider>
       </body>
     </html>
   );

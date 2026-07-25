@@ -19,6 +19,16 @@ import { FORM_URL, NAV_ITEMS } from "@/lib/site-config";
 export function SiteHeader() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [lastPath, setLastPath] = useState(pathname);
+
+  // The onClick below already closes the drawer, but a slow first navigation can
+  // leave it lingering. Resetting during render (React's documented pattern for
+  // adjusting state when a prop changes) guarantees it never survives a route
+  // change, without an effect and the cascading render it would cause.
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
+    setOpen(false);
+  }
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -68,7 +78,14 @@ export function SiteHeader() {
                 <Menu />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-72">
+            <SheetContent
+              side="right"
+              className="w-72"
+              // Radix returns focus to the trigger when the drawer closes. On
+              // touch, if the navigation is still pending, that focused trigger
+              // can pick up the tail of the same tap and reopen the drawer.
+              onCloseAutoFocus={(event) => event.preventDefault()}
+            >
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <nav className="mt-10 flex flex-col gap-1 px-2">
                 {NAV_ITEMS.map((item) => (

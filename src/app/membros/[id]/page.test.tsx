@@ -1,14 +1,25 @@
-import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { render, screen } from "@/test-utils";
+
 vi.mock("@/features/clan/lib/queries", () => ({
+  // This member leads the clan in kills, so the Kills tile gets a crown.
+  getStatLeaders: vi.fn().mockResolvedValue({
+    kd: [],
+    kills: ["m1"],
+    matches: [],
+    hours: [],
+  }),
   getMemberProfile: vi.fn().mockResolvedValue({
     id: "m1",
     nickname: "RRRRRRRREST",
     platform: "ea",
+    platformId: "RRRRRRRREST",
     role: "admin",
     avatarUrl: null,
-    joinedAt: new Date("2025-10-01T00:00:00Z"),
+    rankPoints: 13_000, // General de Divisão, 3.000 short of the next rank
+    // The data layer serializes dates as ISO strings (the cache is JSON).
+    joinedAt: "2025-10-01T00:00:00.000Z",
     bestClass: "assault",
     medalCount: 1,
     totals: {
@@ -26,11 +37,12 @@ vi.mock("@/features/clan/lib/queries", () => ({
       {
         id: "md1",
         name: "Sharpshooter",
-        tier: "gold",
+        tier: "legendary",
         icon: "crosshair",
+        imageUrl: null,
         criteria: "20 kills without dying",
         description: null,
-        awardedAt: new Date("2026-07-01T00:00:00Z"),
+        awardedAt: "2026-07-01T00:00:00.000Z",
       },
     ],
     progression: [],
@@ -50,5 +62,32 @@ describe("MemberProfilePage", () => {
     // Best class shows in the header badge and in the stats grid.
     expect(screen.getAllByText("Assalto").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/1 de outubro de 2025/)).toBeInTheDocument();
+  });
+
+  it("shows the rank card with a progress bar and no points on its face", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+    expect(screen.getByText("General de Divisão")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", {
+        name: "Progresso para General de Exército",
+      }),
+    ).toBeInTheDocument();
+    // The numbers only show on hover, inside the hover card.
+    expect(screen.queryByText(/13\.000/)).not.toBeInTheDocument();
+  });
+
+  it("shows the platform icon with the platform id", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+    expect(
+      screen.getByLabelText(/Plataforma: EA · RRRRRRRREST/),
+    ).toBeInTheDocument();
+  });
+
+  it("crowns the stats the member leads in the clan", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+    expect(screen.getByLabelText("Líder do clã em Kills")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Líder do clã em Partidas"),
+    ).not.toBeInTheDocument();
   });
 });
