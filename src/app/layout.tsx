@@ -3,6 +3,7 @@ import { Barlow, Barlow_Condensed, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { publicEnv } from "@/lib/env";
 
 // BF6 UI type is proprietary (BF Body is based on the open-source Barlow), so we
 // use Barlow for body/UI and Barlow Condensed for the technical, condensed
@@ -26,10 +27,8 @@ const fontMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
 export const metadata: Metadata = {
-  metadataBase: new URL(appUrl),
+  metadataBase: new URL(publicEnv.appUrl),
   title: {
     default: "Fight4Freedom — Clã de Battlefield 6",
     template: "%s | Fight4Freedom",

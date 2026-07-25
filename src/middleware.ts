@@ -8,6 +8,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { publicEnv } from "@/lib/env";
+
 function isAdminPath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
@@ -22,33 +24,34 @@ function redirectToLogin(request: NextRequest): NextResponse {
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
   // Auth not configured (or a build with no secrets): nobody can be signed in,
   // so treat every visitor as anonymous — /admin still has to be closed.
-  if (!url || !anonKey) {
+  if (!publicEnv.supabaseConfigured) {
     return isAdminPath(request.nextUrl.pathname)
       ? redirectToLogin(request)
       : response;
   }
 
-  const supabase = createServerClient(url, anonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value } of cookiesToSet) {
-          request.cookies.set(name, value);
-        }
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
+  const supabase = createServerClient(
+    publicEnv.supabaseUrl,
+    publicEnv.supabaseAnonKey,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          for (const { name, value } of cookiesToSet) {
+            request.cookies.set(name, value);
+          }
+          response = NextResponse.next({ request });
+          for (const { name, value, options } of cookiesToSet) {
+            response.cookies.set(name, value, options);
+          }
+        },
       },
     },
-  });
+  );
 
   // Touching getUser() is what refreshes an expiring token.
   const {

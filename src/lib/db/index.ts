@@ -6,12 +6,18 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
+import { serverEnv } from "@/lib/env";
+
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
 function createClient(): PrismaClient {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  // Read through serverEnv so a missing DATABASE_URL fails with the variable's
+  // name. Passing process.env.DATABASE_URL straight in let `undefined` through,
+  // and pg then silently tried localhost — which in production surfaced as an
+  // opaque "error in the Server Components render" instead of a config problem.
+  const adapter = new PrismaPg({ connectionString: serverEnv.databaseUrl });
   return new PrismaClient({ adapter });
 }
 
