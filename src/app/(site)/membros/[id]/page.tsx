@@ -49,7 +49,9 @@ export default async function MemberProfilePage({ params }: Params) {
   return (
     <>
       {/* Page background */}
-      <div aria-hidden className="fixed inset-0 -z-10">
+      {/* w-screen: see the same background in /membros — 100vw does not change when
+          an overlay removes the scrollbar. */}
+      <div aria-hidden className="fixed inset-y-0 left-0 -z-10 w-screen">
         <Image
           src="/bf6-season-4.avif"
           alt=""

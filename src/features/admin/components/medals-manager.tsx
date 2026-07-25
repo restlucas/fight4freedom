@@ -1,11 +1,20 @@
 "use client";
 
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import type { MedalTier } from "@prisma/client";
+import {
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -25,15 +34,48 @@ import {
 } from "@/components/ui/table";
 import { MedalEmblem } from "@/features/clan/components/medal-emblem";
 import { MedalTierChip } from "@/features/clan/components/medal-tier-chip";
+import { normalizeSearch, TIER_LABEL } from "@/features/clan/lib/format";
+import { usePersistedState } from "@/hooks/use-persisted-state";
+import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
 
 import { deleteMedalAction } from "@/features/admin/lib/medal-actions";
 import type { AdminMedal } from "@/features/admin/lib/queries";
+import { MEDAL_TIERS } from "@/features/admin/lib/schemas";
+import {
+  RESPONSIVE_TABLE,
+  STICKY_HEAD,
+  TABLE_FRAME,
+} from "@/features/admin/lib/table-styles";
 import { MedalForm } from "./medal-form";
+import {
+  MultiSelectFilter,
+  type FilterOption,
+} from "./multi-select-filter";
+import { TablePagination } from "./table-pagination";
 
 interface MedalsManagerProps {
   medals: AdminMedal[];
   storageEnabled: boolean;
 }
+
+const TIER_OPTIONS: readonly FilterOption<MedalTier>[] = MEDAL_TIERS.map(
+  (tier) => ({ value: tier, label: TIER_LABEL[tier] }),
+);
+
+/** Off keeps the catalog order (rarest tier first), which is the default view. */
+type AwardsSort = "off" | "desc" | "asc";
+
+const SORT_LABEL: Record<AwardsSort, string> = {
+  off: "Ordenar por conquistas",
+  desc: "Mais conquistadas primeiro",
+  asc: "Menos conquistadas primeiro",
+};
+
+const NEXT_SORT: Record<AwardsSort, AwardsSort> = {
+  off: "desc",
+  desc: "asc",
+  asc: "off",
+};
 
 function DeleteDialog({
   medal,
@@ -104,8 +146,37 @@ function DeleteDialog({
 
 export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
   const router = useRouter();
+  const [query, setQuery] = useState("");
+  const [tiers, setTiers] = useState<MedalTier[]>([]);
+  const [sort, setSort] = useState<AwardsSort>("off");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = usePersistedState<PageSize>(
+    "admin/medals-page-size",
+    25,
+    isPageSize,
+  );
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminMedal | null>(null);
+
+  const q = normalizeSearch(query);
+  const filtered = medals.filter(
+    (medal) =>
+      (q === "" || normalizeSearch(medal.name).includes(q)) &&
+      // Empty selection means "no filter", not "match nothing".
+      (tiers.length === 0 || tiers.includes(medal.tier)),
+  );
+
+  // Copy before sorting: `filtered` may be the prop array itself when no filter is
+  // active, and sorting in place would mutate what the server handed us.
+  const sorted =
+    sort === "off"
+      ? filtered
+      : [...filtered].sort((a, b) =>
+          sort === "desc" ? b.holders - a.holders : a.holders - b.holders,
+        );
+
+  const info = paginate(sorted.length, page, pageSize);
+  const visible = sorted.slice(info.start, info.end);
 
   function done() {
     setCreating(false);
@@ -113,9 +184,35 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
     router.refresh();
   }
 
+  /** Any filter change sends the user back to the first page of the new result. */
+  function resetTo<T>(apply: (value: T) => void) {
+    return (value: T) => {
+      apply(value);
+      setPage(1);
+    };
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        {/* Search and filter on one row — see the same block in members-table.tsx. */}
+        <div className="flex items-center gap-2">
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => resetTo(setQuery)(e.target.value)}
+            placeholder="Buscar medalha..."
+            aria-label="Buscar medalha"
+            className="h-8 w-40 sm:w-56"
+          />
+          <MultiSelectFilter
+            label="Raridade"
+            options={TIER_OPTIONS}
+            selected={tiers}
+            onChange={resetTo(setTiers)}
+          />
+        </div>
+
         <Dialog open={creating} onOpenChange={setCreating}>
           <DialogTrigger asChild>
             <Button className="gap-1.5">
@@ -136,30 +233,62 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
         </Dialog>
       </div>
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
+      <div className={TABLE_FRAME}>
+        <Table className={RESPONSIVE_TABLE}>
+          <TableHeader className={STICKY_HEAD}>
             <TableRow>
-              <TableHead>Medalha</TableHead>
-              <TableHead className="hidden md:table-cell">
+              <TableHead className="md:w-[34%]">Medalha</TableHead>
+              <TableHead className="hidden md:table-cell md:w-[34%]">
                 Como conquistar
               </TableHead>
-              <TableHead>Conquistas</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
+              <TableHead
+                className="md:w-[16%]"
+                // Real table semantics, so screen readers announce the order
+                // instead of relying on the icon.
+                aria-sort={
+                  sort === "desc"
+                    ? "descending"
+                    : sort === "asc"
+                      ? "ascending"
+                      : "none"
+                }
+              >
+                {/* The sort lives on the column it sorts, so "who earned the most"
+                    is one click away from where the numbers are. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSort(NEXT_SORT[sort])}
+                  title={SORT_LABEL[NEXT_SORT[sort]]}
+                  className="-ml-2 h-7 gap-1.5 px-2"
+                >
+                  Conquistas
+                  {sort === "desc" ? (
+                    <ArrowDown className="size-3.5" />
+                  ) : sort === "asc" ? (
+                    <ArrowUp className="size-3.5" />
+                  ) : (
+                    <ArrowDownUp className="size-3.5 opacity-50" />
+                  )}
+                </Button>
+              </TableHead>
+              <TableHead className="md:w-[16%]">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {medals.length === 0 ? (
+            {visible.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={4}
                   className="text-muted-foreground h-24 text-center"
                 >
-                  Nenhuma medalha cadastrada.
+                  {medals.length === 0
+                    ? "Nenhuma medalha cadastrada."
+                    : "Nenhuma medalha encontrada com esses filtros."}
                 </TableCell>
               </TableRow>
             ) : (
-              medals.map((medal) => (
+              visible.map((medal) => (
                 <TableRow key={medal.id}>
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -192,12 +321,13 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
                   </TableCell>
 
                   <TableCell>
-                    <div className="flex items-center justify-end gap-1">
+                    {/* Left-aligned, under the "Ações" header. */}
+                    <div className="flex items-center gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setEditing(medal)}
-                        className="gap-1.5"
+                        className="w-24 justify-start gap-1.5"
                       >
                         <Pencil className="size-3.5" />
                         <span className="hidden sm:inline">Editar</span>
@@ -211,6 +341,14 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
           </TableBody>
         </Table>
       </div>
+
+      <TablePagination
+        info={info}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={resetTo(setPageSize)}
+        itemLabel="medalhas"
+      />
 
       <Dialog
         open={editing !== null}

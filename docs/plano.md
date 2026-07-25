@@ -16,10 +16,15 @@ Base do projeto: o template `nextjs-starter` (Next 16 App Router + React 19 + TS
 Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo).
 
 ### Decisões firmadas com o usuário
-- **Fonte de dados:** híbrido — scraper (tracker.gg) automatizado + edição manual, atrás de `StatsProvider`.
+- **Fonte de dados:** stats vêm **só do scraper** (tracker.gg), atrás de `StatsProvider`.
+  A tela de edição manual foi descartada (2026-07-25): manter 6 campos × ~30 membros à mão não se
+  sustenta. O valor `manual` do enum `StatSource` e a interface `StatsProvider` **continuam no
+  schema** — custam zero e deixam a porta aberta se o spike da Fase 3 mostrar que o scraping não
+  é viável. Ver Backlog.
 - **MVP (Fase 1):** vitrine pública com dados semeados manualmente. Admin e scraper vêm depois.
 - **Auth admin:** Discord OAuth (via Supabase Auth).
 - **Scraping:** todos os membros a cada 1h, via worker dedicado (Railway/Fly).
+- **Melhores jogadas (vitrine + upload):** movido para o Backlog (2026-07-25), sem fase definida.
 - Sem pressão de prazo; entregue em fases ("o que der pra fazer").
 
 ### Riscos assumidos (scraping do tracker.gg)
@@ -29,46 +34,84 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ---
 
-## Status (atualizado em 2026-07-24)
+## Status (atualizado em 2026-07-25)
 
-**Fase 0 em andamento.** Concluído:
-- [x] Projeto criado em `C:\dev\fight4freedom` a partir do template `nextjs-starter` (git clone).
-- [x] Git reiniciado do zero (branch `main`, sem remote — desvinculado do template).
-- [x] Identidade ajustada: `package.json` (nome `fight4freedom`), `layout.tsx` (metadata do clã),
-      `page.tsx` (home provisória), `README.md`, `.env.example` (vars do Supabase comentadas).
-- [x] Testes atualizados (`page.test.tsx`, `home.spec.ts`) para o novo título.
-- [x] `pnpm install` + baseline verde: type-check, lint, test e build.
+**Fase 2 em andamento** (Fases 0 e 1 entregues).
 
-Concluído (continuação):
+### Fase 0 — Fundação: concluída
+- [x] Projeto criado a partir do template `nextjs-starter`; git reiniciado do zero (branch `main`).
+- [x] Identidade ajustada: `package.json`, `layout.tsx` (metadata do clã), `README.md`, `.env.example`.
 - [x] `src/lib/env.ts` (ponto único de leitura; getters lazy para vars server-only).
-- [x] Supabase + **Prisma 7**: `prisma/schema.prisma` (member, medal, memberMedal, statSnapshot,
-      highlight, profile + enums), `prisma.config.ts` (URLs fora do schema — mudança do Prisma 7),
-      `src/lib/db/index.ts` (client singleton com driver adapter `@prisma/adapter-pg` no pooler),
-      scripts `db:push`/`db:generate`/`db:studio`/`db:seed` (via `dotenv-cli` p/ ler `.env.local`).
-      Dependências: `@prisma/client`, `@prisma/adapter-pg`, `prisma`, `tsx`, `dotenv-cli`.
+- [x] Supabase + **Prisma 7**: `prisma/schema.prisma`, `prisma.config.ts` (URLs fora do schema —
+      mudança do Prisma 7), `src/lib/db/index.ts` (client singleton com driver adapter
+      `@prisma/adapter-pg` no pooler), scripts `db:push`/`db:generate`/`db:studio`/`db:seed`.
       **Nota:** começamos com Drizzle, mas o `drizzle-kit push` tem um bug de introspecção contra o
       Postgres 17 do Supabase (lê CHECKs dos schemas `auth`/`realtime` e quebra). Trocamos por Prisma.
 - [x] Duas URLs no `.env.local`: `DATABASE_URL` (pooler 6543 + `pgbouncer=true`, runtime) e
-      `DIRECT_URL` (session pooler 5432, usado pelo `db push`). `pnpm db:push` aplicou as tabelas.
-- [x] `src/lib/db/seed.ts` (Prisma) com 1 membro real (RRRRRRRREST, admin) + 6 de EXEMPLO,
-      4 medalhas, 6 atribuições, 21 snapshots em 3 datas (ranking "mês" vs "geral"), 3 highlights.
-- [x] Branding BF6 em `src/app/globals.css` (paleta azul `#0084C9` + superfícies `#242B2F`/`#2F383E`,
-      dark por padrão, light pronto) e fontes Barlow + Barlow Condensed em `layout.tsx`.
-- [x] Baseline verde após as mudanças: type-check, lint e build.
+      `DIRECT_URL` (session pooler 5432, usado pelo `db push`).
+- [x] `src/lib/db/seed.ts` com 1 membro real (RRRRRRRREST, admin) + 6 de EXEMPLO, 4 medalhas,
+      6 atribuições, 21 snapshots em 3 datas, 3 highlights.
+- [x] Branding BF6 em `globals.css` (azul `#0084C9` + superfícies `#242B2F`/`#2F383E`, dark por
+      padrão) e fontes Barlow + Barlow Condensed.
 
-Pendente na Fase 0:
+Pontas soltas da Fase 0 (não bloqueiam nada):
 - [ ] Substituir o roster de exemplo do seed pela lista real de membros do `fight4freedom.com.br`.
 - [ ] Atualizar o CI (`.github/workflows/ci.yml`) para o fluxo do Prisma (`prisma generate` roda no
-      `postinstall`; conferir se precisa de `DATABASE_URL`/`DIRECT_URL` como secrets quando a Fase 1
-      passar a ler o banco no build).
-- [ ] (Quando quiser) repo remoto `restlucas/fight4freedom` + commit inicial.
+      `postinstall`; conferir se precisa de `DATABASE_URL`/`DIRECT_URL` como secrets).
+- [ ] (Quando quiser) repo remoto `restlucas/fight4freedom`.
+
+### Fase 1 — Vitrine pública: concluída
+- [x] `/` home BF6 (hero com vídeo, destaques, canais do Discord), header por classe e footer.
+- [x] `/membros` + `/membros/[id]` com stats, patentes, medalhas e coroa do líder por estatística.
+- [x] `/medalhas` catálogo com tiers, carrossel e agrupamento.
+- [x] `/ranking` por pontos do mês, com contador de temporada, busca e scroll infinito
+      (`GET /api/ranking`); lógica pura em `src/lib/stats/` e `src/features/clan/lib/ranking.ts`.
+- [x] Skeletons por rota, cache (`src/lib/cache.ts`) e testes unitários da lógica derivada.
+- [ ] `/melhores-jogadas` é um placeholder "Em breve" — a rota existe e está linkada em
+      `src/lib/site-config.ts`, mas a feature foi movida para o Backlog.
+
+### Fase 2 — Auth + painel: concluída
+- [x] Supabase Auth com Discord OAuth, fluxo de convite por token (`/entrar`, `/convite/[token]`),
+      `middleware.ts` protegendo `/admin`, tabela `profile` + `requireAdmin()`.
+- [x] Avatar do membro importado do Discord no callback do OAuth (`src/app/auth/callback/route.ts`),
+      sem sobrescrever avatar já definido; fallback `public/member-default.png`.
+- [x] Painel `/admin` com sidebar, visão geral, CRUD de membros e emissão de convites.
+- [x] CRUD de medalhas com upload de arte: validação de bytes, re-encode para WebP com `sharp`
+      (máx. 512px), nome de arquivo gerado no servidor, bucket `F4F-Medals` no Supabase Storage.
+      **Armadilha resolvida (2026-07-25):** o upload devolvia 500 com
+      `ERR_DLOPEN_FAILED: error: 127` ao carregar o `.node` do sharp. Causa: **duas** cópias de sharp
+      no processo — o Next traz a sua (opcional, `^0.34.5`, para o otimizador de imagens) e o projeto
+      pedia `^0.35.3`; o segundo libvips carregado no mesmo processo não acha os símbolos. Correção:
+      `sharp` alinhado em `^0.34.5` + `pnpm.overrides: { "sharp": "$sharp" }` no `package.json`, que
+      colapsa a árvore para uma instância só. **Ao subir a versão do Next, conferir a faixa de sharp
+      que ele pede** e mover a nossa junto, senão o 500 volta.
+- [x] **Atribuir/remover medalhas a membros:** diálogo por membro em `/admin/membros` com as
+      conquistadas (data + nota interna + remover) e a concessão (medalha + nota opcional).
+      Actions em `award-actions.ts`: concessão é *upsert* na chave `(memberId, medalId)` — reconceder
+      corrige a nota sem quebrar no índice único e preserva o `awardedAt` original; revogação usa
+      `deleteMany` para não explodir numa corrida entre dois admins. Ambas invalidam as tags
+      `medals` **e** `members`, porque catálogo, listagem e perfil leem essa junção.
+      Novo tile "Concessões" na visão geral.
+- [x] **Listagens do painel (2026-07-25):** busca, filtros multiselect (cargo/plataforma em
+      membros, raridade em medalhas), ordenação por conquistas no catálogo, paginação com tamanho
+      de página lembrado em localStorage e header sticky. Peças compartilhadas: `src/lib/storage.ts`
+      (namespace `@fight4freedom/`, regra no CLAUDE.md), `src/hooks/use-persisted-state.ts`
+      (`useSyncExternalStore`, hidratação segura), `src/lib/pagination.ts` (puro, testado) e
+      `src/features/admin/lib/table-styles.ts` — este último documenta por que o wrapper do
+      `<Table>` do shadcn precisa ser neutralizado de fora (ele força `overflow-x-auto`, que criava
+      scroll horizontal no desktop e impedia o sticky).
+
+Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melhores jogadas.
+
+**Próximo passo:** Fase 3 — começar pelo spike do tracker.gg (ver Observações), não pelo worker.
 
 ---
 
 ## Stack a adicionar sobre o nextjs-starter
 
 Instalar por projeto (o starter não traz nada disso):
-- **Supabase**: Postgres + Auth (Discord OAuth) + **Storage** (vídeos de melhores jogadas).
+- **Supabase**: Postgres + Auth (Discord OAuth) + **Storage** (arte das medalhas; vídeos quando
+  melhores jogadas sair do Backlog).
 - **Prisma 7** (`@prisma/client` + `@prisma/adapter-pg` + `prisma`): schema em
   `prisma/schema.prisma`, aplicado com `pnpm db:push` (schema-first, sem histórico de migrations).
   URLs no `prisma.config.ts`; client com driver adapter em `src/lib/db/index.ts`.
@@ -111,7 +154,7 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
   `timePlayedMinutes` (todos int), `extra` (jsonb, para métricas extras sem migração).
   K/D e win-rate são **derivados** (não armazenados). "Este mês" = último snapshot menos o
   snapshot mais antigo do mês (via `date-fns`).
-- **`highlight`** (melhores jogadas): `id`, `title`, `description` (nullable),
+- **`highlight`** (melhores jogadas — **tabela criada, feature no Backlog**): `id`, `title`, `description` (nullable),
   `memberId` (FK, nullable — de quem é a jogada), `videoPath` (caminho no bucket Storage),
   `thumbnailPath` (nullable), `durationSeconds` (int, validado ≤ 60), `playedAt` (date — base
   para filtrar por semana/mês), `featured` (bool default false), `createdBy`, `createdAt`.
@@ -128,7 +171,8 @@ maior score do mês), a partir de `statSnapshot`.
 Isola a origem para permitir troca sem tocar no app:
 - `provider.ts`: interface `StatsProvider { fetchMemberStats(handle): Promise<RawStats> }` e
   o tipo `RawStats` (kills, deaths, matchesPlayed, wins, score, timePlayedMinutes, extra).
-- `manual-provider.ts`: implementação trivial (não busca nada externo; snapshots vêm do painel).
+- `manual-provider.ts`: implementação trivial (não busca nada externo). Sem tela de edição manual,
+  serve hoje como fallback/no-op — mantido porque é a rede de segurança se o scraping não vingar.
 - `tracker-scraper-provider.ts` (Fase 3): implementação Playwright contra o tracker.gg,
   **usada só pelo script de scraping**, nunca importada no bundle da web app.
 - `snapshots.ts`: funções **puras** e testáveis — `computeKd`, `computeWinRate`,
@@ -165,31 +209,28 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
   e serão definidos com o clã. Sem toggle "mês vs geral": o acumulado já vive em `/membros`,
   que ordena por K/D, kills, partidas e horas (crescente/decrescente) e **coroa o líder** de
   cada uma dessas quatro estatísticas onde ela aparecer (derivado em query, nada persistido).
-- `/melhores-jogadas` — **highlights em vídeo**: grade de clipes curtos (≤ 1 min) com player,
-  título, autor (membro) e data. Filtro **por semana / por mês** (deriva de `playedAt` com
-  `date-fns`). Vídeo servido do Supabase Storage; destaque para os `featured`. Na Fase 1
-  populado pelo seed; upload real chega na Fase 2.
+- `/melhores-jogadas` — **movido para o Backlog** (2026-07-25). A rota existe como placeholder
+  "Em breve" e continua no menu; decidir se some do menu até a feature ser construída.
 - Componentes reutilizáveis (`src/components/` ou `src/features/clan/`): `MemberCard`,
   `MedalBadge`, `StatTile`, `RankingTable`. Escalar para `src/features/<domínio>/` quando um
   domínio passar de 3 arquivos (regra do starter).
-- Testes: unit (Vitest) na lógica de ranking/derivados; E2E (Playwright) navegando as 6 páginas.
+- Testes: unit (Vitest) na lógica de ranking/derivados; E2E (Playwright) navegando as páginas.
 
 ### Fase 2 — Auth + Painel administrativo
-- Supabase Auth com **Discord OAuth**; `middleware.ts` protegendo `/admin`;
-  tabela `profile` + guard `requireAdmin()` (análogo ao `requireUserId()` do Routina).
-- **Avatar do membro via Discord:** importar a foto de perfil do Discord (do usuário logado /
-  do `discordId` do membro) e gravar em `member.avatarUrl`. Enquanto não houver imagem, a UI usa
-  o fallback `public/member-default.png` (já aplicado em `MemberCard` e no perfil na Fase 1).
+- [x] Supabase Auth com **Discord OAuth**; `middleware.ts` protegendo `/admin`;
+      tabela `profile` + guard `requireAdmin()` (análogo ao `requireUserId()` do Routina).
+- [x] **Avatar do membro via Discord:** a foto vem do `user_metadata.avatar_url` no callback do
+      OAuth e é gravada em `member.avatarUrl` sem sobrescrever avatar já preenchido. Fallback
+      `public/member-default.png`.
 - `/admin` (dashboard) e sub-rotas:
-  - Cadastrar/editar membros (form Zod + react-hook-form).
-  - Criar/editar medalhas.
-  - Atribuir/remover medalhas a membros.
-  - Editar stats manualmente (cria `statSnapshot` com `source: manual`) — a parte "manual" do híbrido.
-  - **Upload de melhores jogadas:** enviar vídeo (≤ 1 min) para o bucket `highlights` do
-    Supabase Storage e criar o registro `highlight` (título, membro, `playedAt`, `featured`).
-    Validar duração e tamanho no cliente e no servidor; opcional gerar thumbnail.
-- Server Actions em `src/server/actions/` (`member.ts`, `medal.ts`, `stats.ts`, `highlight.ts`)
+  - [x] Cadastrar/editar membros (form Zod + react-hook-form) e emitir convites.
+  - [x] Criar/editar medalhas, com upload de arte para o Storage.
+  - [x] **Atribuir/remover medalhas a membros** (`memberMedal`): concessão com `awardedAt`,
+        `awardedBy` e `note` opcional; revogação; reflexo imediato em `/medalhas`, `/membros`
+        e no perfil do membro.
+- Actions do domínio admin em `src/features/admin/lib/` (`actions.ts`, `medal-actions.ts`, ...)
   com `requireAdmin()` + `revalidatePath`. UI otimista com `sonner` (padrão do Routina).
+- **Removido do escopo:** edição manual de stats e upload de melhores jogadas (ver Backlog).
 
 ### Fase 3 — Scraper do tracker.gg (a parte "automática" do híbrido) — de hora em hora, todos os membros
 - **Serviço dedicado (worker), não GitHub Actions.** Cadência fixa horária de *todos* os membros
@@ -202,8 +243,9 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - **Agendador interno** (node-cron / loop) dispara a cada 1h: lê os membros ativos com
   `trackerHandle` no Supabase, scrapa cada um com **espaçamento + jitter** e concorrência limitada
   (reduz risco de bloqueio) e faz upsert de `statSnapshot` (`source: scraper`).
-- Resiliência: falha de um handle é pulada e logada, não derruba os demais; nunca sobrescreve
-  edição manual mais recente (respeitar `source`/`capturedAt`); retry/backoff em erro transitório.
+- Resiliência: falha de um handle é pulada e logada, não derruba os demais; retry/backoff em erro
+  transitório. Snapshots com `source: manual` (do seed ou de um futuro fallback) nunca são
+  sobrescritos — respeitar `source`/`capturedAt`.
 - **Sinal de "jogou" + dedup:** ler o **timestamp da última partida** (ou a contagem total de
   partidas) do perfil como marcador. Se não mudou desde o último snapshot → não jogou → não grava
   linha nova (o check ainda é 1 request; ele economiza escrita/parsing, não requests). Mesmo assim,
@@ -218,6 +260,33 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 
 ---
 
+## Backlog (sem fase definida)
+
+Features acordadas como desejáveis, mas **fora de todas as fases planejadas**. Entram quando o
+clã quiser; nada nas Fases 2–4 depende delas.
+
+### Melhores jogadas (vitrine + upload de vídeo)
+Decisão de 2026-07-25: não construir agora. O que fica pronto para quando voltar:
+- Tabela `highlight` já existe no `prisma/schema.prisma` e o seed popula 3 registros.
+- Rota `/melhores-jogadas` existe como placeholder "Em breve", linkada em `src/lib/site-config.ts`.
+- Escopo quando for retomado: grade de clipes curtos (≤ 1 min) com player, título, autor e data;
+  filtro por semana/mês (deriva de `playedAt` com `date-fns`); destaque para `featured`; upload no
+  painel para o bucket `highlights` do Supabase Storage, com validação de duração e tamanho no
+  cliente **e** no servidor; opcional gerar thumbnail.
+- Pendência de produto: decidir se o link sai do menu enquanto a página for um placeholder.
+
+### Edição manual de stats
+Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só do scraper (Fase 3).
+Preencher 6 campos por membro à mão para ~30 membros não se sustenta na operação do clã.
+- O que **fica** no código: valor `manual` no enum `StatSource`, `manual-provider.ts` e a interface
+  `StatsProvider`. Custo zero hoje e evita mudança de schema depois.
+- **Risco assumido:** enquanto o scraper não existir, `/ranking` e os perfis mostram dados de seed.
+  O spike do tracker.gg (ver Fase 3) precisa ser validado antes de divulgar o site publicamente —
+  ou o site vai ao ar sem as seções de stats. Se o spike mostrar que o scraping é inviável, a tela
+  de edição manual volta a ser a única saída e sobe para uma fase.
+
+---
+
 ## Deploy
 - **App:** Vercel. **DB/Auth/Storage:** Supabase. **Scraper:** worker dedicado no Railway/Fly
   (Docker + Playwright + cron interno horário), na pasta `scraper/` do mesmo repo (Fase 3).
@@ -225,22 +294,22 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 
 ## Verificação
 - **Fase 0:** `pnpm db:push` cria as tabelas; `seed` popula; `pnpm dev` sobe; type-check/lint/build verdes.
-- **Fase 1:** as 6 rotas renderizam com dados do seed; ranking "mês" vs "geral" bate com os snapshots;
-  `/melhores-jogadas` filtra por semana/mês e toca o vídeo; testes puros de ranking/filtro passam;
-  E2E navega as páginas; visual conferido em light/dark.
-- **Fase 2:** login Discord funciona; `/admin` bloqueado para não-admin; CRUD de membro/medalha
-  e atribuição persistem e refletem na vitrine; edição manual de stats gera snapshot `source: manual`;
-  upload de vídeo (≤ 1 min) grava no Storage, cria o `highlight` e aparece em `/melhores-jogadas`.
+- **Fase 1:** as rotas renderizam com dados do seed; o ranking do mês bate com os snapshots;
+  testes puros de ranking/derivados passam; E2E navega as páginas; visual conferido em light/dark.
+- **Fase 2:** login Discord funciona; `/admin` bloqueado para não-admin; CRUD de membro e de medalha
+  persistem; avatar do Discord chega no `member.avatarUrl`; conceder e revogar medalha reflete
+  imediatamente em `/medalhas`, `/membros` e no perfil do membro.
 - **Fase 3:** rodar o script local contra 1 handle real insere snapshot correto; cron agenda; falha de
-  um handle não derruba os demais; edição manual não é sobrescrita.
+  um handle não derruba os demais; snapshot `manual` não é sobrescrito.
 
 ## Observações
 - Medalhas são **curadas e atribuídas por admins** (critérios como "20 kills sem morrer" não são
   detectáveis via scraping) — o scraper alimenta só stats numéricas; medalhas são manuais por design.
 - Reaproveitar padrões do Routina: `requireUserId`/`requireAdmin` + `revalidatePath` nas actions,
   otimista com rollback + `toast`, lógica pura testável em `src/lib/*`, alias `@/*`, RSC por padrão.
-- Ação pendente do usuário (não bloqueia Fases 0–2): confirmar viabilidade/estabilidade do scraping
-  do BF6 no tracker.gg antes de investir na Fase 3.
+- Ação pendente do usuário: confirmar viabilidade/estabilidade do scraping do BF6 no tracker.gg
+  antes de investir na Fase 3. **Passou a ser crítico** desde que a edição manual saiu do escopo —
+  o scraper é agora a única fonte de stats do site.
 - **Spike obrigatório antes de construir o worker (Fase 3):** validar num perfil real se o tracker.gg
   (a) expõe "última partida"/total de partidas, (b) atualiza os dados sozinho ou só quando o perfil
   é aberto/"refreshado" — se for o caso (b), scraping de hora em hora pode continuar mostrando dado

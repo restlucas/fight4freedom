@@ -38,6 +38,15 @@
   --sidebar-accent-foreground: oklch(0.3 0.05 242);
   --sidebar-border: oklch(0.9 0.006 240);
   --sidebar-ring: oklch(0.589 0.141 242.5);
+
+  /* Scrollbars (see the base layer). Semi-transparent so the pill sits on any
+     surface — page, card, table body — without a hard edge. */
+  --scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+  --scrollbar-thumb-hover: color-mix(
+    in oklab,
+    var(--muted-foreground) 65%,
+    transparent
+  );
 }
 
 .dark {
@@ -68,6 +77,15 @@
   --sidebar-accent-foreground: oklch(0.95 0.006 240);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.589 0.141 242.5);
+
+  /* A touch stronger than light: a light-grey pill at 40% nearly disappears over
+     the #242B2F surfaces. */
+  --scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+  --scrollbar-thumb-hover: color-mix(
+    in oklab,
+    var(--muted-foreground) 70%,
+    transparent
+  );
 }
 
 @theme inline {
@@ -126,14 +144,49 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html {
-    /* Keeps the scrollbar's space reserved even while a Radix overlay (dropdown,
-       dialog, sheet) locks body scroll. Without it the scrollbar vanishes, the
-       viewport gets ~15px wider, and every `fixed inset-0` background on the site
-       jumps sideways. Radix compensates with padding on <body>, which does
-       nothing for fixed-position elements. */
-    scrollbar-gutter: stable;
+
+  /* One scrollbar design for the whole app: thin, no track, pill thumb that reads
+     as part of the surface it sits on. Derived from --muted-foreground, so it
+     contrasts in both themes without a second palette to maintain.
+
+     Both syntaxes are needed and they are not redundant: `scrollbar-width`/
+     `scrollbar-color` is the standard (Firefox, and Chrome 121+), while the
+     ::-webkit pseudo-elements are what actually style Safari and older Chromium.
+     Applied to `*` because the app scrolls in several places (page, table bodies,
+     dialogs, the sidebar) and they must all look the same. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: 9999px;
+    /* Transparent border + content-box clip = padding around the pill, which is
+       what keeps it from touching the content edge. */
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  /* No `scrollbar-gutter: stable` here on purpose.
+     It used to reserve the scrollbar's width so a Radix overlay locking body scroll
+     could not make the viewport jump — but the gutter is reserved ALWAYS, including
+     on every page that does not scroll (the whole admin panel), which showed up as
+     dead space along the right edge of the layout.
+     The jump it protected against is handled where it happens instead: the full-bleed
+     backgrounds are sized with `w-screen` (100vw includes the scrollbar, so it does
+     not change when the bar disappears), and Radix already pads <body> to keep normal
+     in-flow content still. */
   body {
     @apply bg-background text-foreground font-sans;
   }

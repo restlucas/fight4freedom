@@ -48,6 +48,11 @@ plus `pnpm build` and the E2E job (see `.github/workflows/ci.yml`).
 - All code, comments and identifiers in English.
 - Read env vars from a single place; expose to the browser only with the `NEXT_PUBLIC_` prefix.
   Copy `.env.example` to `.env.local`.
+- **Browser storage keys are namespaced `@fight4freedom/<key>`** (localStorage and
+  sessionStorage alike). Build them with `storageKey()` from `@/lib/storage` and read/write
+  through that module — never hand-write the prefix or call `localStorage` directly at a call
+  site. For state that must re-render, use the `usePersistedState` hook (`@/hooks`), which is
+  hydration-safe.
 
 ## Features
 

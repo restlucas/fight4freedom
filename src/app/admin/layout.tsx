@@ -34,12 +34,15 @@ export default async function AdminLayout({
   if (!profile.isAdmin) redirect("/entrar?erro=admin");
 
   return (
-    <SidebarProvider>
+    // h-svh (not the default min-h-svh) gives the shell a DEFINITE height, which is
+    // what lets a page hand its remaining space to a scrollable table body instead
+    // of growing the document and scrolling the whole page.
+    <SidebarProvider className="h-svh overflow-hidden">
       <AdminSidebar
         nickname={profile.member?.nickname ?? "Administrador"}
         avatarUrl={profile.member?.avatarUrl ?? null}
       />
-      <SidebarInset>
+      <SidebarInset className="min-h-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="!h-5" />
@@ -47,7 +50,11 @@ export default async function AdminLayout({
             Administração
           </span>
         </header>
-        <div className="flex-1 p-4 md:p-6">{children}</div>
+        {/* Scrolls only when a page genuinely needs more room (the overview on a
+            short window); the table pages fit and scroll their own body. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
+          {children}
+        </div>
       </SidebarInset>
       <Toaster position="top-right" />
     </SidebarProvider>

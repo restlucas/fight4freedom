@@ -22,7 +22,9 @@ export default async function MembersPage() {
   return (
     <>
       {/* Fixed page background: stays put while the listing scrolls. */}
-      <div aria-hidden className="fixed inset-0 -z-10">
+      {/* w-screen, not inset-0: 100vw includes the scrollbar, so this background
+          keeps its size when a dialog locks body scroll and the bar disappears. */}
+      <div aria-hidden className="fixed inset-y-0 left-0 -z-10 w-screen">
         <Image
           src="/background.avif"
           alt=""

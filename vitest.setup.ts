@@ -47,6 +47,16 @@ if (typeof globalThis.IntersectionObserver === "undefined") {
   } as unknown as typeof IntersectionObserver;
 }
 
+// jsdom implements no Pointer Events capture API and no scrollIntoView. Radix Select
+// calls both while opening its listbox, so without these every test that opens a
+// select crashes with "target.hasPointerCapture is not a function".
+if (typeof Element !== "undefined") {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+}
+
 afterEach(() => {
   cleanup();
 });
