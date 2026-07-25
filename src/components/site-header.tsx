@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -16,7 +17,12 @@ import {
 import { cn } from "@/lib/utils";
 import { FORM_URL, NAV_ITEMS } from "@/lib/site-config";
 
-export function SiteHeader() {
+interface SiteHeaderProps {
+  /** Rendered by the layout: the login button or the signed-in menu. */
+  account: React.ReactNode;
+}
+
+export function SiteHeader({ account }: SiteHeaderProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [lastPath, setLastPath] = useState(pathname);
@@ -72,6 +78,13 @@ export function SiteHeader() {
             </a>
           </Button>
 
+          <Separator
+            orientation="vertical"
+            className="hidden !h-6 md:block"
+            decorative
+          />
+          <div className="hidden md:block">{account}</div>
+
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild className="md:hidden">
               <Button variant="ghost" size="icon" aria-label="Abrir menu">
@@ -108,6 +121,8 @@ export function SiteHeader() {
                     Faça parte
                   </a>
                 </Button>
+                <Separator className="my-4" />
+                {account}
               </nav>
             </SheetContent>
           </Sheet>

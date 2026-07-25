@@ -5,6 +5,9 @@ import "./globals.css";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DiscordLoginButton } from "@/features/auth/components/discord-login-button";
+import { UserMenu } from "@/features/auth/components/user-menu";
+import { getSessionProfile } from "@/lib/auth/session";
 
 // BF6 UI type is proprietary (BF Body is based on the open-source Barlow), so we
 // use Barlow for body/UI and Barlow Condensed for the technical, condensed
@@ -40,11 +43,13 @@ export const metadata: Metadata = {
     "Vitrine do clã Fight4Freedom de Battlefield 6: membros, medalhas, ranking, estatísticas e melhores jogadas.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const profile = await getSessionProfile();
+
   return (
     <html
       lang="pt-BR"
@@ -54,7 +59,15 @@ export default function RootLayout({
         {/* Shorter than the 700ms default: these tooltips reveal reference data
             (platform ids), so waiting feels broken. */}
         <TooltipProvider delayDuration={200}>
-          <SiteHeader />
+          <SiteHeader
+            account={
+              profile ? (
+                <UserMenu profile={profile} />
+              ) : (
+                <DiscordLoginButton />
+              )
+            }
+          />
           <div className="flex-1">{children}</div>
           <SiteFooter />
         </TooltipProvider>

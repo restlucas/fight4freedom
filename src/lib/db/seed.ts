@@ -16,6 +16,12 @@ import type {
   StatSource,
 } from "@prisma/client";
 
+import {
+  generateInviteToken,
+  hashInviteToken,
+  inviteExpiresAt,
+  inviteUrl,
+} from "../auth/invite";
 import { db } from "./index";
 
 // Three snapshots (last month + earlier this month + now) so "this month"
@@ -212,12 +218,37 @@ function scaleStats(stats: Stats, factor: number): Stats {
   return scaled;
 }
 
+/**
+ * Bootstrap: the very first admin claims an invite like everyone else, so account
+ * creation has ONE code path — no env-based admin list, and no "first login wins",
+ * which would hand the panel to whoever logs in first after a deploy.
+ */
+async function createBootstrapInvite(memberId: string, nickname: string) {
+  const token = generateInviteToken();
+  await db.memberInvite.create({
+    data: {
+      memberId,
+      tokenHash: hashInviteToken(token),
+      grantsAdmin: true,
+      discordUsername: nickname,
+      expiresAt: inviteExpiresAt(new Date()),
+    },
+  });
+  const url = inviteUrl(
+    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+    token,
+  );
+  console.log(`\n  Convite de admin para ${nickname} (uso único, 7 dias):`);
+  console.log(`  ${url}\n`);
+}
+
 async function seed() {
   console.log("Clearing existing data...");
   await db.highlight.deleteMany();
   await db.memberMedal.deleteMany();
   await db.statSnapshot.deleteMany();
   await db.medal.deleteMany();
+  await db.memberInvite.deleteMany();
   await db.profile.deleteMany();
   await db.member.deleteMany();
 
@@ -263,6 +294,9 @@ async function seed() {
   });
 
   console.log(`Seed complete: ${members.length} members, ${medals.length} medals, ${snapshots.length} snapshots.`);
+
+  const owner = memberByNick.get(REAL_MEMBERS[0].nickname)!;
+  await createBootstrapInvite(owner.id, owner.nickname);
 }
 
 seed()

@@ -13,6 +13,35 @@ function required(name: string, value: string | undefined): string {
 /** Public vars — inlined by Next at build time, safe to read anywhere. */
 export const publicEnv = {
   appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+  /**
+   * Supabase project URL and anon key. Both are public by design: the anon key
+   * only grants what Row Level Security allows, and all our privileged access
+   * goes through Prisma on the server. The Discord client secret lives in the
+   * Supabase dashboard, never here.
+   */
+  get supabaseUrl(): string {
+    return required(
+      "NEXT_PUBLIC_SUPABASE_URL",
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+    );
+  },
+  get supabaseAnonKey(): string {
+    return required(
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    );
+  },
+  /**
+   * Whether auth can run at all. The public vitrine must not break when the keys
+   * are absent (a CI build has no secrets), so callers check this instead of
+   * letting the getters above throw.
+   */
+  get supabaseConfigured(): boolean {
+    return Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL &&
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    );
+  },
 } as const;
 
 /** Server-only vars. Access on the server; never import into Client Components. */

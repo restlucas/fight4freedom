@@ -17,16 +17,17 @@
 //     Time-scoped queries take a stable key (see monthKey in src/lib/month.ts).
 //
 // Invalidation:
-//  - Fase 2: admin server actions call `revalidateTag(CACHE_TAG.medals)` (and
+//  - Fase 2: admin server actions call `revalidateVitrine(CACHE_TAG.medals)` (and
 //    friends) after writing, so the vitrine updates immediately regardless of
-//    the TTL.
+//    the TTL. Use the helper, not revalidateTag directly — the cache-life
+//    argument is easy to get backwards (see its doc comment).
 //  - Fase 3: the scraper writes straight to the database and cannot call
 //    revalidateTag, so the TTL below is what surfaces those writes.
 //
 // This module is also the single migration point to the `"use cache"` directive
 // once it leaves experimental.
 
-import { unstable_cache } from "next/cache";
+import { revalidateTag, unstable_cache } from "next/cache";
 
 export const CACHE_TAG = {
   members: "members",
@@ -55,4 +56,24 @@ export function cachedQuery<Args extends unknown[], Result>(
     tags,
     revalidate: VITRINE_REVALIDATE_SECONDS,
   });
+}
+
+/**
+ * Purges the given domains so the vitrine reflects a write immediately, instead
+ * of waiting out the TTL. Call from Server Actions and Route Handlers only.
+ *
+ * `{ expire: 0 }` is deliberate and load-bearing. Next 16 takes a cache-life
+ * profile as the second argument and applies it as
+ * `expired = now + expire * 1000` (see the file-system cache handler), so a named
+ * profile does NOT purge — it licenses the stale value to keep being served for
+ * that long. "max" is the worst possible choice here: `expire` is a year.
+ * Zero seconds is the same instant expiration the argument-less (deprecated)
+ * form produces, without the deprecation warning.
+ *
+ * In a Server Action, `updateTag(tag)` is an alternative that also gives
+ * read-your-own-writes within the same request; it throws in Route Handlers,
+ * which is why this helper uses revalidateTag and works in both.
+ */
+export function revalidateVitrine(...tags: CacheTag[]): void {
+  for (const tag of tags) revalidateTag(tag, { expire: 0 });
 }
