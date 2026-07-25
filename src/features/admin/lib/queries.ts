@@ -1,7 +1,7 @@
 // Admin reads. Deliberately NOT cached: the panel must always show the live
 // state, and a stale row here means an admin acts on wrong information.
 
-import type { MemberRole, Platform } from "@prisma/client";
+import type { MedalTier, MemberRole, Platform } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
@@ -80,6 +80,45 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
           usedAt: null,
         }
       : null,
+  }));
+}
+
+export type AdminMedal = {
+  id: string;
+  name: string;
+  description: string | null;
+  criteria: string | null;
+  tier: MedalTier;
+  icon: string | null;
+  imageUrl: string | null;
+  /** How many members hold it — deleting the medal takes it from all of them. */
+  holders: number;
+};
+
+export async function getAdminMedals(): Promise<AdminMedal[]> {
+  const medals = await db.medal.findMany({
+    orderBy: [{ tier: "desc" }, { name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      criteria: true,
+      tier: true,
+      icon: true,
+      imageUrl: true,
+      _count: { select: { members: true } },
+    },
+  });
+
+  return medals.map((medal) => ({
+    id: medal.id,
+    name: medal.name,
+    description: medal.description,
+    criteria: medal.criteria,
+    tier: medal.tier,
+    icon: medal.icon,
+    imageUrl: medal.imageUrl,
+    holders: medal._count.members,
   }));
 }
 

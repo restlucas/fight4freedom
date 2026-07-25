@@ -49,4 +49,21 @@ export const serverEnv = {
   get databaseUrl(): string {
     return required("DATABASE_URL", process.env.DATABASE_URL);
   },
+  /**
+   * Bypasses every RLS policy, so it is the most dangerous value in the project.
+   * Only ever read inside "use server" code (see src/lib/supabase/admin.ts).
+   */
+  get supabaseServiceRoleKey(): string {
+    return required(
+      "SUPABASE_SERVICE_ROLE_KEY",
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+    );
+  },
+  /** Whether medal artwork can be uploaded. The panel degrades without it. */
+  get storageConfigured(): boolean {
+    return Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY &&
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+    );
+  },
 } as const;

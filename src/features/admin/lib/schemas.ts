@@ -43,6 +43,43 @@ export const inviteFormSchema = z.object({
   grantsAdmin: z.coerce.boolean(),
 });
 
+export const MEDAL_TIERS = ["common", "rare", "legendary", "special"] as const;
+
+/** Curated lucide names, matching ICONS in medal-emblem.tsx. */
+export const MEDAL_ICONS = [
+  "crosshair",
+  "shield",
+  "swords",
+  "crown",
+  "trophy",
+  "star",
+] as const;
+
+const longTextOptional = z
+  .string()
+  .trim()
+  .max(280)
+  .optional()
+  .transform((value) => (value ? value : null));
+
+export const medalFormSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Informe o nome com pelo menos 2 caracteres")
+    // The catalog card clamps the name to one line; longer than this is cut.
+    .max(24, "O nome deve ter no máximo 24 caracteres"),
+  description: longTextOptional,
+  criteria: longTextOptional,
+  tier: z.enum(MEDAL_TIERS, { message: "Escolha uma raridade" }),
+  /** Fallback shown until artwork is uploaded. */
+  icon: z.enum(MEDAL_ICONS).optional().default("crosshair"),
+});
+
+export const medalIdSchema = z.object({
+  medalId: z.string().uuid("Medalha inválida"),
+});
+
 export const memberIdSchema = z.object({
   memberId: z.string().uuid("Membro inválido"),
 });
