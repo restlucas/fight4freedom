@@ -34,7 +34,7 @@ function member(
     nickname,
     platform,
     platformId: null,
-    trackerHandle: null,
+    statsLinked: true,
     role,
     active: true,
     avatarUrl: null,

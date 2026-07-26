@@ -21,8 +21,10 @@
 //    friends) after writing, so the vitrine updates immediately regardless of
 //    the TTL. Use the helper, not revalidateTag directly — the cache-life
 //    argument is easy to get backwards (see its doc comment).
-//  - Fase 3: the scraper writes straight to the database and cannot call
-//    revalidateTag, so the TTL below is what surfaces those writes.
+//  - Fase 3: the stats collector runs INSIDE the app (/api/stats/collect, a
+//    Route Handler), so it also purges CACHE_TAG.stats after writing. The TTL
+//    below is only the safety net for writes made outside the app (SQL by hand,
+//    a future job that bypasses the route).
 //
 // This module is also the single migration point to the `"use cache"` directive
 // once it leaves experimental.
@@ -37,7 +39,7 @@ export const CACHE_TAG = {
 
 export type CacheTag = (typeof CACHE_TAG)[keyof typeof CACHE_TAG];
 
-/** Safety net for data written outside the app (the Fase 3 scraper). */
+/** Safety net for data written outside the app (manual SQL, external jobs). */
 export const VITRINE_REVALIDATE_SECONDS = 300;
 
 /**

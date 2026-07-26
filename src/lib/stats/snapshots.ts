@@ -76,13 +76,9 @@ export function hoursPlayed(timePlayedMinutes: number): number {
 }
 
 /** Most recent snapshot (cumulative totals), or null when there are none. */
-export function latestSnapshot<T extends { capturedAt: Date }>(
-  snapshots: T[],
-): T | null {
+export function latestSnapshot<T extends { capturedAt: Date }>(snapshots: T[]): T | null {
   if (snapshots.length === 0) return null;
-  return snapshots.reduce((latest, s) =>
-    s.capturedAt > latest.capturedAt ? s : latest,
-  );
+  return snapshots.reduce((latest, s) => (s.capturedAt > latest.capturedAt ? s : latest));
 }
 
 function subtractTotals(a: StatTotals, b: StatTotals): StatTotals {
@@ -95,10 +91,7 @@ function subtractTotals(a: StatTotals, b: StatTotals): StatTotals {
  * Activity within the reference month: last snapshot of the month minus the
  * first. Fewer than two snapshots in the month → all zeros.
  */
-export function deltaForMonth(
-  snapshots: SnapshotLike[],
-  reference: Date,
-): StatTotals {
+export function deltaForMonth(snapshots: SnapshotLike[], reference: Date): StatTotals {
   const inMonth = snapshots
     .filter((s) => isSameMonth(s.capturedAt, reference))
     .sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
@@ -106,14 +99,34 @@ export function deltaForMonth(
   return subtractTotals(inMonth[inMonth.length - 1], inMonth[0]);
 }
 
-export type RankMetric =
-  | "kills"
-  | "matches"
-  | "revives"
-  | "assists"
-  | "kd"
-  | "winRate"
-  | "medals";
+/** The counters the collector compares to decide "played since last snapshot". */
+export type ActivityCounters = Pick<
+  StatTotals,
+  "kills" | "deaths" | "wins" | "losses" | "timePlayedMinutes"
+>;
+
+/**
+ * Whether freshly fetched counters differ from the member's latest snapshot.
+ * Any movement counts — matches (wins+losses), kills, deaths or play time.
+ * No previous snapshot means the first collection, which always writes.
+ * Deliberately limited to these five: a provider quirk in a secondary metric
+ * (assists, revives) must never flood the snapshot table by itself.
+ */
+export function hasNewActivity(
+  latest: ActivityCounters | null,
+  current: ActivityCounters,
+): boolean {
+  if (!latest) return true;
+  return (
+    latest.kills !== current.kills ||
+    latest.deaths !== current.deaths ||
+    latest.wins !== current.wins ||
+    latest.losses !== current.losses ||
+    latest.timePlayedMinutes !== current.timePlayedMinutes
+  );
+}
+
+export type RankMetric = "kills" | "matches" | "revives" | "assists" | "kd" | "winRate" | "medals";
 
 export type RankableMember = {
   memberId: string;
@@ -146,10 +159,7 @@ export function metricValue(member: RankableMember, metric: RankMetric): number 
  * Sort by a value, highest first, and attach competition ranks so ties share a
  * rank (1, 2, 2, 4). Does not mutate the input array.
  */
-export function withCompetitionRanks<T>(
-  items: T[],
-  valueOf: (item: T) => number,
-): Ranked<T>[] {
+export function withCompetitionRanks<T>(items: T[], valueOf: (item: T) => number): Ranked<T>[] {
   const scored = items
     .map((item) => ({ ...item, value: valueOf(item) }))
     .sort((a, b) => b.value - a.value);

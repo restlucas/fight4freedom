@@ -4,11 +4,13 @@ import {
   computeKd,
   computeWinRate,
   deltaForMonth,
+  hasNewActivity,
   hoursPlayed,
   killsPerMatch,
   latestSnapshot,
   rankMembers,
   totalMatches,
+  type ActivityCounters,
   type RankableMember,
   type SnapshotLike,
   type StatTotals,
@@ -134,5 +136,29 @@ describe("rankMembers", () => {
     const before = members.map((m) => m.memberId);
     rankMembers(members, "medals");
     expect(members.map((m) => m.memberId)).toEqual(before);
+  });
+});
+
+describe("hasNewActivity", () => {
+  const latest: ActivityCounters = {
+    kills: 17_587,
+    deaths: 4_955,
+    wins: 268,
+    losses: 244,
+    timePlayedMinutes: 12_431,
+  };
+
+  it("always writes the first snapshot", () => {
+    expect(hasNewActivity(null, latest)).toBe(true);
+  });
+
+  it("skips when nothing moved", () => {
+    expect(hasNewActivity(latest, { ...latest })).toBe(false);
+  });
+
+  it("writes when any counter moved", () => {
+    expect(hasNewActivity(latest, { ...latest, kills: 17_600 })).toBe(true);
+    expect(hasNewActivity(latest, { ...latest, losses: 245 })).toBe(true);
+    expect(hasNewActivity(latest, { ...latest, timePlayedMinutes: 12_440 })).toBe(true);
   });
 });

@@ -37,18 +37,11 @@ import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
 
 import type { AdminMedal, AdminMember } from "@/features/admin/lib/queries";
 import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
-import {
-  RESPONSIVE_TABLE,
-  STICKY_HEAD,
-  TABLE_FRAME,
-} from "@/features/admin/lib/table-styles";
+import { RESPONSIVE_TABLE, STICKY_HEAD, TABLE_FRAME } from "@/features/admin/lib/table-styles";
 import { InviteDialog } from "./invite-dialog";
 import { MemberForm } from "./member-form";
 import { MemberMedalsDialog } from "./member-medals-dialog";
-import {
-  MultiSelectFilter,
-  type FilterOption,
-} from "./multi-select-filter";
+import { MultiSelectFilter, type FilterOption } from "./multi-select-filter";
 import { TablePagination } from "./table-pagination";
 
 interface MembersTableProps {
@@ -57,13 +50,15 @@ interface MembersTableProps {
   medals: AdminMedal[];
 }
 
-const ROLE_OPTIONS: readonly FilterOption<MemberRole>[] = MEMBER_ROLES.map(
-  (role) => ({ value: role, label: ROLE_LABEL[role] }),
-);
+const ROLE_OPTIONS: readonly FilterOption<MemberRole>[] = MEMBER_ROLES.map((role) => ({
+  value: role,
+  label: ROLE_LABEL[role],
+}));
 
-const PLATFORM_OPTIONS: readonly FilterOption<Platform>[] = PLATFORMS.map(
-  (platform) => ({ value: platform, label: PLATFORM_LABEL[platform] }),
-);
+const PLATFORM_OPTIONS: readonly FilterOption<Platform>[] = PLATFORMS.map((platform) => ({
+  value: platform,
+  label: PLATFORM_LABEL[platform],
+}));
 
 export function MembersTable({ members, medals }: MembersTableProps) {
   const router = useRouter();
@@ -147,8 +142,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
             <DialogHeader>
               <DialogTitle>Novo membro</DialogTitle>
               <DialogDescription>
-                Cadastre o membro e depois gere o convite para ele vincular a
-                conta do Discord.
+                Cadastre o membro e depois gere o convite para ele vincular a conta do Discord.
               </DialogDescription>
             </DialogHeader>
             <MemberForm onDone={done} />
@@ -164,9 +158,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
           <TableHeader className={STICKY_HEAD}>
             <TableRow>
               <TableHead className="md:w-[40%]">Membro</TableHead>
-              <TableHead className="hidden sm:table-cell md:w-[14%]">
-                Cargo
-              </TableHead>
+              <TableHead className="hidden sm:table-cell md:w-[14%]">Cargo</TableHead>
               <TableHead className="md:w-[18%]">Conta</TableHead>
               <TableHead className="md:w-[28%]">Ações</TableHead>
             </TableRow>
@@ -174,10 +166,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-muted-foreground h-24 text-center"
-                >
+                <TableCell colSpan={4} className="text-muted-foreground h-24 text-center">
                   {members.length === 0
                     ? "Nenhum membro cadastrado."
                     : "Nenhum membro encontrado com esses filtros."}
@@ -189,10 +178,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                   <TableCell>
                     <div className="flex items-center gap-3">
                       <Avatar className="size-9 rounded-md">
-                        <AvatarImage
-                          src={member.avatarUrl ?? "/member-default.png"}
-                          alt=""
-                        />
+                        <AvatarImage src={member.avatarUrl ?? "/member-default.png"} alt="" />
                         <AvatarFallback className="font-heading rounded-none text-xs">
                           {memberInitials(member.nickname)}
                         </AvatarFallback>
@@ -221,25 +207,34 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                   </TableCell>
 
                   <TableCell className="hidden sm:table-cell">
-                    <span className="text-muted-foreground text-sm">
-                      {ROLE_LABEL[member.role]}
-                    </span>
+                    <span className="text-muted-foreground text-sm">{ROLE_LABEL[member.role]}</span>
                   </TableCell>
 
                   <TableCell>
                     {member.hasAccount ? (
-                      <Badge variant="secondary" className="gap-1">
-                        Vinculada
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="secondary" className="gap-1">
+                          Vinculada
+                        </Badge>
+                        {/* Discord linked = eligible for collection; whether it
+                            actually collects depends on the EA identity bind. */}
+                        {member.statsLinked ? null : (
+                          <Badge
+                            variant="outline"
+                            className="text-muted-foreground"
+                            title="Nick não encontrado na EA. Confira se o nick é o nome EA exato; a coleta tenta de novo a cada ciclo."
+                          >
+                            Stats pendentes
+                          </Badge>
+                        )}
+                      </div>
                     ) : member.pendingInvite ? (
                       <Badge variant="outline" className="gap-1">
                         Convite pendente
                         {member.pendingInvite.grantsAdmin ? " (admin)" : ""}
                       </Badge>
                     ) : (
-                      <span className="text-muted-foreground text-xs">
-                        Sem conta
-                      </span>
+                      <span className="text-muted-foreground text-xs">Sem conta</span>
                     )}
                   </TableCell>
 
@@ -251,9 +246,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                         buttons sit under the "Ações" header. */}
                     <div className="flex items-center gap-2 whitespace-nowrap">
                       <div className="flex w-24">
-                        {member.hasAccount ? null : (
-                          <InviteDialog member={member} />
-                        )}
+                        {member.hasAccount ? null : <InviteDialog member={member} />}
                       </div>
                       <MemberMedalsDialog
                         member={member}
@@ -286,19 +279,14 @@ export function MembersTable({ members, medals }: MembersTableProps) {
         itemLabel="membros"
       />
 
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(next) => !next && setEditing(null)}
-      >
+      <Dialog open={editing !== null} onOpenChange={(next) => !next && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="size-4" />
               Editar {editing?.nickname}
             </DialogTitle>
-            <DialogDescription>
-              Alterações aparecem na vitrine imediatamente.
-            </DialogDescription>
+            <DialogDescription>Alterações aparecem na vitrine imediatamente.</DialogDescription>
           </DialogHeader>
           {editing ? <MemberForm member={editing} onDone={done} /> : null}
         </DialogContent>

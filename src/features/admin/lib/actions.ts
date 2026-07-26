@@ -14,6 +14,8 @@ import {
 } from "@/lib/auth/invite";
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { db } from "@/lib/db";
+import { gametoolsProvider } from "@/lib/stats/gametools";
+import type { PlayerIdentity } from "@/lib/stats/provider";
 
 import {
   actionError,
@@ -36,6 +38,20 @@ function fieldErrorsOf(error: {
   return map;
 }
 
+/**
+ * Best-effort resolution of the EA identity from the nickname. Registration
+ * must never fail because a third-party API is down, so any error becomes
+ * null and the scheduled collector self-heals it on the next runs
+ * (src/lib/stats/collect.ts).
+ */
+async function resolveEaIdentity(nickname: string): Promise<PlayerIdentity | null> {
+  try {
+    return await gametoolsProvider.searchPlayer(nickname);
+  } catch {
+    return null;
+  }
+}
+
 export async function createMemberAction(
   _prev: ActionResult<{ memberId: string }> | null,
   formData: FormData,
@@ -46,7 +62,6 @@ export async function createMemberAction(
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
     platformId: formData.get("platformId") ?? undefined,
-    trackerHandle: formData.get("trackerHandle") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
   });
@@ -54,8 +69,14 @@ export async function createMemberAction(
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));
   }
 
+  const identity = await resolveEaIdentity(parsed.data.nickname);
   const member = await db.member.create({
-    data: { ...parsed.data, joinedAt: new Date() },
+    data: {
+      ...parsed.data,
+      eaPersonaId: identity?.personaId ?? null,
+      eaNucleusId: identity?.nucleusId ?? null,
+      joinedAt: new Date(),
+    },
     select: { id: true },
   });
 
@@ -76,7 +97,6 @@ export async function updateMemberAction(
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
     platformId: formData.get("platformId") ?? undefined,
-    trackerHandle: formData.get("trackerHandle") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
   });
@@ -84,9 +104,29 @@ export async function updateMemberAction(
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));
   }
 
+  const current = await db.member.findUnique({
+    where: { id: id.data.memberId },
+    select: { nickname: true, eaPersonaId: true, eaNucleusId: true },
+  });
+  if (!current) return actionError("Membro não encontrado.");
+
+  // Re-resolve the EA identity when the nickname changed or was never bound.
+  // On failure the old ids are KEPT on purpose: EA ids survive renames, so a
+  // member who renamed keeps collecting; a typo fix gets rebound as soon as
+  // the search succeeds (here or in the collector).
+  let identity: PlayerIdentity | null = null;
+  const needsResolution =
+    current.nickname !== parsed.data.nickname || !current.eaPersonaId || !current.eaNucleusId;
+  if (needsResolution) {
+    identity = await resolveEaIdentity(parsed.data.nickname);
+  }
+
   await db.member.update({
     where: { id: id.data.memberId },
-    data: parsed.data,
+    data: {
+      ...parsed.data,
+      ...(identity ? { eaPersonaId: identity.personaId, eaNucleusId: identity.nucleusId } : {}),
+    },
   });
 
   revalidateVitrine(CACHE_TAG.members, CACHE_TAG.stats);
@@ -106,9 +146,7 @@ export async function createInviteAction(
   const parsed = inviteFormSchema.safeParse({
     memberId: formData.get("memberId"),
     discordUsername: formData.get("discordUsername") ?? undefined,
-    grantsAdmin:
-      formData.get("grantsAdmin") === "on" ||
-      formData.get("grantsAdmin") === "true",
+    grantsAdmin: formData.get("grantsAdmin") === "on" || formData.get("grantsAdmin") === "true",
   });
   if (!parsed.success) {
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));

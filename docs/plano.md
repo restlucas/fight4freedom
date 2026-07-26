@@ -7,36 +7,52 @@ que valoriza o esforço de cada membro: uma **vitrine pública** (home convidati
 medalhas do clã e ranking/stats) mais um **painel administrativo** para cadastrar membros,
 criar medalhas e atribuí-las.
 
-Tentativas anteriores de usar APIs para stats traziam dados desatualizados. A decisão é uma
-estratégia **híbrida**: um scraper do `tracker.gg` reduz o trabalho manual, mas admins sempre
-podem editar/sobrescrever pelo painel. Toda a origem de dados fica atrás de uma interface
-`StatsProvider`, então trocar de fonte (scraper ↔ manual ↔ API futura) não reescreve o app.
+Stats vêm da **API do gametools.network** (proxy da API oficial da EA), decidido em 2026-07-26
+após o estudo `docs/api-gametools.md` provar que ela entrega exatamente os mesmos dados que o
+tracker.gg — número por número — sem scraping, sem Playwright e sem worker separado. O plano
+original de scraper do tracker.gg foi **descartado**. Toda a origem de dados fica atrás da
+interface `StatsProvider` (`src/lib/stats/provider.ts`), então trocar de fonte não reescreve o app.
 
 Base do projeto: o template `nextjs-starter` (Next 16 App Router + React 19 + TS strict +
 Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo).
 
 ### Decisões firmadas com o usuário
-- **Fonte de dados:** stats vêm **só do scraper** (tracker.gg), atrás de `StatsProvider`.
-  A tela de edição manual foi descartada (2026-07-25): manter 6 campos × ~30 membros à mão não se
-  sustenta. O valor `manual` do enum `StatSource` e a interface `StatsProvider` **continuam no
-  schema** — custam zero e deixam a porta aberta se o spike da Fase 3 mostrar que o scraping não
-  é viável. Ver Backlog.
-- **MVP (Fase 1):** vitrine pública com dados semeados manualmente. Admin e scraper vêm depois.
+- **Fonte de dados (2026-07-26):** stats vêm da **API do gametools.network**, atrás de
+  `StatsProvider`. O scraping do tracker.gg foi descartado (ver `docs/api-gametools.md` §6 e §10:
+  mesma fonte EA, sem antibot, sem worker). A tela de edição manual continua descartada
+  (2026-07-25); o valor `manual` do enum `StatSource` permanece no schema como porta de saída.
+- **Bucket canônico (2026-07-26):** kills/stats **completos** — todos os modos, veículos, Portal
+  e REDSEC (`gm_all`, com `seperation=true`). Racional e mapeamento em `docs/api-gametools.md` §3
+  e §10.3.
+- **Cadência da coleta (2026-07-26):** **todos os membros elegíveis a cada 10 min**, em lotes
+  sequenciais de **10 jogadores** por requisição (`POST /bf6/multiple/`), para não sobrecarregar a
+  API comunitária. ~50 membros = 5 requisições por ciclo.
+- **Ciclo de vida do membro na coleta (2026-07-26):**
+  1. Admin cadastra nick + plataforma + id da plataforma → **ainda não entra na coleta**;
+  2. Membro aceita o convite e entra com Discord (`member.discordId` é capturado do OAuth) →
+     **entra na próxima leva**;
+  3. A identidade EA (`eaPersonaId`/`eaNucleusId`) é resolvida automaticamente pelo nick — no
+     cadastro (best-effort) e pelo coletor (self-healing) — e é ela que a coleta usa dali em
+     diante: trocar de nick não quebra nada.
+- **MVP (Fase 1):** vitrine pública com dados semeados manualmente. Admin e coleta vêm depois.
 - **Auth admin:** Discord OAuth (via Supabase Auth).
-- **Scraping:** todos os membros a cada 1h, via worker dedicado (Railway/Fly).
 - **Melhores jogadas (vitrine + upload):** movido para o Backlog (2026-07-25), sem fase definida.
 - Sem pressão de prazo; entregue em fases ("o que der pra fazer").
 
-### Riscos assumidos (scraping do tracker.gg)
-- tracker.gg usa Cloudflare + antibot agressivo → scraping é **frágil** e exige manutenção.
-- O ToS deles normalmente **proíbe** acesso automatizado. Por isso o scraper fica isolado,
-  com edição manual sempre disponível como rede de segurança, e roda fora do runtime da app web.
+### Riscos assumidos (API gametools)
+- **Terceiro comunitário, sem SLA nem rate limit publicado.** Mitigações: uma leva de lotes por
+  ciclo, nunca chamar a API no runtime das páginas (o banco é a fonte do site), falha silenciosa
+  com retry no ciclo seguinte, e a interface `StatsProvider` para trocar de fonte sem reescrever.
+- **Frescor depende da EA.** O gametools proxia a EA com cache de borda de ~10 min — igual à
+  cadência da coleta. O atraso da própria EA após uma partida ainda não foi medido (teste com o
+  clã pendente, `docs/api-gametools.md` §8).
 
 ---
 
-## Status (atualizado em 2026-07-25)
+## Status (atualizado em 2026-07-26)
 
-**Fase 2 em andamento** (Fases 0 e 1 entregues).
+**Fase 3 com código entregue** (Fases 0, 1 e 2 entregues); faltam os passos operacionais
+(db push, seed, `CRON_SECRET`, agendador) listados na seção da Fase 3 abaixo.
 
 ### Fase 0 — Fundação: concluída
 - [x] Projeto criado a partir do template `nextjs-starter`; git reiniciado do zero (branch `main`).
@@ -103,7 +119,22 @@ Pontas soltas da Fase 0 (não bloqueiam nada):
 
 Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melhores jogadas.
 
-**Próximo passo:** Fase 3 — começar pelo spike do tracker.gg (ver Observações), não pelo worker.
+### Fase 3 — Coleta de stats via API: código entregue (2026-07-26)
+- [x] Spike concluído: `docs/api-gametools.md` valida a fonte, o bucket `gm_all` e a paridade
+      com o tracker.gg. O plano de scraper foi substituído por este fluxo.
+- [x] Camada de stats: `src/lib/stats/provider.ts` (interface), `gametools.ts` (client com Zod,
+      fixture real e testes), `collect.ts` (coletor com relatório por membro e testes do sinal
+      de atividade).
+- [x] `POST|GET /api/stats/collect` protegida por `CRON_SECRET` (comparação timing-safe).
+- [x] CRUD de membros: campo de tracker removido; identidade EA resolvida no cadastro/edição
+      (best-effort) e exposta no painel como badge "Stats pendentes" quando o nick não foi
+      encontrado na EA.
+- [ ] Rodar `pnpm db:push` (troca `tracker_handle` por `ea_persona_id`/`ea_nucleus_id`) e
+      `pnpm db:seed`.
+- [ ] Definir `CRON_SECRET` (local e Vercel) e criar o agendamento (ver Deploy > Agendamento).
+- [ ] Trocar o roster de exemplo pela lista real e validar a primeira coleta de ponta a ponta.
+
+**Próximo passo:** aplicar o schema, agendar a coleta e rodar a primeira leva real.
 
 ---
 
@@ -120,7 +151,7 @@ Instalar por projeto (o starter não traz nada disso):
 - **shadcn/ui**: adicionar primitivos conforme necessidade via a skill `add-shadcn-component`
   (`card`, `table`, `avatar`, `badge`, `dialog`, `dropdown-menu`, `form`, `input`, `select`,
   `tabs`, `tooltip`, `sonner`). Nenhum instalado ainda.
-- **Playwright** já vem no starter (E2E); reutilizado pelo scraper (Fase 3) num script isolado.
+- **Playwright** já vem no starter (E2E). Só para testes — a Fase 3 via API não usa browser.
 - **date-fns** para cálculos de "este mês" nos rankings.
 
 Data fetching: **Server Components + Server Actions** por padrão (a vitrine é read-only).
@@ -130,11 +161,12 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
 
 ## Modelo de dados — `prisma/schema.prisma` (Prisma, `pnpm db:push`)
 
-- **`member`**: `id` (uuid text PK), `nickname` (gamertag exibido), `platform`
-  (`ea | xbox | psn`), `trackerHandle` (identificador/URL usado no scraping, nullable),
-  `discordId` (nullable), `avatarUrl` (nullable), `role` (`member | officer | admin` — cargo no clã,
-  só exibição; acesso de sistema é o `profile.isAdmin`),
-  `joinedAt` (date), `active` (bool default true), `createdAt`, `updatedAt`.
+- **`member`**: `id` (uuid text PK), `nickname` (gamertag exibido **e nome EA usado para vincular
+  os stats**), `platform` (`ea | xbox | psn`), `eaPersonaId` + `eaNucleusId` (identidade estável
+  na EA, resolvida automaticamente pelo nick — nunca digitada; é o que a coleta usa, então trocar
+  de nick não quebra), `discordId` (nullable, capturado só pelo OAuth), `avatarUrl` (nullable),
+  `role` (`member | officer | admin` — cargo no clã, só exibição; acesso de sistema é o
+  `profile.isAdmin`), `joinedAt` (date), `active` (bool default true), `createdAt`, `updatedAt`.
 - **`member` (patentes):** `platformId` (id público na plataforma, exibido no hover do ícone e
   copiável no clique) e `rankPoints` (pontos acumulados de carreira, **mockados** até a regra de
   acúmulo ser definida). A escada de 16 patentes vive em `src/lib/ranks.ts`, seguindo a hierarquia
@@ -168,15 +200,24 @@ maior score do mês), a partir de `statSnapshot`.
 
 ## Camada de dados de stats — `src/lib/stats/`
 
-Isola a origem para permitir troca sem tocar no app:
-- `provider.ts`: interface `StatsProvider { fetchMemberStats(handle): Promise<RawStats> }` e
-  o tipo `RawStats` (kills, deaths, matchesPlayed, wins, score, timePlayedMinutes, extra).
-- `manual-provider.ts`: implementação trivial (não busca nada externo). Sem tela de edição manual,
-  serve hoje como fallback/no-op — mantido porque é a rede de segurança se o scraping não vingar.
-- `tracker-scraper-provider.ts` (Fase 3): implementação Playwright contra o tracker.gg,
-  **usada só pelo script de scraping**, nunca importada no bundle da web app.
+Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26):
+- `provider.ts`: interface `StatsProvider { searchPlayer(name); fetchStats(identities[]) }` e os
+  tipos `PlayerIdentity` (personaId + nucleusId) e `RawStats` — já no **nosso** vocabulário, com a
+  semântica do bucket `gm_all` (docs/api-gametools.md §3).
+- `gametools.ts`: `GametoolsProvider`. Zod valida só o que lemos (`.loose()` no resto);
+  `seperation=true` + `format_values=false` sempre; lê o grupo `gm_all`, deriva `bestClass` de
+  `classes[]` e guarda `dividedKills.human` (o número que o tracker.gg exibe) no `extra`. Lotes
+  sequenciais de 10 via `POST /bf6/multiple/`; lote com erro é pulado e tentado no ciclo seguinte.
+  Testado contra `gametools.fixture.ts`, um payload real trimado — o parser não depende da rede.
+- `collect.ts`: o ciclo de coleta — elegíveis (`active` + `discordId`), resolve identidades
+  faltantes (máx. 10 buscas por ciclo, o resto cura nos próximos), busca em lote, compara com o
+  último snapshot (`hasNewActivity`) e grava `statSnapshot` `source: api` **só de quem jogou**.
+  Retorna um relatório por membro (updated/unchanged/no-data/identity-pending).
 - `snapshots.ts`: funções **puras** e testáveis — `computeKd`, `computeWinRate`,
   `deltaForMonth(snapshots, month)`, `rankMembers(...)` — com testes colocados (`*.test.ts`).
+
+O valor `manual` do enum `StatSource` continua no schema (custa zero); um `manual-provider.ts`
+só será escrito se algum dia voltar a edição manual.
 
 ---
 
@@ -232,27 +273,28 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
   com `requireAdmin()` + `revalidatePath`. UI otimista com `sonner` (padrão do Routina).
 - **Removido do escopo:** edição manual de stats e upload de melhores jogadas (ver Backlog).
 
-### Fase 3 — Scraper do tracker.gg (a parte "automática" do híbrido) — de hora em hora, todos os membros
-- **Serviço dedicado (worker), não GitHub Actions.** Cadência fixa horária de *todos* os membros
-  exige um processo confiável e de custo previsível (o cron do Actions é impreciso e, em repo
-  privado, estoura os minutos grátis). Fica **no mesmo repo**, em `scraper/` (com `package.json`
-  e `Dockerfile` próprios), deployado separadamente no **Railway** (ou Fly) — fora do runtime web
-  da Vercel, que não roda Chromium.
-- `TrackerScraperProvider` (Playwright) implementa `StatsProvider`; o código do scraper **nunca
-  entra no bundle** da app web (isolado pela interface).
-- **Agendador interno** (node-cron / loop) dispara a cada 1h: lê os membros ativos com
-  `trackerHandle` no Supabase, scrapa cada um com **espaçamento + jitter** e concorrência limitada
-  (reduz risco de bloqueio) e faz upsert de `statSnapshot` (`source: scraper`).
-- Resiliência: falha de um handle é pulada e logada, não derruba os demais; retry/backoff em erro
-  transitório. Snapshots com `source: manual` (do seed ou de um futuro fallback) nunca são
-  sobrescritos — respeitar `source`/`capturedAt`.
-- **Sinal de "jogou" + dedup:** ler o **timestamp da última partida** (ou a contagem total de
-  partidas) do perfil como marcador. Se não mudou desde o último snapshot → não jogou → não grava
-  linha nova (o check ainda é 1 request; ele economiza escrita/parsing, não requests). Mesmo assim,
-  ~30 membros × 24h × 30d ≈ 21 mil linhas/mês no pior caso — o Postgres aguenta.
-- **Controle de volume/bloqueio:** espalhar as coletas ao longo dos 60 min + jitter. Otimização
-  futura opcional: **cadência adaptativa** (jogou recentemente → 1h; inativo há dias → 6h), usando
-  o mesmo sinal de última partida; isso sim corta requests. Começar simples: todos a cada 1h.
+### Fase 3 — Coleta de stats via API gametools — a cada 10 min, todos os elegíveis
+*(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/api-gametools.md`.)*
+
+- **Sem worker, sem Docker, sem Railway.** A coleta é uma Route Handler no próprio app
+  (`/api/stats/collect`) disparada por um agendador externo (ver Deploy > Agendamento). O que o
+  plano antigo chamava de "Fase 3" encolheu para: rota + provider + cron.
+- **Fluxo do ciclo** (`src/lib/stats/collect.ts`):
+  1. Elegíveis: `active = true` **e** `discordId` preenchido (= aceitou o convite e entrou com
+     Discord — regra do ciclo de vida nas Decisões).
+  2. Identidades EA faltantes são resolvidas pelo nick (`GET /bf6/player/`), no máximo 10 por
+     ciclo — um lote grande de membros novos se resolve em poucos ciclos sem estourar a duração
+     da função.
+  3. Stats em **lotes sequenciais de 10** (`POST /bf6/multiple/`, um request em voo por vez) —
+     ~50 membros = 5 requests. Ids em vez de nomes: mais rápido e imune a troca de nick.
+  4. **Só grava quem jogou**: snapshot novo apenas se kills/deaths/wins/losses/tempo mudaram
+     desde o último (`hasNewActivity`). Pior caso teórico com 50 membros × 144 ciclos/dia é alto,
+     mas o filtro corta para ~o número de sessões reais de jogo; revisitar se a tabela crescer.
+  5. Cache da vitrine (`CACHE_TAG.stats`) é purgado quando algo foi gravado.
+- **Resiliência:** lote com erro é logado e pulado (os demais seguem); membro sem retorno fica
+  para o próximo ciclo; a rota falha fechada sem `CRON_SECRET`; um ciclo perdido não é incidente.
+- **Snapshots `manual` nunca são sobrescritos** — a coleta só insere linhas novas com
+  `source: api`, nunca atualiza linhas existentes.
 
 ### Fase 4 — Progressão e polimento
 - Gráficos de progressão (Recharts) no perfil e no ranking (série temporal de `statSnapshot`).
@@ -276,21 +318,56 @@ Decisão de 2026-07-25: não construir agora. O que fica pronto para quando volt
 - Pendência de produto: decidir se o link sai do menu enquanto a página for um placeholder.
 
 ### Edição manual de stats
-Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só do scraper (Fase 3).
-Preencher 6 campos por membro à mão para ~30 membros não se sustenta na operação do clã.
-- O que **fica** no código: valor `manual` no enum `StatSource`, `manual-provider.ts` e a interface
-  `StatsProvider`. Custo zero hoje e evita mudança de schema depois.
-- **Risco assumido:** enquanto o scraper não existir, `/ranking` e os perfis mostram dados de seed.
-  O spike do tracker.gg (ver Fase 3) precisa ser validado antes de divulgar o site publicamente —
-  ou o site vai ao ar sem as seções de stats. Se o spike mostrar que o scraping é inviável, a tela
-  de edição manual volta a ser a única saída e sobe para uma fase.
+Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só da coleta via API
+(Fase 3). Preencher 6 campos por membro à mão para ~50 membros não se sustenta na operação do clã.
+- O que **fica** no código: valor `manual` no enum `StatSource` e a interface `StatsProvider`.
+  Custo zero hoje e evita mudança de schema depois.
+- O argumento ficou mais forte em 2026-07-26: a fonte automática deixou de ser frágil (API em vez
+  de scraping). Se o gametools sumir um dia, a interface `StatsProvider` permite trocar de fonte;
+  a edição manual só volta ao escopo se não existir fonte nenhuma.
 
 ---
 
 ## Deploy
-- **App:** Vercel. **DB/Auth/Storage:** Supabase. **Scraper:** worker dedicado no Railway/Fly
-  (Docker + Playwright + cron interno horário), na pasta `scraper/` do mesmo repo (Fase 3).
+- **App:** Vercel. **DB/Auth/Storage:** Supabase. **Coleta de stats:** dentro do próprio app
+  (`/api/stats/collect`) — nenhuma infra nova.
 - CI do starter já roda lint → type-check → test → build + E2E; manter e rodar antes de commitar.
+
+### Convite de admin (bootstrap)
+O primeiro acesso ao painel vem do convite que o `pnpm db:seed` imprime no terminal. O token é
+guardado **hasheado**, então um link perdido não é recuperável — só substituível, e o painel não
+resolve (conceder admin exige já ser admin). Para reemitir sem apagar o banco:
+
+```bash
+pnpm invite:admin
+```
+
+Sem argumento ele pega o membro com cargo `admin`; passe o nick para escolher outro
+(`pnpm invite:admin Vortex`). O link novo invalida o anterior não usado, como no painel.
+
+### Agendamento da coleta (a cada 10 min)
+A rota é agnóstica de agendador: qualquer coisa que faça um GET/POST com
+`Authorization: Bearer $CRON_SECRET` serve. Decisão: **Supabase pg_cron + pg_net** — já pagamos
+pelo Supabase, é preciso no horário e gratuito, enquanto o Vercel Cron no plano Hobby só permite
+cadência diária e o cron do GitHub Actions é impreciso e consome minutos do repo privado.
+
+Uma vez, no SQL Editor do Supabase (extensões `pg_cron` e `pg_net` em Database > Extensions):
+
+```sql
+select cron.schedule(
+  'collect-bf6-stats',
+  '*/10 * * * *',
+  $$
+  select net.http_post(
+    url     := 'https://<dominio-do-app>/api/stats/collect',
+    headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb
+  );
+  $$
+);
+```
+
+Para inspecionar/remover: `select * from cron.job;` e `select cron.unschedule('collect-bf6-stats');`.
+Trocou o `CRON_SECRET`? Atualizar nos dois lugares (Vercel env + job).
 
 ## Verificação
 - **Fase 0:** `pnpm db:push` cria as tabelas; `seed` popula; `pnpm dev` sobe; type-check/lint/build verdes.
@@ -299,19 +376,22 @@ Preencher 6 campos por membro à mão para ~30 membros não se sustenta na opera
 - **Fase 2:** login Discord funciona; `/admin` bloqueado para não-admin; CRUD de membro e de medalha
   persistem; avatar do Discord chega no `member.avatarUrl`; conceder e revogar medalha reflete
   imediatamente em `/medalhas`, `/membros` e no perfil do membro.
-- **Fase 3:** rodar o script local contra 1 handle real insere snapshot correto; cron agenda; falha de
-  um handle não derruba os demais; snapshot `manual` não é sobrescrito.
+- **Fase 3:** `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/stats/collect`
+  devolve o relatório e insere snapshot correto para 1 membro real (conferir kills = `gm_all`);
+  sem o header devolve 401; segundo ciclo sem partida nova não grava linha (`unchanged`); membro
+  com nick errado aparece como `identity-pending` e ganha o badge "Stats pendentes" no painel;
+  membro sem Discord vinculado não aparece no relatório; snapshot `manual` não é sobrescrito.
 
 ## Observações
 - Medalhas são **curadas e atribuídas por admins** (critérios como "20 kills sem morrer" não são
-  detectáveis via scraping) — o scraper alimenta só stats numéricas; medalhas são manuais por design.
+  detectáveis na API) — a coleta alimenta só stats numéricas; medalhas são manuais por design.
 - Reaproveitar padrões do Routina: `requireUserId`/`requireAdmin` + `revalidatePath` nas actions,
   otimista com rollback + `toast`, lógica pura testável em `src/lib/*`, alias `@/*`, RSC por padrão.
-- Ação pendente do usuário: confirmar viabilidade/estabilidade do scraping do BF6 no tracker.gg
-  antes de investir na Fase 3. **Passou a ser crítico** desde que a edição manual saiu do escopo —
-  o scraper é agora a única fonte de stats do site.
-- **Spike obrigatório antes de construir o worker (Fase 3):** validar num perfil real se o tracker.gg
-  (a) expõe "última partida"/total de partidas, (b) atualiza os dados sozinho ou só quando o perfil
-  é aberto/"refreshado" — se for o caso (b), scraping de hora em hora pode continuar mostrando dado
-  velho (provável causa do problema original com a API); verificar se abrir a página via Playwright
-  já dispara o refresh — e (c) se há um endpoint JSON mais leve por baixo da página.
+- **Spike concluído (2026-07-25/26):** `docs/api-gametools.md` respondeu tudo o que travava a
+  Fase 3 — fonte é a própria EA (sem "abrir o perfil" para atualizar), paridade número a número
+  com o tracker.gg, bucket canônico `gm_all` definido, endpoints e armadilhas mapeados.
+- **Pendência com o clã** (única restante, não bloqueia o deploy): teste de fidelidade/frescor da
+  §8 do estudo — conferir com um membro se os números batem com a tela do jogo e medir o atraso
+  da EA após uma partida. Até lá, não divulgar as seções de stats.
+- O nick cadastrado **precisa ser o nome EA exato** (o formulário avisa). Nick errado = membro
+  eterno em "Stats pendentes"; corrigir o nick rebinda a identidade automaticamente.

@@ -20,16 +20,10 @@ export const publicEnv = {
    * Supabase dashboard, never here.
    */
   get supabaseUrl(): string {
-    return required(
-      "NEXT_PUBLIC_SUPABASE_URL",
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-    );
+    return required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL);
   },
   get supabaseAnonKey(): string {
-    return required(
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    );
+    return required("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   },
   /**
    * Whether auth can run at all. The public vitrine must not break when the keys
@@ -38,8 +32,7 @@ export const publicEnv = {
    */
   get supabaseConfigured(): boolean {
     return Boolean(
-      process.env.NEXT_PUBLIC_SUPABASE_URL &&
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     );
   },
 } as const;
@@ -54,16 +47,18 @@ export const serverEnv = {
    * Only ever read inside "use server" code (see src/lib/supabase/admin.ts).
    */
   get supabaseServiceRoleKey(): string {
-    return required(
-      "SUPABASE_SERVICE_ROLE_KEY",
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-    );
+    return required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY);
+  },
+  /**
+   * Shared secret that authorizes the scheduled stats collection
+   * (/api/stats/collect). Whoever schedules the call (pg_cron, Vercel Cron,
+   * GitHub Actions) sends it as `Authorization: Bearer <secret>`.
+   */
+  get cronSecret(): string {
+    return required("CRON_SECRET", process.env.CRON_SECRET);
   },
   /** Whether medal artwork can be uploaded. The panel degrades without it. */
   get storageConfigured(): boolean {
-    return Boolean(
-      process.env.SUPABASE_SERVICE_ROLE_KEY &&
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-    );
+    return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL);
   },
 } as const;

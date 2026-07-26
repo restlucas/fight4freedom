@@ -4,19 +4,13 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import {
-  DialogClose,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { DialogClose, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PLATFORM_LABEL, ROLE_LABEL } from "@/features/clan/lib/format";
 import { cn } from "@/lib/utils";
 
-import {
-  createMemberAction,
-  updateMemberAction,
-} from "@/features/admin/lib/actions";
+import { createMemberAction, updateMemberAction } from "@/features/admin/lib/actions";
 import type { AdminMember } from "@/features/admin/lib/queries";
 import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
 
@@ -62,9 +56,7 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
 
   return (
     <form action={submit} className="space-y-4">
-      {member ? (
-        <input type="hidden" name="memberId" value={member.id} />
-      ) : null}
+      {member ? <input type="hidden" name="memberId" value={member.id} /> : null}
 
       <div>
         <Label htmlFor="nickname">Nick</Label>
@@ -77,6 +69,10 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
           autoComplete="off"
           className="mt-1.5"
         />
+        {/* The nickname doubles as the EA display name for the stats binding. */}
+        <p className="text-muted-foreground mt-1 text-xs">
+          Deve ser o nome EA exato: é ele que vincula os stats automaticamente.
+        </p>
         <FieldError messages={errors?.nickname} />
       </div>
 
@@ -138,20 +134,6 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
           <p className="text-muted-foreground mt-1 text-xs">
             Só exibição. Não concede acesso ao painel.
           </p>
-        </div>
-
-        <div>
-          <Label htmlFor="trackerHandle">Handle no tracker</Label>
-          <Input
-            id="trackerHandle"
-            name="trackerHandle"
-            defaultValue={member?.trackerHandle ?? ""}
-            maxLength={80}
-            autoComplete="off"
-            placeholder="opcional"
-            className="mt-1.5"
-          />
-          <FieldError messages={errors?.trackerHandle} />
         </div>
       </div>
 

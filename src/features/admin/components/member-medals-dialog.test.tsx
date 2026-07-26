@@ -51,7 +51,7 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
     nickname: "Panzer",
     platform: "xbox",
     platformId: "Panzer 128",
-    trackerHandle: "Panzer",
+    statsLinked: true,
     role: "member",
     active: true,
     avatarUrl: null,

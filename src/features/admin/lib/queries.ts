@@ -26,7 +26,12 @@ export type AdminMember = {
   nickname: string;
   platform: Platform;
   platformId: string | null;
-  trackerHandle: string | null;
+  /**
+   * Whether the EA identity behind the stats collection is bound. False means
+   * the nickname was not found on EA yet — the collector retries every run,
+   * but a wrong nickname stays pending forever, so the panel surfaces it.
+   */
+  statsLinked: boolean;
   role: MemberRole;
   active: boolean;
   avatarUrl: string | null;
@@ -48,7 +53,8 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       nickname: true,
       platform: true,
       platformId: true,
-      trackerHandle: true,
+      eaPersonaId: true,
+      eaNucleusId: true,
       role: true,
       active: true,
       avatarUrl: true,
@@ -78,7 +84,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
     nickname: m.nickname,
     platform: m.platform,
     platformId: m.platformId,
-    trackerHandle: m.trackerHandle,
+    statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
     role: m.role,
     active: m.active,
     avatarUrl: m.avatarUrl,
@@ -153,25 +159,18 @@ export type AdminOverview = {
 };
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const [
-    members,
-    inactiveMembers,
-    linkedAccounts,
-    admins,
-    pendingInvites,
-    medals,
-    awards,
-  ] = await Promise.all([
-    db.member.count(),
-    db.member.count({ where: { active: false } }),
-    db.profile.count({ where: { memberId: { not: null } } }),
-    db.profile.count({ where: { isAdmin: true } }),
-    db.memberInvite.count({
-      where: { usedAt: null, expiresAt: { gt: new Date() } },
-    }),
-    db.medal.count(),
-    db.memberMedal.count(),
-  ]);
+  const [members, inactiveMembers, linkedAccounts, admins, pendingInvites, medals, awards] =
+    await Promise.all([
+      db.member.count(),
+      db.member.count({ where: { active: false } }),
+      db.profile.count({ where: { memberId: { not: null } } }),
+      db.profile.count({ where: { isAdmin: true } }),
+      db.memberInvite.count({
+        where: { usedAt: null, expiresAt: { gt: new Date() } },
+      }),
+      db.medal.count(),
+      db.memberMedal.count(),
+    ]);
 
   return {
     members,

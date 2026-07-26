@@ -1,27 +1,16 @@
 // Seed with the real clan admin plus a starter medal catalog, so the Fase 1
 // vitrine has something to render. Run with: pnpm db:seed
 //
-// IMPORTANT: the only real data here is the member RRRRRRRREST (identity). The
-// stat numbers are PLACEHOLDERS until real values arrive via manual entry
-// (Fase 2) or the tracker.gg scraper (Fase 3). Medals are a starter catalog the
+// IMPORTANT: the only real data here is the member RRRRRRRREST (identity + EA
+// ids). The stat numbers are PLACEHOLDERS until the first collection run
+// replaces them (/api/stats/collect, Fase 3). Medals are a starter catalog the
 // admin can edit/replace in Fase 2.
 //
 // Idempotent: clears the tables it owns (FK-safe order) before inserting.
 
-import type {
-  MedalTier,
-  MemberRole,
-  Platform,
-  PlayerClass,
-  StatSource,
-} from "@prisma/client";
+import type { MedalTier, MemberRole, Platform, PlayerClass, StatSource } from "@prisma/client";
 
-import {
-  generateInviteToken,
-  hashInviteToken,
-  inviteExpiresAt,
-  inviteUrl,
-} from "../auth/invite";
+import { generateInviteToken, hashInviteToken, inviteExpiresAt, inviteUrl } from "../auth/invite";
 import { db } from "./index";
 
 // Three snapshots (last month + earlier this month + now) so "this month"
@@ -49,7 +38,13 @@ type SeedMember = {
   platform: Platform;
   /** Public id on the platform, shown on hover over the platform icon. */
   platformId: string;
-  trackerHandle: string;
+  /**
+   * EA identity used by the stats collector. Only real members have it; the
+   * example roster keeps null so the collector never queries the API for
+   * players that do not exist.
+   */
+  eaPersonaId: string | null;
+  eaNucleusId: string | null;
   role: MemberRole;
   joinedAt: string;
   bestClass: PlayerClass;
@@ -69,7 +64,9 @@ const REAL_MEMBERS: SeedMember[] = [
     nickname: "RRRRRRRREST",
     platform: "ea",
     platformId: "RRRRRRRREST",
-    trackerHandle: "RRRRRRRREST",
+    // Real ids, resolved via GET /bf6/player/?name=RRRRRRRREST (2026-07-25).
+    eaPersonaId: "1111751848",
+    eaNucleusId: "1000707516734",
     role: "admin",
     joinedAt: "2025-10-01",
     bestClass: "assault",
@@ -94,11 +91,35 @@ const REAL_MEMBERS: SeedMember[] = [
 // page) and the sort filters have enough data to exercise. Replace with the
 // real roster from fight4freedom.com.br.
 const EXAMPLE_NICKNAMES = [
-  "Vortex", "TangoDown", "BlackWolf", "Reaper", "GhostBR", "Panzer",
-  "Falcao", "ZeusPrime", "Nomad", "Viper", "Havoc", "Sabotage",
-  "IronHand", "NightOwl", "Kraken", "Bandido", "Trovao", "Cascavel",
-  "Predador", "Sentinela", "Fantasma", "Tempestade", "Aguia", "Lobo",
-  "Escorpiao", "Chumbo", "Rajada", "Coyote", "Meteoro",
+  "Vortex",
+  "TangoDown",
+  "BlackWolf",
+  "Reaper",
+  "GhostBR",
+  "Panzer",
+  "Falcao",
+  "ZeusPrime",
+  "Nomad",
+  "Viper",
+  "Havoc",
+  "Sabotage",
+  "IronHand",
+  "NightOwl",
+  "Kraken",
+  "Bandido",
+  "Trovao",
+  "Cascavel",
+  "Predador",
+  "Sentinela",
+  "Fantasma",
+  "Tempestade",
+  "Aguia",
+  "Lobo",
+  "Escorpiao",
+  "Chumbo",
+  "Rajada",
+  "Coyote",
+  "Meteoro",
 ];
 
 const PLATFORMS: Platform[] = ["ea", "xbox", "psn"];
@@ -114,11 +135,7 @@ function pseudoRandom(seed: number): () => number {
 }
 
 /** Plausible platform id per platform, so the hover has something real to show. */
-function examplePlatformId(
-  nickname: string,
-  platform: Platform,
-  index: number,
-): string {
+function examplePlatformId(nickname: string, platform: Platform, index: number): string {
   switch (platform) {
     case "ea":
       return `${nickname}BR`;
@@ -141,7 +158,8 @@ function exampleMember(nickname: string, index: number): SeedMember {
     nickname,
     platform,
     platformId: examplePlatformId(nickname, platform, index),
-    trackerHandle: nickname,
+    eaPersonaId: null,
+    eaNucleusId: null,
     role: index % 9 === 0 ? "officer" : "member",
     joinedAt: `2025-1${(index % 2) + 1}-${String((index % 27) + 1).padStart(2, "0")}`,
     bestClass: CLASSES[index % CLASSES.length],
@@ -164,10 +182,7 @@ function exampleMember(nickname: string, index: number): SeedMember {
   };
 }
 
-const MEMBERS: SeedMember[] = [
-  ...REAL_MEMBERS,
-  ...EXAMPLE_NICKNAMES.map(exampleMember),
-];
+const MEMBERS: SeedMember[] = [...REAL_MEMBERS, ...EXAMPLE_NICKNAMES.map(exampleMember)];
 
 // Public-facing copy is pt-BR (the vitrine's language); `icon` is a curated
 // lucide name used as fallback until an admin uploads artwork (`imageUrl`).
@@ -178,12 +193,48 @@ const MEDALS: {
   icon: string;
   tier: MedalTier;
 }[] = [
-  { name: "Sharpshooter", description: "Precisão cirúrgica do começo ao fim da sessão.", criteria: "20 kills sem morrer em uma única partida", icon: "crosshair", tier: "legendary" },
-  { name: "Anchor", description: "Segurou o objetivo na hora em que mais importava.", criteria: "Maior pontuação de objetivo em 5 vitórias", icon: "shield", tier: "rare" },
-  { name: "First Blood", description: "Ditou o ritmo desde os primeiros segundos.", criteria: "Primeira kill da partida, 10 vezes", icon: "swords", tier: "common" },
-  { name: "Clutch King", description: "Virou um round perdido sozinho.", criteria: "Vencer um clutch 1vX (X >= 3)", icon: "crown", tier: "legendary" },
-  { name: "Operação Liberdade", description: "Campeão do torneio interno do clã.", criteria: "Vencer um evento oficial do Fight4Freedom", icon: "trophy", tier: "special" },
-  { name: "Médico de Guerra", description: "Manteve o esquadrão de pé sob fogo.", criteria: "50 revives em uma semana", icon: "star", tier: "rare" },
+  {
+    name: "Sharpshooter",
+    description: "Precisão cirúrgica do começo ao fim da sessão.",
+    criteria: "20 kills sem morrer em uma única partida",
+    icon: "crosshair",
+    tier: "legendary",
+  },
+  {
+    name: "Anchor",
+    description: "Segurou o objetivo na hora em que mais importava.",
+    criteria: "Maior pontuação de objetivo em 5 vitórias",
+    icon: "shield",
+    tier: "rare",
+  },
+  {
+    name: "First Blood",
+    description: "Ditou o ritmo desde os primeiros segundos.",
+    criteria: "Primeira kill da partida, 10 vezes",
+    icon: "swords",
+    tier: "common",
+  },
+  {
+    name: "Clutch King",
+    description: "Virou um round perdido sozinho.",
+    criteria: "Vencer um clutch 1vX (X >= 3)",
+    icon: "crown",
+    tier: "legendary",
+  },
+  {
+    name: "Operação Liberdade",
+    description: "Campeão do torneio interno do clã.",
+    criteria: "Vencer um evento oficial do Fight4Freedom",
+    icon: "trophy",
+    tier: "special",
+  },
+  {
+    name: "Médico de Guerra",
+    description: "Manteve o esquadrão de pé sob fogo.",
+    criteria: "50 revives em uma semana",
+    icon: "star",
+    tier: "rare",
+  },
 ];
 
 // [memberNickname, medalName]
@@ -234,10 +285,7 @@ async function createBootstrapInvite(memberId: string, nickname: string) {
       expiresAt: inviteExpiresAt(new Date()),
     },
   });
-  const url = inviteUrl(
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-    token,
-  );
+  const url = inviteUrl(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000", token);
   console.log(`\n  Convite de admin para ${nickname} (uso único, 7 dias):`);
   console.log(`  ${url}\n`);
 }
@@ -258,7 +306,8 @@ async function seed() {
       nickname: m.nickname,
       platform: m.platform,
       platformId: m.platformId,
-      trackerHandle: m.trackerHandle,
+      eaPersonaId: m.eaPersonaId,
+      eaNucleusId: m.eaNucleusId,
       role: m.role,
       joinedAt: new Date(m.joinedAt),
       rankPoints: m.rankPoints,
@@ -278,8 +327,20 @@ async function seed() {
     const id = memberByNick.get(m.nickname)!.id;
     const startOfMonth = 1 - m.monthShare;
     return [
-      { memberId: id, capturedAt: PREV_MONTH, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, startOfMonth * 0.8) },
-      { memberId: id, capturedAt: MONTH_START, source: MANUAL, bestClass: m.bestClass, ...scaleStats(m.stats, startOfMonth) },
+      {
+        memberId: id,
+        capturedAt: PREV_MONTH,
+        source: MANUAL,
+        bestClass: m.bestClass,
+        ...scaleStats(m.stats, startOfMonth * 0.8),
+      },
+      {
+        memberId: id,
+        capturedAt: MONTH_START,
+        source: MANUAL,
+        bestClass: m.bestClass,
+        ...scaleStats(m.stats, startOfMonth),
+      },
       { memberId: id, capturedAt: NOW, source: MANUAL, bestClass: m.bestClass, ...m.stats },
     ];
   });
@@ -293,7 +354,9 @@ async function seed() {
     })),
   });
 
-  console.log(`Seed complete: ${members.length} members, ${medals.length} medals, ${snapshots.length} snapshots.`);
+  console.log(
+    `Seed complete: ${members.length} members, ${medals.length} medals, ${snapshots.length} snapshots.`,
+  );
 
   const owner = memberByNick.get(REAL_MEMBERS[0].nickname)!;
   await createBootstrapInvite(owner.id, owner.nickname);

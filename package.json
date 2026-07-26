@@ -21,6 +21,7 @@
     "db:generate": "prisma generate",
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "db:seed": "dotenv -e .env.local -- tsx src/lib/db/seed.ts",
+    "invite:admin": "dotenv -e .env.local -- tsx src/lib/db/bootstrap-invite.ts",
     "postinstall": "prisma generate"
   },
   "pnpm": {

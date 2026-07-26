@@ -22,7 +22,6 @@ export const memberFormSchema = z.object({
     .max(32, "O nick deve ter no máximo 32 caracteres"),
   platform: z.enum(PLATFORMS, { message: "Escolha uma plataforma" }),
   platformId: trimmedOptional,
-  trackerHandle: trimmedOptional,
   /** Clan cargo. Display only — never grants access (see lib/auth/session.ts). */
   role: z.enum(MEMBER_ROLES),
   active: z.coerce.boolean(),
@@ -46,14 +45,7 @@ export const inviteFormSchema = z.object({
 export const MEDAL_TIERS = ["common", "rare", "legendary", "special"] as const;
 
 /** Curated lucide names, matching ICONS in medal-emblem.tsx. */
-export const MEDAL_ICONS = [
-  "crosshair",
-  "shield",
-  "swords",
-  "crown",
-  "trophy",
-  "star",
-] as const;
+export const MEDAL_ICONS = ["crosshair", "shield", "swords", "crown", "trophy", "star"] as const;
 
 const longTextOptional = z
   .string()
@@ -112,8 +104,7 @@ export const inviteIdSchema = z.object({
 
 /** Shape every admin action returns, so forms can render errors uniformly. */
 export type ActionResult<T = undefined> =
-  | { ok: true; data: T }
-  | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
+  { ok: true; data: T } | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
 export function actionError(
   error: string,

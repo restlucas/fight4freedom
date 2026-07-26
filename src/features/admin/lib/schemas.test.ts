@@ -12,7 +12,6 @@ const validMember = {
   nickname: "Panzer",
   platform: "xbox",
   platformId: "Panzer 128",
-  trackerHandle: "Panzer",
   role: "member",
   active: true,
 };
@@ -46,11 +45,9 @@ describe("memberFormSchema", () => {
   it("turns blank optional fields into null instead of empty strings", () => {
     const parsed = memberFormSchema.parse({
       ...validMember,
-      platformId: "",
-      trackerHandle: "   ",
+      platformId: "   ",
     });
     expect(parsed.platformId).toBeNull();
-    expect(parsed.trackerHandle).toBeNull();
   });
 
   it("only accepts the three clan cargos", () => {
