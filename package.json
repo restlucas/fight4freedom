@@ -24,6 +24,7 @@
     "db:clean-examples": "dotenv -e .env.local -- tsx src/lib/db/clean-examples.ts",
     "db:mock-history": "dotenv -e .env.local -- tsx src/lib/db/mock-history.ts",
     "db:import-roster": "dotenv -e .env.local -- tsx src/lib/db/import-roster.ts",
+    "db:resolve-identities": "dotenv -e .env.local -- tsx src/lib/db/resolve-identities.ts",
     "invite:admin": "dotenv -e .env.local -- tsx src/lib/db/bootstrap-invite.ts",
     "postinstall": "prisma generate"
   },

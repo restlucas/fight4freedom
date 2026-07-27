@@ -42,9 +42,24 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   Verificado contra a API: kills 12.320, deaths 4.126, assists 4.365, revives 3.062 — os quatro
   iguais ao tracker.gg. Racional completo em `docs/api-gametools.md` §3 e §10.3.
 
-- **Cadência da coleta (2026-07-26):** **todos os membros elegíveis a cada 10 min**, em lotes
-  sequenciais de **10 jogadores** por requisição (`POST /bf6/multiple/`), para não sobrecarregar a
-  API comunitária. ~50 membros = 5 requisições por ciclo.
+- **Cadência e lote da coleta (revisado em 2026-07-27):** **todos os membros elegíveis a cada
+  ciclo** — o clã quer todas as informações frescas, e isso não muda. O que mudou é o tamanho do
+  lote: **5 jogadores por requisição**, não 10.
+
+  Não é escolha de educação com a API, é **teto medido**. Contra a API real em 27/07: lote de 1
+  responde em 2,7 s, de 3 em 2,4 s, de 5 em 4,5 s, e lotes de **10, 25, 50 e 76 devolvem 504 em
+  exatamente 15,2 s**. O 504 bate sempre nos mesmos 15,2 s independente do tamanho, ou seja, é
+  timeout de gateway do lado deles, e o trabalho a montante cresce com o número de jogadores.
+  Aumentar o lote não acelera, faz falhar. O payload reforça: ~700 KB por jogador, então 10
+  jogadores voltaram como 8,2 MB.
+
+  Consequência aceita: com ~100 membros, uma varredura completa leva **duas ou três execuções**, não
+  uma. Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
+  chega** — quem uma execução não alcança é exatamente quem a próxima começa atendendo.
+
+  A cadência de 10 min passa a 20 min quando o desenvolvimento terminar (ver a seção no fim deste
+  documento).
+
 - **Ciclo de vida do membro na coleta (2026-07-26):**
   1. Admin cadastra nick + plataforma + **id da plataforma (obrigatório)** → **ainda não entra
      na coleta**;
@@ -83,9 +98,17 @@ acumularem dois snapshots no mesmo mês.
 
 O que resta antes da Fase 4:
 
-- **Resolver as identidades EA.** O coletor resolve no máximo 10 por ciclo de 10 min, então os 98
-  levam cerca de 100 minutos. Quem tiver `platformId` errado no export fica em "Stats pendentes" e
-  precisa de correção pelo painel — conferir depois que a fila esvaziar.
+- **Corrigir 23 `platformId` inválidos.** A fila de identidades foi drenada em 27/07 com
+  `pnpm db:resolve-identities` (script novo, roda local e por isso ignora o cap de 10 por ciclo da
+  função): **74 de 97 resolvidas em 229 s**. As 23 restantes não existem na EA com o id que veio do
+  export — 12 `ea`, 8 `psn`, 3 `xbox` — e ficam em "Stats pendentes" até um admin corrigir pelo
+  painel. Rodar o script de novo recupera falhas transitórias: a primeira passada deixou 30
+  pendentes e a segunda baixou para 23.
+
+  **Custo de deixar assim:** esses 23 consomem as 10 buscas de identidade de todo ciclo (~10 s do
+  orçamento de 45 s) em tentativas que sempre falham, e esse tempo sai do fetch de quem tem
+  identidade válida.
+
 - **Teste de fidelidade da §8** com um membro (até ele, não divulgar as seções de stats).
 - **Emitir convites** para os membros ganharem login, perfil e avatar do Discord. O import cobre
   aparecer no site e pontuar; convite cobre ter conta.
@@ -510,31 +533,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                  composição.
+                                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                          composição.
 
-                                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                  uma linha de 1px colada na borda, não um tingimento.
+                                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                          uma linha de 1px colada na borda, não um tingimento.
 
-                                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                  nessa linha.
+                                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                          nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -791,3 +814,46 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
 - O **id da plataforma** cadastrado precisa ser o id exato da conta (o formulário avisa e exige).
   Id errado = membro eterno em "Stats pendentes"; corrigir o id rebinda a identidade
   automaticamente, no salvar ou no ciclo seguinte da coleta.
+
+---
+
+## Ajustes a fazer quando o desenvolvimento terminar
+
+Lista curta de coisas que estão de um jeito **porque estamos desenvolvendo**, e que precisam mudar
+antes de considerar o projeto em regime.
+
+### Cadência da coleta: 10 min → 20 min
+
+Decidido em 2026-07-27. Hoje o `pg_cron` dispara `/api/stats/collect` a cada 10 minutos, o que era
+adequado quando havia 2 membros elegíveis. Com ~100, cada varredura já leva duas ou três execuções
+(ver o orçamento de tempo em `src/lib/stats/collect.ts`), então disparar de 10 em 10 min só
+sobrepõe ciclos sem ganhar frescor: o cache de borda do gametools é de ~10 min de qualquer forma
+(`docs/api-gametools.md` §10.2), e stats só mudam quando alguém joga.
+
+Mudança, uma linha no SQL Editor do Supabase:
+
+```sql
+select cron.unschedule('collect-bf6-stats');
+select cron.schedule('collect-bf6-stats', '*/20 * * * *', $$
+  select net.http_post(
+    url                  := 'https://<dominio-do-app>/api/stats/collect',
+    headers              := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
+    timeout_milliseconds := 30000
+  );
+$$);
+```
+
+**Não** mexer no `timeout_milliseconds`: ele governa quanto o `pg_net` espera pela resposta, não
+quanto a função roda. Com a gravação por lote, um ciclo que estoura os 30 s do `pg_net` continua
+tendo persistido tudo o que baixou até ali.
+
+### Outras pontas do modo desenvolvimento
+
+- **23 membros com `platformId` inválido** consomem 10 buscas de identidade por ciclo (~10 s do
+  orçamento) que sempre falham, e esse tempo sai do fetch de quem tem identidade válida. Corrigir
+  os ids pelo painel resolve; se demorar, vale um backoff para não pagar isso a cada ciclo.
+- **`pnpm db:mock-history` e `pnpm db:clean-examples`** existem para o andaime do desenvolvimento.
+  Com o roster real no banco, `clean-examples` só serve ao `--reset-snapshots`; o `mock-history`
+  não deve mais ser rodado, porque criaria temporadas falsas ao lado das reais.
+- **Pesos do `POINT_WEIGHTS`** foram calibrados com dois membros, ambos Support. Revisar depois de
+  um mês real com o roster completo e classes variadas.

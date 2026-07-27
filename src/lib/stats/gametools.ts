@@ -21,8 +21,24 @@ import type { PlayerIdentity, RawStats, StatsProvider } from "./provider";
 
 const BASE_URL = "https://api.gametools.network";
 
-/** Batch size agreed with the clan owner (2026-07-26): 10 per request. */
-export const STATS_BATCH_SIZE = 10;
+/**
+ * Players per request. Five, measured against the live API on 2026-07-27 — not a
+ * politeness figure, a hard ceiling:
+ *
+ *   1 player  -> 200 in 2.7 s
+ *   3 players -> 200 in 2.4 s
+ *   5 players -> 200 in 4.5 s
+ *   10, 25, 50, 76 -> **504 in 15.2 s**
+ *
+ * The 504 lands at 15.2 s regardless of batch size, so their gateway cuts off
+ * there, and upstream work grows with the player count. Ten players need 12-15 s
+ * cold and usually lose the race; five need ~4.5 s with room to spare. Raising
+ * this does not make collection faster, it makes it fail.
+ *
+ * The payload matters too: roughly 700 KB per player, so ten players came back as
+ * 8.2 MB. Another reason the batch stays small.
+ */
+export const STATS_BATCH_SIZE = 5;
 
 const SEARCH_TIMEOUT_MS = 10_000;
 // A cold-cache batch was measured at ~2-6 s for 2 players; give 10 players room.
