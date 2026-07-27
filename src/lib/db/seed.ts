@@ -36,7 +36,12 @@ type Stats = {
 type SeedMember = {
   nickname: string;
   platform: Platform;
-  /** Public id on the platform, shown on hover over the platform icon. */
+  /**
+   * Exact public id on the platform: shown on hover over the platform icon and
+   * used as the lookup key for the stats collection. Only the real member has a
+   * value that exists on EA; the example roster's are made up, which is fine
+   * because those members have no Discord linked and are never collected.
+   */
   platformId: string;
   /**
    * EA identity used by the stats collector. Only real members have it; the

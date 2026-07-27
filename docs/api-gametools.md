@@ -297,8 +297,10 @@ os números do seed são placeholder (o próprio RRRRRRRREST aparece com 5.210 k
 ## 9. Próximos passos recomendados
 
 1. **Fazer o teste de fidelidade e frescor da seção 8.** É rápido e é o único bloqueio real.
-2. **Guardar a identidade dos membros:** trocar `trackerHandle` por `eaPersonaId` e `eaNucleusId`, e
-   incluir no painel um botão "buscar na EA" que consulta `/bf6/player/?name=` e preenche os dois.
+2. **Guardar a identidade dos membros:** trocar `trackerHandle` por `eaPersonaId` e `eaNucleusId`,
+   resolvidos automaticamente a partir do `platformId` (id exato da conta) via
+   `/bf6/player/?name=`. *(Feito em 2026-07-26. O `platformId` virou obrigatório no formulário
+   justamente por assumir esse papel; o `nickname` ficou só como nome de exibição.)*
 3. **Escrever a camada de stats de verdade:** `provider.ts` (interface + tipo `RawStats`),
    `gametools-provider.ts` (com Zod validando a resposta, `format_values=false` e
    `seperation=true`, lendo os stats do grupo `gm_all` conforme a seção 3) e testes com um
@@ -406,7 +408,7 @@ A API expõe 18 rotas para BF6. As que interessam a este projeto:
 
 | Endpoint | Uso |
 |---|---|
-| `GET /bf6/player/` | Buscar `personaId` / `nucleusId` a partir do nome. Uma vez por membro |
+| `GET /bf6/player/` | Buscar `personaId` / `nucleusId` a partir do **`platformId`** do membro (id exato da conta, não o nick de exibição). Uma vez por membro |
 | `POST /bf6/multiple/` | **Coleta principal.** Até 128 jogadores por chamada |
 | `GET /bf6/stats/` | Um jogador. Útil para depurar e para "atualizar agora" no painel |
 | `GET /bf6/profile/` | Patente do jogo, insígnia, badges, dog tags |

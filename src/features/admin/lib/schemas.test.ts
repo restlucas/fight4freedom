@@ -31,23 +31,27 @@ describe("memberFormSchema", () => {
 
   it("rejects a nickname that is too short or too long", () => {
     expect(memberFormSchema.safeParse({ ...validMember, nickname: "P" }).success).toBe(false);
-    expect(
-      memberFormSchema.safeParse({ ...validMember, nickname: "x".repeat(33) }).success,
-    ).toBe(false);
-  });
-
-  it("rejects an unknown platform", () => {
-    expect(memberFormSchema.safeParse({ ...validMember, platform: "steam" }).success).toBe(
+    expect(memberFormSchema.safeParse({ ...validMember, nickname: "x".repeat(33) }).success).toBe(
       false,
     );
   });
 
-  it("turns blank optional fields into null instead of empty strings", () => {
-    const parsed = memberFormSchema.parse({
-      ...validMember,
-      platformId: "   ",
-    });
-    expect(parsed.platformId).toBeNull();
+  it("rejects an unknown platform", () => {
+    expect(memberFormSchema.safeParse({ ...validMember, platform: "steam" }).success).toBe(false);
+  });
+
+  it("requires the platform id: it is what resolves the EA identity", () => {
+    expect(memberFormSchema.safeParse({ ...validMember, platformId: "" }).success).toBe(false);
+    expect(memberFormSchema.safeParse({ ...validMember, platformId: "   " }).success).toBe(false);
+    expect(memberFormSchema.safeParse({ ...validMember, platformId: undefined }).success).toBe(
+      false,
+    );
+  });
+
+  it("trims the platform id, since it is matched exactly against EA", () => {
+    expect(
+      memberFormSchema.parse({ ...validMember, platformId: "  RRRRRRRREST  " }).platformId,
+    ).toBe("RRRRRRRREST");
   });
 
   it("only accepts the three clan cargos", () => {
@@ -66,9 +70,7 @@ describe("inviteFormSchema", () => {
   const memberId = "b7cf6c36-4de6-4602-8973-47c42cb63ce5";
 
   it("requires a real member id", () => {
-    expect(inviteFormSchema.safeParse({ memberId: "abc", grantsAdmin: false }).success).toBe(
-      false,
-    );
+    expect(inviteFormSchema.safeParse({ memberId: "abc", grantsAdmin: false }).success).toBe(false);
     expect(inviteFormSchema.safeParse({ memberId, grantsAdmin: false }).success).toBe(true);
   });
 
@@ -78,15 +80,12 @@ describe("inviteFormSchema", () => {
         .discordUsername,
     ).toBe("panzer");
     expect(
-      inviteFormSchema.parse({ memberId, discordUsername: "", grantsAdmin: false })
-        .discordUsername,
+      inviteFormSchema.parse({ memberId, discordUsername: "", grantsAdmin: false }).discordUsername,
     ).toBeNull();
   });
 
   it("defaults the admin grant to false when the checkbox is absent", () => {
-    expect(
-      inviteFormSchema.parse({ memberId, grantsAdmin: undefined }).grantsAdmin,
-    ).toBe(false);
+    expect(inviteFormSchema.parse({ memberId, grantsAdmin: undefined }).grantsAdmin).toBe(false);
   });
 
   it("reads the admin grant when checked", () => {
@@ -111,9 +110,9 @@ describe("awardFormSchema", () => {
   });
 
   it("rejects a note longer than 140 characters", () => {
-    expect(
-      awardFormSchema.safeParse({ memberId, medalId, note: "x".repeat(141) }).success,
-    ).toBe(false);
+    expect(awardFormSchema.safeParse({ memberId, medalId, note: "x".repeat(141) }).success).toBe(
+      false,
+    );
   });
 
   it("rejects ids that are not uuids", () => {

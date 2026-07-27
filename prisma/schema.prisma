@@ -61,14 +61,16 @@ model Member {
   id       String   @id @default(uuid())
   nickname String
   platform Platform
-  /// The member's public id on that platform (EA ID, gamertag, PSN ID). Shown on
-  /// hover over the platform icon. Display only — stats collection uses the EA
-  /// ids below.
+  /// The member's exact public id on that platform (EA ID, gamertag, PSN ID).
+  /// Shown on hover over the platform icon AND used as the lookup key that
+  /// resolves the EA identity below — so it must match the account exactly.
+  /// Mandatory in the admin form; nullable here only for rows created before
+  /// that rule existed.
   platformId String? @map("platform_id")
   /// EA persona id + nucleus id: the stable identity the stats API needs.
-  /// Resolved automatically from the nickname (gametools /bf6/player/) on member
+  /// Resolved automatically from `platformId` (gametools /bf6/player/) on member
   /// create/update and self-healed by the collector; never typed by hand.
-  /// Nicknames change, these ids do not — collection never breaks on a rename.
+  /// Account names change, these ids do not — collection survives a rename.
   eaPersonaId String? @map("ea_persona_id")
   eaNucleusId String? @map("ea_nucleus_id")
   /// Discord snowflake, captured from the verified OAuth identity when the

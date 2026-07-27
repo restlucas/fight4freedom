@@ -39,14 +39,16 @@ function fieldErrorsOf(error: {
 }
 
 /**
- * Best-effort resolution of the EA identity from the nickname. Registration
- * must never fail because a third-party API is down, so any error becomes
- * null and the scheduled collector self-heals it on the next runs
+ * Best-effort resolution of the EA identity from the platform id (the exact
+ * account name on EA — NOT the clan nickname, which is cosmetic and may differ).
+ *
+ * Registration must never fail because a third-party API is down, so any error
+ * becomes null and the scheduled collector self-heals it on the next runs
  * (src/lib/stats/collect.ts).
  */
-async function resolveEaIdentity(nickname: string): Promise<PlayerIdentity | null> {
+async function resolveEaIdentity(platformId: string): Promise<PlayerIdentity | null> {
   try {
-    return await gametoolsProvider.searchPlayer(nickname);
+    return await gametoolsProvider.searchPlayer(platformId);
   } catch {
     return null;
   }
@@ -69,7 +71,7 @@ export async function createMemberAction(
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));
   }
 
-  const identity = await resolveEaIdentity(parsed.data.nickname);
+  const identity = await resolveEaIdentity(parsed.data.platformId);
   const member = await db.member.create({
     data: {
       ...parsed.data,
@@ -106,19 +108,20 @@ export async function updateMemberAction(
 
   const current = await db.member.findUnique({
     where: { id: id.data.memberId },
-    select: { nickname: true, eaPersonaId: true, eaNucleusId: true },
+    select: { platformId: true, eaPersonaId: true, eaNucleusId: true },
   });
   if (!current) return actionError("Membro não encontrado.");
 
-  // Re-resolve the EA identity when the nickname changed or was never bound.
-  // On failure the old ids are KEPT on purpose: EA ids survive renames, so a
-  // member who renamed keeps collecting; a typo fix gets rebound as soon as
-  // the search succeeds (here or in the collector).
+  // Re-resolve the EA identity when the platform id changed or was never bound.
+  // Renaming the clan nickname does NOT trigger a lookup — it is cosmetic.
+  // On failure the old ids are KEPT on purpose: EA ids survive account renames,
+  // so a member who renamed keeps collecting; a typo fix gets rebound as soon
+  // as the search succeeds (here or in the collector).
   let identity: PlayerIdentity | null = null;
   const needsResolution =
-    current.nickname !== parsed.data.nickname || !current.eaPersonaId || !current.eaNucleusId;
+    current.platformId !== parsed.data.platformId || !current.eaPersonaId || !current.eaNucleusId;
   if (needsResolution) {
-    identity = await resolveEaIdentity(parsed.data.nickname);
+    identity = await resolveEaIdentity(parsed.data.platformId);
   }
 
   await db.member.update({

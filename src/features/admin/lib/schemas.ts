@@ -7,21 +7,25 @@ import { z } from "zod";
 export const PLATFORMS = ["ea", "xbox", "psn"] as const;
 export const MEMBER_ROLES = ["member", "officer", "admin"] as const;
 
-const trimmedOptional = z
-  .string()
-  .trim()
-  .max(80)
-  .optional()
-  .transform((value) => (value ? value : null));
-
 export const memberFormSchema = z.object({
+  /** Display name inside the clan. Free-form — never used to fetch stats. */
   nickname: z
     .string()
     .trim()
     .min(2, "Informe o nick com pelo menos 2 caracteres")
     .max(32, "O nick deve ter no máximo 32 caracteres"),
   platform: z.enum(PLATFORMS, { message: "Escolha uma plataforma" }),
-  platformId: trimmedOptional,
+  /**
+   * Exact account id on the platform (EA ID). REQUIRED because this is the key
+   * that resolves the EA identity behind stats collection — see
+   * resolveEaIdentity in ./actions.ts. The clan nickname is cosmetic and may
+   * differ from it, so it cannot play this role.
+   */
+  platformId: z
+    .string()
+    .trim()
+    .min(2, "Informe o id exato da conta (é o que busca os stats)")
+    .max(80, "O id deve ter no máximo 80 caracteres"),
   /** Clan cargo. Display only — never grants access (see lib/auth/session.ts). */
   role: z.enum(MEMBER_ROLES),
   active: z.coerce.boolean(),

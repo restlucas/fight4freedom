@@ -222,7 +222,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                           <Badge
                             variant="outline"
                             className="text-muted-foreground"
-                            title="Nick não encontrado na EA. Confira se o nick é o nome EA exato; a coleta tenta de novo a cada ciclo."
+                            title="Id da plataforma não encontrado na EA. Confira se é o id exato da conta; a coleta tenta de novo a cada ciclo."
                           >
                             Stats pendentes
                           </Badge>

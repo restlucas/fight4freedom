@@ -69,9 +69,9 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
           autoComplete="off"
           className="mt-1.5"
         />
-        {/* The nickname doubles as the EA display name for the stats binding. */}
+        {/* Display only: the stats binding lives on the platform id below. */}
         <p className="text-muted-foreground mt-1 text-xs">
-          Deve ser o nome EA exato: é ele que vincula os stats automaticamente.
+          Como o membro aparece no site. Pode ser diferente do id da conta.
         </p>
         <FieldError messages={errors?.nickname} />
       </div>
@@ -103,11 +103,17 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
             id="platformId"
             name="platformId"
             defaultValue={member?.platformId ?? ""}
+            required
             maxLength={80}
             autoComplete="off"
-            placeholder="opcional"
+            placeholder="ex.: RRRRRRRREST"
             className="mt-1.5"
           />
+          {/* Mandatory: this exact value is what resolves the EA identity used
+              by the stats collector (src/lib/stats/collect.ts). */}
+          <p className="text-muted-foreground mt-1 text-xs">
+            Id exato da conta. É o que busca os stats.
+          </p>
           <FieldError messages={errors?.platformId} />
         </div>
       </div>

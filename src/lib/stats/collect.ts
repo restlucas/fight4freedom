@@ -58,6 +58,9 @@ export async function collectStats(
     select: {
       id: true,
       nickname: true,
+      // The exact account id on the platform — what resolves the EA identity.
+      // The nickname is display only and is never used for lookups.
+      platformId: true,
       eaPersonaId: true,
       eaNucleusId: true,
     },
@@ -76,12 +79,14 @@ export async function collectStats(
   if (members.length === 0) return report;
 
   // --- 1. Resolve missing EA identities (bounded per run) -------------------
-  const unresolved = members.filter((m) => !m.eaPersonaId || !m.eaNucleusId);
+  // Members registered before platformId became mandatory may have none; there
+  // is nothing to search for, so they stay pending until an admin fills it in.
+  const unresolved = members.filter((m) => m.platformId && (!m.eaPersonaId || !m.eaNucleusId));
   for (const member of unresolved.slice(0, MAX_IDENTITY_RESOLUTIONS_PER_RUN)) {
     try {
-      // The nickname is the EA display name; the search only binds on an
-      // exact match (see GametoolsProvider.searchPlayer).
-      const identity = await provider.searchPlayer(member.nickname);
+      // Search by platform id (the exact EA account name); the search only
+      // binds on an exact match (see GametoolsProvider.searchPlayer).
+      const identity = await provider.searchPlayer(member.platformId!);
       if (!identity) continue;
       await db.member.update({
         where: { id: member.id },

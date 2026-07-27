@@ -28,12 +28,18 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   sequenciais de **10 jogadores** por requisição (`POST /bf6/multiple/`), para não sobrecarregar a
   API comunitária. ~50 membros = 5 requisições por ciclo.
 - **Ciclo de vida do membro na coleta (2026-07-26):**
-  1. Admin cadastra nick + plataforma + id da plataforma → **ainda não entra na coleta**;
+  1. Admin cadastra nick + plataforma + **id da plataforma (obrigatório)** → **ainda não entra
+     na coleta**;
   2. Membro aceita o convite e entra com Discord (`member.discordId` é capturado do OAuth) →
      **entra na próxima leva**;
-  3. A identidade EA (`eaPersonaId`/`eaNucleusId`) é resolvida automaticamente pelo nick — no
-     cadastro (best-effort) e pelo coletor (self-healing) — e é ela que a coleta usa dali em
-     diante: trocar de nick não quebra nada.
+  3. A identidade EA (`eaPersonaId`/`eaNucleusId`) é resolvida automaticamente a partir do
+     **`platformId`** — no cadastro (best-effort) e pelo coletor (self-healing) — e é ela que a
+     coleta usa dali em diante.
+- **Nick x id da plataforma (2026-07-26):** são papéis distintos e não devem ser confundidos.
+  O `nickname` é **só exibição** (como o membro aparece no site, livre para ter tag, acento,
+  apelido). O `platformId` é o **id exato da conta** (ex.: `RRRRRRRREST` na EA) e é a chave que
+  busca os stats — por isso é obrigatório no formulário. Trocar o nick não dispara nada; trocar o
+  id da plataforma rebinda a identidade.
 - **MVP (Fase 1):** vitrine pública com dados semeados manualmente. Admin e coleta vêm depois.
 - **Auth admin:** Discord OAuth (via Supabase Auth).
 - **Melhores jogadas (vitrine + upload):** movido para o Backlog (2026-07-25), sem fase definida.
@@ -126,9 +132,9 @@ Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melh
       fixture real e testes), `collect.ts` (coletor com relatório por membro e testes do sinal
       de atividade).
 - [x] `POST|GET /api/stats/collect` protegida por `CRON_SECRET` (comparação timing-safe).
-- [x] CRUD de membros: campo de tracker removido; identidade EA resolvida no cadastro/edição
-      (best-effort) e exposta no painel como badge "Stats pendentes" quando o nick não foi
-      encontrado na EA.
+- [x] CRUD de membros: campo de tracker removido; `platformId` passou a ser obrigatório e é a
+      chave de busca; identidade EA resolvida no cadastro/edição (best-effort) e exposta no painel
+      como badge "Stats pendentes" quando o id não foi encontrado na EA.
 - [ ] Rodar `pnpm db:push` (troca `tracker_handle` por `ea_persona_id`/`ea_nucleus_id`) e
       `pnpm db:seed`.
 - [ ] Definir `CRON_SECRET` (local e Vercel) e criar o agendamento (ver Deploy > Agendamento).
@@ -161,10 +167,12 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
 
 ## Modelo de dados — `prisma/schema.prisma` (Prisma, `pnpm db:push`)
 
-- **`member`**: `id` (uuid text PK), `nickname` (gamertag exibido **e nome EA usado para vincular
-  os stats**), `platform` (`ea | xbox | psn`), `eaPersonaId` + `eaNucleusId` (identidade estável
-  na EA, resolvida automaticamente pelo nick — nunca digitada; é o que a coleta usa, então trocar
-  de nick não quebra), `discordId` (nullable, capturado só pelo OAuth), `avatarUrl` (nullable),
+- **`member`**: `id` (uuid text PK), `nickname` (**só exibição**, livre), `platform`
+  (`ea | xbox | psn`), `platformId` (**id exato da conta, obrigatório** no formulário: é a chave
+  de busca dos stats e o valor exibido no hover do ícone da plataforma),
+  `eaPersonaId` + `eaNucleusId` (identidade estável na EA, resolvida automaticamente a partir do
+  `platformId` — nunca digitada; é o que a coleta usa, então renomear a conta não quebra),
+  `discordId` (nullable, capturado só pelo OAuth), `avatarUrl` (nullable),
   `role` (`member | officer | admin` — cargo no clã, só exibição; acesso de sistema é o
   `profile.isAdmin`), `joinedAt` (date), `active` (bool default true), `createdAt`, `updatedAt`.
 - **`member` (patentes):** `platformId` (id público na plataforma, exibido no hover do ícone e
@@ -282,9 +290,10 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - **Fluxo do ciclo** (`src/lib/stats/collect.ts`):
   1. Elegíveis: `active = true` **e** `discordId` preenchido (= aceitou o convite e entrou com
      Discord — regra do ciclo de vida nas Decisões).
-  2. Identidades EA faltantes são resolvidas pelo nick (`GET /bf6/player/`), no máximo 10 por
-     ciclo — um lote grande de membros novos se resolve em poucos ciclos sem estourar a duração
-     da função.
+  2. Identidades EA faltantes são resolvidas pelo `platformId` (`GET /bf6/player/`), no máximo 10
+     por ciclo — um lote grande de membros novos se resolve em poucos ciclos sem estourar a
+     duração da função. Membro sem `platformId` (linha antiga) não tem o que buscar e fica
+     pendente até um admin preencher.
   3. Stats em **lotes sequenciais de 10** (`POST /bf6/multiple/`, um request em voo por vez) —
      ~50 membros = 5 requests. Ids em vez de nomes: mais rápido e imune a troca de nick.
   4. **Só grava quem jogou**: snapshot novo apenas se kills/deaths/wins/losses/tempo mudaram
@@ -379,7 +388,7 @@ Trocou o `CRON_SECRET`? Atualizar nos dois lugares (Vercel env + job).
 - **Fase 3:** `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/stats/collect`
   devolve o relatório e insere snapshot correto para 1 membro real (conferir kills = `gm_all`);
   sem o header devolve 401; segundo ciclo sem partida nova não grava linha (`unchanged`); membro
-  com nick errado aparece como `identity-pending` e ganha o badge "Stats pendentes" no painel;
+  com `platformId` errado aparece como `identity-pending` e ganha o badge "Stats pendentes";
   membro sem Discord vinculado não aparece no relatório; snapshot `manual` não é sobrescrito.
 
 ## Observações
@@ -393,5 +402,6 @@ Trocou o `CRON_SECRET`? Atualizar nos dois lugares (Vercel env + job).
 - **Pendência com o clã** (única restante, não bloqueia o deploy): teste de fidelidade/frescor da
   §8 do estudo — conferir com um membro se os números batem com a tela do jogo e medir o atraso
   da EA após uma partida. Até lá, não divulgar as seções de stats.
-- O nick cadastrado **precisa ser o nome EA exato** (o formulário avisa). Nick errado = membro
-  eterno em "Stats pendentes"; corrigir o nick rebinda a identidade automaticamente.
+- O **id da plataforma** cadastrado precisa ser o id exato da conta (o formulário avisa e exige).
+  Id errado = membro eterno em "Stats pendentes"; corrigir o id rebinda a identidade
+  automaticamente, no salvar ou no ciclo seguinte da coleta.
