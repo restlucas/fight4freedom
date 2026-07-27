@@ -35,7 +35,7 @@ describe("state labels", () => {
     ["ok", "Sincronizando"],
     ["waiting", "Aguardando"],
     ["identity_pending", "ID não encontrado"],
-    ["no_data", "Sem dados de BF6"],
+    ["no_data", "Sem retorno"],
     ["paused", "Pausado"],
     ["off", "Fora da coleta"],
   ] as const)("shows %s as %s", (state, text) => {
@@ -43,13 +43,21 @@ describe("state labels", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it("separates a wrong id from an id that matched the wrong account", () => {
-    // Two different fixes: one is a typo, the other is a namesake collision.
+  it("blames the id only when the id is provably the problem", () => {
+    // identity_pending IS a certain diagnosis: no EA account matches.
     renderCell({ state: "identity_pending" });
     expect(screen.getByTitle(/não corresponde a nenhuma conta EA/i)).toBeInTheDocument();
+  });
 
+  it("does not accuse the id when the cause is unknown", () => {
+    // Measured 2026-07-27: 15 members in this state, only 5 genuinely dataless —
+    // the rest were transient 504s. A confident "wrong id" here would send an
+    // admin chasing ten problems that do not exist.
     renderCell({ state: "no_data" });
-    expect(screen.getByTitle(/casou com OUTRA conta de mesmo nome/i)).toBeInTheDocument();
+    const badge = screen.getByText("Sem retorno");
+    const title = badge.getAttribute("title") ?? "";
+    expect(title).toMatch(/instabilidade da fonte/i);
+    expect(title).toMatch(/se persistir/i);
   });
 });
 

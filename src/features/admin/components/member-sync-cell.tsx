@@ -43,9 +43,14 @@ const SYNC_LABEL: Record<
     icon: TriangleAlert,
   },
   no_data: {
-    text: "Sem dados de BF6",
+    text: "Sem retorno",
+    // Deliberately does NOT say "wrong id". Measured on 2026-07-27: 15 members
+    // carried this state while only 5 genuinely lack BF6 data — the other 10 were
+    // transient 504s from the source. The collector cannot yet tell the two apart
+    // (a failed batch and an empty profile both come back as "no player"), so
+    // claiming a cause here would send an admin chasing ten phantom id problems.
     title:
-      "A conta EA foi encontrada, mas não tem nenhuma estatística de BF6. Normalmente significa que o id casou com OUTRA conta de mesmo nome — confira o id com o membro.",
+      "A última tentativa não trouxe estatísticas. Pode ser instabilidade da fonte, que se resolve sozinha no próximo ciclo, ou o id ter casado com outra conta de mesmo nome. Só investigue se persistir por várias horas.",
     className: "border-orange-500/40 bg-orange-500/10 text-orange-300",
     icon: TriangleAlert,
   },

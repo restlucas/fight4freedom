@@ -556,31 +556,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                                      `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                                      com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                                      puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                                      nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                                      que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                                      `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                                      `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                                      hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                                      composição.
+                                                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                                          composição.
 
-                                                      O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                                      (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                                      (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                                      rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                                      pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                                      uma linha de 1px colada na borda, não um tingimento.
+                                                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                                          uma linha de 1px colada na borda, não um tingimento.
 
-                                                      `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                                      nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                                      linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                                      demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                                      porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                                      fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                                      nessa linha.
+                                                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                                          nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -736,6 +736,17 @@ aparece quando pausar faz sentido; para quem já está fora da coleta seria um c
 Também separei duas colunas que estavam misturadas: "Conta" exibia o badge de stats dentro dela,
 confundindo login do Discord com coleta. São perguntas diferentes e agora são colunas diferentes.
 
+**Limitação conhecida do estado `no_data`, medida antes de acreditar no próprio badge.** No primeiro
+ciclo real com carimbo, 15 membros caíram nesse estado enquanto só **5** não têm dado de BF6 de
+verdade. Os outros 10 eram 504 transitórios: o coletor **não distingue** "o lote falhou" de "o
+jogador não tem dados", porque nos dois casos o jogador some do mapa devolvido pelo provider. Por
+isso o badge se chama "Sem retorno" e o texto **não acusa o id** — diria a coisa errada em dois
+terços dos casos, mandando um admin caçar dez problemas inexistentes. O estado se autocorrige no
+ciclo seguinte, e o texto orienta a só investigar se persistir.
+
+Separar de verdade exigiria o `fetchStats` reportar quais jogadores estavam num lote que falhou, o
+que muda o contrato do `StatsProvider`. Vale fazer se as falhas transitórias continuarem frequentes.
+
 ### Fase 4 — Progressão e polimento
 
 - Gráficos de progressão (Recharts) no perfil e no ranking (série temporal de `statSnapshot`).
@@ -849,6 +860,17 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
   `api` que a guarda de coerência hoje rejeitaria. **Dry run por padrão**; aplica com `--apply`.
   É o caminho para tirar os dados de exemplo quando o roster real entrar pelo painel.
 - `pnpm invite:admin` — reemite o convite de admin (ver Convite de admin acima).
+
+**Armadilha recorrente: `db:push` exige reiniciar o `pnpm dev`.** Mordeu três vezes em 2026-07-27,
+sempre com a mesma cara — `PrismaClientValidationError: Unknown field` numa página que compila e
+passa no build. O Turbopack recarrega código-fonte, mas **não** recarrega dependência de
+`node_modules`, e o client do Prisma mora lá. Um dev server aberto antes do `db:generate` segue com
+o client antigo indefinidamente: num dos casos o processo estava de pé havia cinco horas e três
+mudanças de schema.
+
+Como reconhecer que é isso e não bug de código: a mesma query roda sem erro via
+`pnpm exec tsx` (que carrega o client do disco) e o `pnpm build` passa. O `db:push` agora imprime o
+lembrete no fim.
 
 ## Verificação
 
