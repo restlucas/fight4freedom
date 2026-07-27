@@ -34,6 +34,18 @@ export const gametoolsPlayerFixture = {
       winPercent: 52.34,
       kpm: 1.41,
       dpm: 170.82,
+      // Teamwork counters, captured 2026-07-27. They were missing here when the
+      // columns were added, so every one of them silently read as 0 through the
+      // schema's `.default(0)` and no test could catch it.
+      objectivesDefended: 2483,
+      objectivesDestroyed: 14,
+      objectivesArmed: 25,
+      objectivesDisarmed: 9,
+      sectorsDefended: 63,
+      objectiveTime: 105152,
+      spots: 2581,
+      health: 33015,
+      repairs: 6756,
     },
     {
       gamemodeName: "Multiplayer",
@@ -112,35 +124,49 @@ export const gametoolsPlayerFixture = {
       dpm: 73.47,
     },
   ],
+  // The "All" row is the CLASS BUCKET, and `assists`/`revives` are read from it
+  // (docs/api-gametools.md §10.3). The four real classes sum to it exactly —
+  // 220 + 531 + 3244 + 370 = 4365 assists, 35 + 50 + 2966 + 11 = 3062 revives —
+  // which is how the bucket was identified in the first place.
   classes: [
     {
       className: "All",
       kills: 13692,
       deaths: 4125,
+      assists: 4365,
+      revives: 3062,
       secondsPlayed: 418633,
     },
     {
       className: "Assault",
       kills: 853,
       deaths: 300,
+      assists: 220,
+      revives: 35,
       secondsPlayed: 22860,
     },
     {
       className: "Engineer",
       kills: 1156,
       deaths: 380,
+      assists: 531,
+      revives: 50,
       secondsPlayed: 43270,
     },
     {
       className: "Support",
       kills: 11297,
       deaths: 3289,
+      assists: 3244,
+      revives: 2966,
       secondsPlayed: 332549,
     },
     {
       className: "Recon",
       kills: 386,
       deaths: 156,
+      assists: 370,
+      revives: 11,
       secondsPlayed: 19954,
     },
   ],

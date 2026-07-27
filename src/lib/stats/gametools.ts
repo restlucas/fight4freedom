@@ -82,6 +82,14 @@ const classEntrySchema = z
   .object({
     className: z.string(),
     kills: z.number(),
+    /**
+     * The "All" row of `classes[]` is the CLASS BUCKET, and it is where assists
+     * and revives come from. Defaulted rather than required because the API
+     * omits them on empty profiles, and losing a whole batch to a missing
+     * counter is worse than reading a zero we can detect elsewhere.
+     */
+    assists: z.number().default(0),
+    revives: z.number().default(0),
   })
   .loose();
 
@@ -163,28 +171,40 @@ export function isIncoherentPayload(
   // Human kills are a SUBSET of the class bucket, so they cannot exceed it.
   const human = player.dividedKills?.human;
   if (human != null && player.kills > 0 && human > player.kills) return true;
+  // Class-attributed revives are a subset of the all-mode count, same logic.
+  const classAll = player.classes.find((entry) => entry.className === "All");
+  if (classAll && all.revives > 0 && classAll.revives > all.revives) return true;
   return false;
 }
 
 /**
  * Translates one API player into our vocabulary.
  *
- * Two buckets, on purpose, and the pairing is not arbitrary:
+ * TWO BUCKETS, SPLIT BY WHAT THE STAT IS ABOUT (clan decision, 2026-07-27):
  *
- *   - `kills` is `dividedKills.human` — kills against real players, bots
- *     excluded (clan decision, 2026-07-27, replacing the earlier "everything
- *     including bots" rule).
- *   - `deaths` is the CLASS-bucket death count, because that is the bucket
- *     `dividedKills.human` lives in. Corroborated by the API itself:
- *     12320 / 4126 = 2.99, which is exactly the `infantryKillDeath` it
- *     publishes. Pairing human kills with `gm_all.deaths` instead yields 2.49,
- *     a ratio the API never reports — the signature of mixed buckets.
- *   - every other counter stays on `gm_all`, because no human/bot split exists
- *     for them. That asymmetry is deliberate and documented in the plan.
+ *   - Counters about DUELLING OTHER PLAYERS come from the CLASS bucket, the
+ *     same scope tracker.gg displays: `kills` (further filtered to
+ *     `dividedKills.human`), `deaths`, `assists` and `revives`.
+ *   - Counters about OBJECTIVES AND MAP CONTROL stay on `gm_all`, covering every
+ *     mode including Portal and REDSEC: captures, defends, arms, disarms,
+ *     sectors, objective time, spots, healing, repairs, wins, losses, time
+ *     played. They have no class-bucket equivalent at all — `classes[]` carries
+ *     only nine fields — so this half is not a choice, it is the only option.
  *
- * Null when the profile has no game-mode data, no human kill count, or when the
- * payload contradicts itself — the collector skips those instead of recording
- * zeros, and retries on the next run.
+ * WHAT THE CLASS BUCKET IS AND IS NOT: it is "attributed to an infantry class",
+ * NOT "against real players". Only `kills` gets a genuine bot filter, via
+ * `dividedKills.human`. **`assists` and `revives` still include bots**, because
+ * the API publishes no human-filtered variant of either — verified by walking
+ * the whole payload on 2026-07-27. They moved here for parity with tracker.gg,
+ * which the clan treats as the reference, not because bots were removed.
+ *
+ * The kills/deaths pairing is corroborated by the API: 12320 / 4126 = 2.99, its
+ * own `infantryKillDeath`. Pairing human kills with `gm_all.deaths` yields 2.49,
+ * a ratio it never reports — the signature of mixed buckets.
+ *
+ * Null when the profile has no game-mode data, no class bucket, no human kill
+ * count, or when the payload contradicts itself — the collector skips those
+ * instead of recording zeros, and retries on the next run.
  */
 export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity) | null {
   const all = player.gameModeGroups.find((group) => group.id === "gm_all");
@@ -196,6 +216,17 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
   if (humanKills == null) {
     console.warn(
       `[stats] persona ${player.id} sem dividedKills.human — sem kills canonicas, retenta no proximo ciclo`,
+    );
+    return null;
+  }
+
+  // The "All" row of classes[] is the class bucket: assists and revives read
+  // from it. Substituting the wider gm_all values would silently change scope on
+  // two scored counters, so a missing row is treated as no-data instead.
+  const classAll = player.classes.find((entry) => entry.className === "All");
+  if (!classAll) {
+    console.warn(
+      `[stats] persona ${player.id} sem a linha classes[All] — sem assists/revives, retenta no proximo ciclo`,
     );
     return null;
   }
@@ -219,13 +250,14 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
   return {
     personaId: player.id,
     nucleusId: player.userId,
-    // Bots excluded. See the docblock for why deaths comes from the class bucket.
+    // --- duelling other players: CLASS bucket (see the docblock) ---
     kills: humanKills,
     deaths: player.deaths,
+    assists: classAll.assists,
+    revives: classAll.revives,
+    // --- everything below: gm_all, all modes ---
     wins: all.wins,
     losses: all.losses,
-    assists: all.killAssists,
-    revives: all.revives,
     headshots: all.headshotKills,
     objectivesCaptured: all.objectivesCaptured,
     timePlayedMinutes: Math.round(all.secondsPlayed / 60),
@@ -245,11 +277,15 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
       // Exact play time and round count, for auditing the "played?" signal.
       secondsPlayed: all.secondsPlayed,
       matches: all.matches,
-      // The two kill totals we deliberately do NOT show, kept so "why does the
-      // site say fewer kills than X?" is answerable from the row itself. Before
-      // 2026-07-27 `allModeKills` was the number on the site.
+      // The wider totals we deliberately do NOT show, kept so "why does the site
+      // say fewer X than the tracker?" is answerable from the row itself. All
+      // four were the numbers on the site before 2026-07-27.
       allModeKills: all.kills,
       allModeDeaths: all.deaths,
+      allModeAssists: all.killAssists,
+      allModeRevives: all.revives,
+      // The class bucket before the bot filter, so the size of that filter is
+      // auditable: classKills - kills = bot kills.
       classKills: player.kills,
       // Ratios the API pre-computes over the ALL-MODE bucket. Prefixed because
       // they are NOT this member's displayed K/D or KPM: ours derive from the

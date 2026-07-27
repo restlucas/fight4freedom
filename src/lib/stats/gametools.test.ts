@@ -47,15 +47,36 @@ describe("toRawStats", () => {
     // 12320 / 4126 = 2.99, exactly the `infantryKillDeath` the API publishes;
     // pairing with gm_all's 4955 would give 2.49, a ratio it never reports.
     expect(raw!.deaths).toBe(4_126);
-    expect(raw!.wins).toBe(268);
-    expect(raw!.losses).toBe(244);
-    expect(raw!.assists).toBe(6080);
-    expect(raw!.revives).toBe(3451);
-    expect(raw!.headshots).toBe(2874);
-    expect(raw!.objectivesCaptured).toBe(1152);
-    expect(raw!.matches).toBe(512);
-    expect(raw!.secondsPlayed).toBe(745_876);
-    expect(raw!.timePlayedMinutes).toBe(Math.round(745_876 / 60));
+  });
+
+  it("reads player-versus-player counters from the class bucket", () => {
+    // assists and revives moved here on 2026-07-27 for parity with tracker.gg.
+    // gm_all would say 6080 and 3451 — wider scope, not a bot filter.
+    const raw = toRawStats(player)!;
+    expect(raw.assists).toBe(4_365);
+    expect(raw.revives).toBe(3_062);
+  });
+
+  it("keeps objective and map-control counters on all modes", () => {
+    // These have NO class-bucket equivalent, so gm_all is the only option, and
+    // the clan wants them counting every mode anyway.
+    const raw = toRawStats(player)!;
+    expect(raw.objectivesCaptured).toBe(1152);
+    expect(raw.objectivesDefended).toBe(2483);
+    expect(raw.objectivesDestroyed).toBe(14);
+    expect(raw.objectivesArmed).toBe(25);
+    expect(raw.objectivesDisarmed).toBe(9);
+    expect(raw.sectorsDefended).toBe(63);
+    expect(raw.objectiveTimeSeconds).toBe(105_152);
+    expect(raw.spots).toBe(2581);
+    expect(raw.healthRestored).toBe(33_015);
+    expect(raw.repairs).toBe(6756);
+    expect(raw.headshots).toBe(2874);
+    expect(raw.wins).toBe(268);
+    expect(raw.losses).toBe(244);
+    expect(raw.matches).toBe(512);
+    expect(raw.secondsPlayed).toBe(745_876);
+    expect(raw.timePlayedMinutes).toBe(Math.round(745_876 / 60));
   });
 
   it("echoes the identity so batch results map back to members", () => {
@@ -71,14 +92,37 @@ describe("toRawStats", () => {
 
   it("parks the totals it does not show in extra, so a member can be answered", () => {
     const raw = toRawStats(player)!;
-    // "Why does the site say fewer kills than the tracker?" is answerable from
-    // the snapshot row alone, without another API call.
+    // "Why does the site say fewer X than the tracker?" is answerable from the
+    // snapshot row alone, without another API call.
     expect(raw.extra.allModeKills).toBe(17_587);
     expect(raw.extra.allModeDeaths).toBe(4_955);
+    expect(raw.extra.allModeAssists).toBe(6_080);
+    expect(raw.extra.allModeRevives).toBe(3_451);
+    // classKills minus kills is the size of the bot filter: 13695 - 12320 = 1375.
     expect(raw.extra.classKills).toBe(13_695);
+    expect(Number(raw.extra.classKills) - raw.kills).toBe(1_375);
     // The all-mode ratio is kept but PREFIXED: it is not this member's K/D.
     expect(raw.extra.allModeKillDeath).toBe(3.55);
     expect(raw.extra.winPercent).toBe(52.34);
+  });
+
+  it("returns null when the class bucket row is missing", () => {
+    // Substituting gm_all would silently widen the scope of two scored counters.
+    const noClasses = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      classes: [],
+    })[0];
+    expect(toRawStats(noClasses)).toBeNull();
+  });
+
+  it("rejects class revives larger than the all-mode count", () => {
+    const impossible = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      classes: gametoolsPlayerFixture.classes.map((c) =>
+        c.className === "All" ? { ...c, revives: 99_999 } : c,
+      ),
+    })[0];
+    expect(toRawStats(impossible)).toBeNull();
   });
 
   it("returns null when there is no gm_all group to trust", () => {

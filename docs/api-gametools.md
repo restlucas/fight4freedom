@@ -96,11 +96,11 @@ quando alguém abre o perfil, o que faria a coleta horária servir dado velho. A
 > **Revisado em 2026-07-27.** A EA mantém os stats em **buckets** diferentes e o objeto top-level da
 > resposta mistura recortes (detalhes na seção 10), então cada linha abaixo diz de onde vem.
 >
-> **Decisão de produto vigente:** `kills` conta **só contra jogadores reais** (`dividedKills.human`)
-> e `deaths` vem do **bucket de classes**; **todo o resto** vem do grupo `gm_all` de
-> `gameModeGroups[]`, que cobre todos os modos, veículos, Portal e REDSEC. Isso exige
-> **`seperation=true`** em toda chamada. Racional completo, incluindo por que deaths acompanha kills
-> de bucket, na seção 10.3.
+> **Decisão de produto vigente:** o recorte é escolhido pelo **que o stat mede**. Contadores de
+> **duelo entre jogadores** (`kills`, `deaths`, `assists`, `revives`) vêm do **bucket de classes**,
+> o mesmo que o tracker.gg exibe. Contadores de **objetivo e controle de mapa** vêm do grupo
+> `gm_all`, cobrindo todos os modos, veículos, Portal e REDSEC. Isso exige **`seperation=true`** em
+> toda chamada. Racional completo na seção 10.3.
 >
 > A decisão anterior (26/07) era registrar as kills completas, com bots incluídos. Está preservada
 > como histórico no fim da 10.3, porque explica a semântica dos dados gravados antes de 27/07.
@@ -108,20 +108,20 @@ quando alguém abre o perfil, o que faria a coleta horária servir dado velho. A
 Encaixa inteiro, sem mudança de schema. O enum `StatSource` já tem o valor `api`.
 Valores de referência do RRRRRRRREST em 2026-07-26 entre parênteses.
 
-| Coluna nossa         | Campo de origem                                                                                                                                                | Observação                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `kills`              | **`dividedKills.human`** (12.320)                                                                                                                              | top-level, **não** `gm_all`. Só contra jogadores reais                                                 |
-| `deaths`             | **`deaths` top-level** (4.126)                                                                                                                                 | bucket de classes, o mesmo de que `human` é subconjunto. `gm_all.deaths` (4.955) misturaria recortes   |
-| `wins`               | `gm_all.wins` (268)                                                                                                                                            | direto                                                                                                 |
-| `losses`             | `gm_all.losses` (244)                                                                                                                                          | aqui a grafia é correta; o top-level escreve `loses`                                                   |
-| `assists`            | `gm_all.killAssists` (6.080)                                                                                                                                   | o `assists` top-level (4.645) é outro recorte. Ver a pendência do `devidedAssists.human` na seção 10.3 |
-| `revives`            | `gm_all.revives` (3.451)                                                                                                                                       | direto                                                                                                 |
-| `headshots`          | `gm_all.headshotKills` (2.874)                                                                                                                                 | número absoluto. `headshots` no mesmo grupo é **percentual** (16,34)                                   |
-| `objectivesCaptured` | `gm_all.objectivesCaptured` (1.152)                                                                                                                            | direto                                                                                                 |
-| `timePlayedMinutes`  | `gm_all.secondsPlayed / 60` (745.876 s)                                                                                                                        | igual ao `secondsPlayed` top-level                                                                     |
-| `bestClass`          | derivar de `classes[]`                                                                                                                                         | ver abaixo                                                                                             |
-| Contadores de equipe | `gm_all.objectivesDefended`, `objectivesDestroyed`, `objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTime`, `spots`, `health`, `repairs`  | todos sem split humano/bot na fonte                                                                    |
-| `extra` (jsonb)      | `allModeKills` (17.587), `allModeDeaths` (4.955), `classKills` (13.695), `allModeKillDeath`, `matches` (512), `secondsPlayed`, `winPercent`, `damagePerMinute` | os totais que **não** exibimos, para auditoria                                                         |
+| Coluna nossa         | Campo de origem                                                                                                                                                | Observação                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `kills`              | **`dividedKills.human`** (12.320)                                                                                                                              | bucket de classes **com filtro de bot**. O único stat que tem esse filtro                     |
+| `deaths`             | **`deaths` top-level** (4.126)                                                                                                                                 | bucket de classes. `gm_all.deaths` (4.955) misturaria recortes                                |
+| `assists`            | **`classes[All].assists`** (4.365)                                                                                                                             | bucket de classes. **Inclui bots** — não existe variante humana. `gm_all.killAssists` = 6.080 |
+| `revives`            | **`classes[All].revives`** (3.062)                                                                                                                             | bucket de classes. **Inclui bots**. `gm_all.revives` = 3.451                                  |
+| `wins`               | `gm_all.wins` (268)                                                                                                                                            | direto                                                                                        |
+| `losses`             | `gm_all.losses` (244)                                                                                                                                          | aqui a grafia é correta; o top-level escreve `loses`                                          |
+| `headshots`          | `gm_all.headshotKills` (2.874)                                                                                                                                 | número absoluto. `headshots` no mesmo grupo é **percentual** (16,34)                          |
+| `objectivesCaptured` | `gm_all.objectivesCaptured` (1.152)                                                                                                                            | direto                                                                                        |
+| `timePlayedMinutes`  | `gm_all.secondsPlayed / 60` (745.876 s)                                                                                                                        | igual ao `secondsPlayed` top-level                                                            |
+| `bestClass`          | derivar de `classes[]`                                                                                                                                         | ver abaixo                                                                                    |
+| Contadores de equipe | `gm_all.objectivesDefended`, `objectivesDestroyed`, `objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTime`, `spots`, `health`, `repairs`  | todos sem split humano/bot na fonte                                                           |
+| `extra` (jsonb)      | `allModeKills` (17.587), `allModeDeaths` (4.955), `classKills` (13.695), `allModeKillDeath`, `matches` (512), `secondsPlayed`, `winPercent`, `damagePerMinute` | os totais que **não** exibimos, para auditoria                                                |
 
 O grupo `gm_all` também traz `killDeath`, `winPercent`, `kpm` e `dpm` prontos, coerentes entre si
 (todos calculados sobre o mesmo bucket) — se formos exibir médias, usar essas em vez de recalcular
@@ -400,42 +400,76 @@ Dois achados laterais da comparação:
 
 ### 10.3 Decisão: recorte canônico do site
 
-> **Revisado em 2026-07-27.** A decisão original (26/07) era registrar as kills **completas**, o
-> `gm_all`, com bots incluídos. O dono do clã trocou: **kills não contam bots.** O histórico da
-> decisão anterior fica ao final desta seção, porque explica o formato dos dados antigos.
+> **Revisado em 2026-07-27**, em duas etapas. A decisão original (26/07) era registrar tudo pelo
+> `gm_all`, com bots incluídos. Primeiro as kills passaram a excluir bots; depois assists e revives
+> foram para o bucket de classes, por paridade com o tracker.gg. O histórico fica ao final da seção.
 
-**Kills são `dividedKills.human`** — só contra jogadores reais. **Deaths vêm do bucket de classes**
-(o `deaths` top-level). **Todo o resto vem do `gm_all`.**
+**A regra é escolhida pelo que o stat mede:**
 
-Essa assimetria não é descuido, é o limite da fonte. Não existe split humano/bot por modo: o
-`gameModeGroups[]` não tem nenhum campo de humano ou bot, e `dividedKills.human` é um número
-**global**, calculado sobre o bucket de classes (12.320 ÷ 13.695 = 89,96%, exatamente o
-`humanPrecentage`). Ou seja, **"todos os modos sem bots" não existe na API da EA.**
+| O que o stat mede               | Recorte                          | Colunas                                                                                                                                        |
+| ------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Duelo entre jogadores**       | Bucket de classes (= tracker.gg) | `kills` (com filtro de bot), `deaths`, `assists`, `revives`                                                                                    |
+| **Objetivo e controle de mapa** | `gm_all`, todos os modos         | capturados, defendidos, destruídos, armados, neutralizados, setores, tempo em objetivo, spots, cura, reparos, vitórias, derrotas, tempo jogado |
 
-**Por que deaths do bucket de classes e não do `gm_all`:** porque é o bucket de que o
-`dividedKills.human` é subconjunto, e a própria API corrobora o par. 12.320 ÷ 4.126 = **2,99**, que
-é exatamente o `infantryKillDeath` que ela publica. Pareado com o `gm_all.deaths` (4.955) daria
-2,49, uma razão que a API nunca reporta — a assinatura clássica de bucket misturado (seção 5.3).
+**A metade dos objetivos não é escolha, é a única opção.** O `classes[]` tem exatamente nove campos
+— `kills`, `deaths`, `assists`, `revives`, `killDeath`, `kpm`, `spawns`, `score`, `secondsPlayed` —
+e nenhum contador de objetivo. Alinhar tudo ao bucket de classes é impossível.
 
-Consequências operacionais:
+### O bucket de classes NÃO exclui bots
 
-1. **`seperation=true` continua obrigatório** em toda chamada, somado ao `format_values=false`:
-   é o que traz `gameModeGroups[]`, de onde sai tudo menos kills e deaths.
-2. **Sem `dividedKills.human`, o membro é tratado como sem dados** e retentado no ciclo seguinte.
-   Cair para `gm_all.kills` colocaria bots numa coluna que promete não tê-los.
+Isso precisa estar explícito, porque a intuição erra aqui. O bucket de classes significa
+"atribuído a uma classe de infantaria", **não** "contra jogadores reais".
+
+**Só `kills` tem filtro de bot de verdade**, via `dividedKills.human`. Varrendo o payload inteiro em
+2026-07-27, não existe variante humana de assists nem de revives: o `classes[*]` não tem nenhum
+campo `human`, e para revives só existem class-attributed (3.062), por classe, por modo e `gm_all`
+(3.451). Então **`assists` e `revives` continuam contando bots.** Foram para cá por paridade com o
+tracker.gg, que o clã trata como referência, e não porque bots saíram da conta.
+
+O `devidedAssists.human` (1.277) existe, mas suas partes irmãs são `driver`, `passenger`, `spot` e
+`pilot`, o que sugere fortemente "assist como infantaria" em contraste com papéis de veículo, e não
+"assist contra humano". Não é substituto e não foi usado.
+
+### Correção: o split por modo existe, mas é incompleto
+
+Uma versão anterior desta seção afirmava que "não existe split humano/bot por modo". **Está
+errado.** Existe em `perGamemode.<modo>.dividedKills.human`, e o `humanPrecentage` varia muito por
+modo: 63,48% em Breakthrough contra 100% em Team Deathmatch.
+
+O que se sustenta é a conclusão prática: são 8 modos com dado, somando 7.688 kills humanas, contra
+12.320 globais. Está **incompleto**, então não dá para reconstruir "todos os modos sem bots" a
+partir dele. E a variação de 63% a 100% confirma que aplicar uma taxa global ao total geral seria
+inventar número.
+
+### Por que deaths do bucket de classes
+
+Porque é o bucket de que o `dividedKills.human` é subconjunto, e a própria API corrobora o par:
+12.320 ÷ 4.126 = **2,99**, exatamente o `infantryKillDeath` que ela publica. Pareado com o
+`gm_all.deaths` (4.955) daria 2,49, razão que a API nunca reporta — a assinatura clássica de bucket
+misturado (seção 5.3).
+
+### Consequências operacionais
+
+1. **`seperation=true` continua obrigatório** em toda chamada, somado ao `format_values=false`.
+2. **Sem `dividedKills.human` ou sem a linha `classes[All]`, o membro é tratado como sem dados** e
+   retentado no ciclo seguinte. Cair para o `gm_all` alargaria em silêncio o escopo de contadores
+   que pontuam no ranking.
 3. O `extra` guarda os totais que **não** exibimos — `allModeKills` (17.587), `allModeDeaths`
-   (4.955), `classKills` (13.695) e `allModeKillDeath` — para a pergunta "por que o site mostra
-   menos kills que o tracker?" ser respondível pela própria linha do snapshot.
+   (4.955), `allModeAssists` (6.080), `allModeRevives` (3.451), `classKills` (13.695) e
+   `allModeKillDeath` — para "por que o site mostra menos que o tracker?" ser respondível pela
+   própria linha do snapshot. `classKills − kills` = o tamanho do filtro de bot (1.375).
 4. O sinal de "jogou desde o último snapshot" continua sendo a variação de `gm_all.matches` e
    `gm_all.secondsPlayed` (seção 5.2).
-5. **Paridade com o tracker.gg:** as kills do site passam a ser o mesmo número que o tracker exibe
-   no overview do perfil. A diferença que existia (5.267 kills) tinha duas causas — 3.892 de
-   recorte de bucket e 1.375 de bots — e as duas desaparecem juntas.
+5. **Paridade com o tracker.gg** nos quatro stats de duelo, verificada contra a API em 2026-07-27:
+   kills 12.320, deaths 4.126, assists 4.365, revives 3.062.
 
-**Pendência conhecida:** `devidedAssists.human` (1.277) também existe, contra os 6.080 de
-`gm_all.killAssists` que gravamos. A proporção (21%) é muito diferente da das kills (90%), o que
-sugere que "assist humano" mede outra coisa, e não uma simples exclusão de bots. Não foi trocado.
-Vale investigar antes de decidir, porque `assists` pontua no ranking (~10% do total).
+### Divergência que sobra, e é conhecida
+
+`headshots` usa `gm_all.headshotKills` (2.874). O top-level tem `headShots` = 1.973, que
+provavelmente é o bucket de classes, mas **não foi possível confirmar por soma** porque `classes[]`
+não expõe headshots. Headshot é um recorte de kill, então pela regra acima deveria ir para o bucket
+de classes. Ficou como está por falta de verificação, não por decisão — é a próxima divergência que
+um membro vai notar.
 
 <details>
 <summary>Decisão anterior (2026-07-26), mantida como histórico</summary>

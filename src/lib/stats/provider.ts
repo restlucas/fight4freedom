@@ -23,17 +23,21 @@ export type PlayerIdentity = {
  * One member's cumulative stats, already translated to OUR vocabulary.
  *
  * Semantics a replacement provider must honour (clan decisions, see
- * docs/api-gametools.md §10.3):
+ * docs/api-gametools.md §10.3). The split is by what the stat is ABOUT:
  *
- *   - `kills` counts ONLY kills against real players. Bots and AI are excluded.
- *   - `deaths` comes from the same bucket the kill count belongs to, so K/D
- *     stays a coherent ratio rather than a mix of two different scopes.
- *   - every other counter covers ALL modes (vehicles, Portal and REDSEC
- *     included), because the source publishes no human/bot split for them.
+ *   - **Duelling other players** — `kills`, `deaths`, `assists`, `revives` — use
+ *     the narrower "attributed to an infantry class" scope, which is what
+ *     tracker.gg shows and what the clan treats as the reference.
+ *   - **Objectives and map control** — everything else — covers ALL modes,
+ *     vehicles, Portal and REDSEC included.
  *
- * That asymmetry is real and intentional: it is the most honest reading the
- * source allows. A provider that cannot separate bot kills should return null
- * for the member rather than quietly counting them.
+ * One honesty note that matters when swapping sources: only `kills` carries a
+ * genuine bot filter. `assists` and `revives` are narrowed in SCOPE but **still
+ * include bots**, because the gametools/EA payload publishes no human-filtered
+ * variant of either. Do not document them as bot-free.
+ *
+ * A provider that cannot separate bot kills should return null for the member
+ * rather than quietly counting them.
  */
 export type RawStats = {
   /** Kills against real players. Bots excluded. */

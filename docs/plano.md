@@ -22,19 +22,25 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   `StatsProvider`. O scraping do tracker.gg foi descartado (ver `docs/api-gametools.md` §6 e §10:
   mesma fonte EA, sem antibot, sem worker). A tela de edição manual continua descartada
   (2026-07-25); o valor `manual` do enum `StatSource` permanece no schema como porta de saída.
-- **Recorte canônico (2026-07-27, substitui a decisão de 26/07):** **kills não contam bots.**
-  `kills` = `dividedKills.human`, `deaths` = bucket de classes (o par que a API corrobora:
-  12.320 ÷ 4.126 = 2,99 = `infantryKillDeath`), e **todo o resto** vem do `gm_all` (todos os modos,
-  veículos, Portal e REDSEC, com `seperation=true`).
+- **Recorte canônico (2026-07-27, substitui a decisão de 26/07):** o recorte é escolhido **pelo que
+  o stat mede**.
+  - **Duelo entre jogadores** → bucket de classes, o mesmo que o tracker.gg exibe: `kills` (com
+    filtro de bot via `dividedKills.human`), `deaths`, `assists`, `revives`.
+  - **Objetivo e controle de mapa** → `gm_all`, todos os modos, veículos, Portal e REDSEC:
+    capturados, defendidos, destruídos, armados, neutralizados, setores, tempo em objetivo, spots,
+    cura, reparos, vitórias, derrotas, tempo jogado.
 
-  A assimetria é o limite da fonte, não descuido: **"todos os modos sem bots" não existe na API da
-  EA.** Não há split humano/bot por modo — `gameModeGroups[]` não tem nenhum campo disso, e
-  `dividedKills.human` é global, calculado sobre o bucket de classes. Aplicar o `humanPrecentage`
-  ao total geral seria inventar número, porque a densidade de IA varia por modo.
+  A metade dos objetivos **não é escolha**: o `classes[]` tem nove campos e nenhum contador de
+  objetivo, então alinhar tudo é impossível.
 
-  Efeito colateral bem-vindo: as kills do site passam a ser **o mesmo número do tracker.gg**,
-  encerrando a divergência de 5.267 kills (3.892 de recorte de bucket + 1.375 de bots).
-  Racional completo e mapeamento em `docs/api-gametools.md` §3 e §10.3.
+  **Atenção, contra a intuição: o bucket de classes NÃO exclui bots.** Ele significa "atribuído a
+  uma classe de infantaria". Só `kills` tem filtro de bot de verdade; **`assists` e `revives`
+  continuam contando bots**, porque a API não publica variante humana de nenhum dos dois (payload
+  varrido inteiro em 27/07). Foram para o bucket de classes por paridade com o tracker.gg, que o
+  clã trata como referência, não porque bots saíram.
+
+  Verificado contra a API: kills 12.320, deaths 4.126, assists 4.365, revives 3.062 — os quatro
+  iguais ao tracker.gg. Racional completo em `docs/api-gametools.md` §3 e §10.3.
 
 - **Cadência da coleta (2026-07-26):** **todos os membros elegíveis a cada 10 min**, em lotes
   sequenciais de **10 jogadores** por requisição (`POST /bf6/multiple/`), para não sobrecarregar a
@@ -429,10 +435,26 @@ Efeito sobre a pontuação: `kills` pesa 0,3 e responde por ~11% do total, entã
 Efeito sobre a vitrine: as kills passam a ser **o mesmo número do tracker.gg**, encerrando a
 divergência de 5.267 kills (3.892 de recorte de bucket, 1.375 de bots).
 
-**Pendência aberta:** `devidedAssists.human` (1.277) também existe, contra os 6.080 que gravamos.
-A proporção de 21% é muito distante dos 90% das kills, o que sugere que "assist humano" mede outra
-coisa, não uma simples exclusão de bots. **Não foi trocado.** Vale investigar antes, porque
-`assists` pesa 0,8 e responde por ~10% da pontuação — trocar às cegas mexeria no ranking.
+**Assists e revives seguiram para o bucket de classes (2026-07-27).** Investigando por que a
+aplicação mostrava 6.080 assists e 3.451 revives contra 4.365 e 3.062 no tracker.gg, ficou claro que
+o tracker exibe o bucket de classes em tudo, e que estávamos misturando: kills e deaths do bucket de
+classes, assists e revives do `gm_all`. Alinhados.
+
+O que **não** se confirmou, e por isso está registrado em letras grandes no estudo: o bucket de
+classes **não exclui bots**. Não existe assists nem revives filtrados por humano na API. A troca
+compra paridade com o tracker, não remoção de bot. O clã aceitou isso explicitamente.
+
+O `devidedAssists.human` (1.277) não serve de substituto: suas partes irmãs são `driver`,
+`passenger`, `spot` e `pilot`, o que indica "assist como infantaria" e não "assist contra humano".
+
+**Achado colateral:** a fixture de teste nunca tinha recebido os nove contadores de equipe
+adicionados nesta fase. Todos liam 0 pelo `.default(0)` do Zod e **nenhum teste podia detectar**.
+Corrigido com os valores reais, e agora há teste afirmando cada um.
+
+**Divergência que sobra:** `headshots` usa `gm_all.headshotKills` (2.874). O top-level tem
+`headShots` = 1.973, provavelmente o bucket de classes, mas **não deu para confirmar por soma**
+porque `classes[]` não expõe headshots. Pela regra, headshot é recorte de kill e deveria ir para o
+bucket de classes. Ficou como está por falta de verificação, não por decisão.
 
 **Schema.** Nove colunas novas em `statSnapshot`: `objectivesDefended`, `objectivesDestroyed`,
 `objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTimeSeconds`, `spots`,
@@ -474,31 +496,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                      `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                      com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                      puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                      nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                      que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                      `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                      `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                      hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                      composição.
+                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                          composição.
 
-                      O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                      (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                      (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                      rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                      pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                      uma linha de 1px colada na borda, não um tingimento.
+                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                          uma linha de 1px colada na borda, não um tingimento.
 
-                      `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                      nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                      linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                      demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                      porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                      fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                      nessa linha.
+                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                          nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
