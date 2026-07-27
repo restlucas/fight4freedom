@@ -60,6 +60,21 @@ const gameModeGroupSchema = z
     winPercent: z.number(),
     kpm: z.number(),
     dpm: z.number(),
+    // Teamwork counters. Optional with a 0 fallback on purpose: they were added
+    // to our schema after the first collections, and a community API that once
+    // served a partially zeroed payload (see isIncoherentBucket) is not one to
+    // trust for field presence. A missing field must degrade to 0, never throw
+    // and lose the whole batch.
+    objectivesDefended: z.number().default(0),
+    objectivesDestroyed: z.number().default(0),
+    objectivesArmed: z.number().default(0),
+    objectivesDisarmed: z.number().default(0),
+    sectorsDefended: z.number().default(0),
+    objectiveTime: z.number().default(0),
+    spots: z.number().default(0),
+    /** Hit points restored. Named `health` in the payload, which reads like a gauge. */
+    health: z.number().default(0),
+    repairs: z.number().default(0),
   })
   .loose();
 
@@ -170,6 +185,15 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
     objectivesCaptured: all.objectivesCaptured,
     timePlayedMinutes: Math.round(all.secondsPlayed / 60),
     bestClass: best ? CLASS_NAME_TO_ENUM[best.className] : null,
+    objectivesDefended: all.objectivesDefended,
+    objectivesDestroyed: all.objectivesDestroyed,
+    objectivesArmed: all.objectivesArmed,
+    objectivesDisarmed: all.objectivesDisarmed,
+    sectorsDefended: all.sectorsDefended,
+    objectiveTimeSeconds: all.objectiveTime,
+    spots: all.spots,
+    healthRestored: all.health,
+    repairs: all.repairs,
     matches: all.matches,
     secondsPlayed: all.secondsPlayed,
     extra: {

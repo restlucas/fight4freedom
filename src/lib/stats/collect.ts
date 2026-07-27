@@ -179,6 +179,15 @@ export async function collectStats(
       objectivesCaptured: raw.objectivesCaptured,
       timePlayedMinutes: raw.timePlayedMinutes,
       bestClass: raw.bestClass,
+      objectivesDefended: raw.objectivesDefended,
+      objectivesDestroyed: raw.objectivesDestroyed,
+      objectivesArmed: raw.objectivesArmed,
+      objectivesDisarmed: raw.objectivesDisarmed,
+      sectorsDefended: raw.sectorsDefended,
+      objectiveTimeSeconds: raw.objectiveTimeSeconds,
+      spots: raw.spots,
+      healthRestored: raw.healthRestored,
+      repairs: raw.repairs,
       extra: raw.extra,
     });
     report.updated += 1;

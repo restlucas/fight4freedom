@@ -15,10 +15,24 @@ export type StatTotals = {
   headshots: number;
   objectivesCaptured: number;
   timePlayedMinutes: number;
+  objectivesDefended: number;
+  objectivesDestroyed: number;
+  objectivesArmed: number;
+  objectivesDisarmed: number;
+  sectorsDefended: number;
+  objectiveTimeSeconds: number;
+  spots: number;
+  healthRestored: number;
+  repairs: number;
 };
 
 export type SnapshotLike = StatTotals & { capturedAt: Date };
 
+/**
+ * Every key subtracted when computing a month's progress. Adding a counter to
+ * `StatTotals` without listing it here would silently make its monthly delta
+ * always zero, so the two are kept adjacent on purpose.
+ */
 const STAT_KEYS: (keyof StatTotals)[] = [
   "kills",
   "deaths",
@@ -29,7 +43,35 @@ const STAT_KEYS: (keyof StatTotals)[] = [
   "headshots",
   "objectivesCaptured",
   "timePlayedMinutes",
+  "objectivesDefended",
+  "objectivesDestroyed",
+  "objectivesArmed",
+  "objectivesDisarmed",
+  "sectorsDefended",
+  "objectiveTimeSeconds",
+  "spots",
+  "healthRestored",
+  "repairs",
 ];
+
+/**
+ * Prisma `select` fragment covering every stored counter. Queries that feed the
+ * ranking use this instead of listing fields by hand: a hand-written list that
+ * forgets a column does not fail to compile, it silently makes that counter's
+ * monthly delta zero — which is how a scoring stat would quietly stop counting.
+ */
+export const STAT_TOTALS_SELECT = Object.fromEntries(STAT_KEYS.map((key) => [key, true])) as Record<
+  keyof StatTotals,
+  true
+>;
+
+/** Copies just the counters out of a wider row (a snapshot, a query result). */
+export function pickTotals(row: StatTotals | null | undefined): StatTotals {
+  if (!row) return emptyTotals();
+  const out = emptyTotals();
+  for (const key of STAT_KEYS) out[key] = row[key];
+  return out;
+}
 
 export function emptyTotals(): StatTotals {
   return {
@@ -42,6 +84,15 @@ export function emptyTotals(): StatTotals {
     headshots: 0,
     objectivesCaptured: 0,
     timePlayedMinutes: 0,
+    objectivesDefended: 0,
+    objectivesDestroyed: 0,
+    objectivesArmed: 0,
+    objectivesDisarmed: 0,
+    sectorsDefended: 0,
+    objectiveTimeSeconds: 0,
+    spots: 0,
+    healthRestored: 0,
+    repairs: 0,
   };
 }
 

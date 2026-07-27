@@ -8,12 +8,7 @@
 //   - Return values must be JSON-safe, so dates are exposed as ISO strings.
 //   - Arguments become part of the cache key, so no volatile values.
 
-import type {
-  MedalTier,
-  MemberRole,
-  Platform,
-  PlayerClass,
-} from "@prisma/client";
+import type { MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
 
 import { cachedQuery, CACHE_TAG } from "@/lib/cache";
 import { db } from "@/lib/db";
@@ -23,7 +18,8 @@ import {
   computeKd,
   computeWinRate,
   deltaForMonth,
-  emptyTotals,
+  pickTotals,
+  STAT_TOTALS_SELECT,
   totalMatches,
   withCompetitionRanks,
   type StatTotals,
@@ -60,31 +56,9 @@ export type MemberOverview = {
   totals: StatTotals;
 };
 
-function totalsFromSnapshot(
-  snapshot: {
-    kills: number;
-    deaths: number;
-    wins: number;
-    losses: number;
-    assists: number;
-    revives: number;
-    headshots: number;
-    objectivesCaptured: number;
-    timePlayedMinutes: number;
-  } | null,
-): StatTotals {
-  if (!snapshot) return emptyTotals();
-  return {
-    kills: snapshot.kills,
-    deaths: snapshot.deaths,
-    wins: snapshot.wins,
-    losses: snapshot.losses,
-    assists: snapshot.assists,
-    revives: snapshot.revives,
-    headshots: snapshot.headshots,
-    objectivesCaptured: snapshot.objectivesCaptured,
-    timePlayedMinutes: snapshot.timePlayedMinutes,
-  };
+/** Latest snapshot to career totals. `pickTotals` covers every counter. */
+function totalsFromSnapshot(snapshot: StatTotals | null): StatTotals {
+  return pickTotals(snapshot);
 }
 
 /** Active members with their latest snapshot totals, best class and medals. */
@@ -158,14 +132,11 @@ export async function getClanStats(): Promise<ClanStats> {
   const totalMembers = members.length;
   const totalMedalsAwarded = members.reduce((sum, m) => sum + m.medalCount, 0);
   const averageKd = totalMembers
-    ? members.reduce((sum, m) => sum + computeKd(m.totals.kills, m.totals.deaths), 0) /
-      totalMembers
+    ? members.reduce((sum, m) => sum + computeKd(m.totals.kills, m.totals.deaths), 0) / totalMembers
     : 0;
   const averageWinRate = totalMembers
-    ? members.reduce(
-        (sum, m) => sum + computeWinRate(m.totals.wins, m.totals.losses),
-        0,
-      ) / totalMembers
+    ? members.reduce((sum, m) => sum + computeWinRate(m.totals.wins, m.totals.losses), 0) /
+      totalMembers
     : 0;
   return { totalMembers, totalMedalsAwarded, averageKd, averageWinRate };
 }
@@ -194,6 +165,39 @@ export type RankingEntry = {
  * Takes a `monthKey` ("2026-07"), not a Date: the argument is part of the cache
  * key, and an instant would change on every request.
  */
+/**
+ * Season keys that actually have a board, newest first (e.g. ["2026-07", "2026-06"]).
+ *
+ * A month only counts when some member has at least TWO snapshots inside it,
+ * because `deltaForMonth` scores last-minus-first: with a single snapshot every
+ * member's progress is zero, and offering that month in the picker would show an
+ * all-zero board that looks like a bug.
+ *
+ * The 3-hour shift reproduces `monthKey`'s Brasília calendar in SQL — without it
+ * a snapshot captured at 22:00 on the 31st would be filed under the next month.
+ */
+export const getRankingMonths = cachedQuery(
+  "ranking-months",
+  [CACHE_TAG.stats],
+  async (): Promise<string[]> => {
+    const rows = await db.$queryRaw<{ month: string }[]>`
+      select month
+      from (
+        select
+          to_char(captured_at - interval '3 hours', 'YYYY-MM') as month,
+          member_id,
+          count(*) as snapshots
+        from stat_snapshot
+        group by 1, 2
+      ) per_member
+      where snapshots >= 2
+      group by month
+      order by month desc
+    `;
+    return rows.map((row) => row.month);
+  },
+);
+
 export const getMonthlyRanking = cachedQuery(
   "monthly-ranking",
   [CACHE_TAG.members, CACHE_TAG.stats],
@@ -207,18 +211,7 @@ export const getMonthlyRanking = cachedQuery(
         avatarUrl: true,
         platform: true,
         snapshots: {
-          select: {
-            capturedAt: true,
-            kills: true,
-            deaths: true,
-            wins: true,
-            losses: true,
-            assists: true,
-            revives: true,
-            headshots: true,
-            objectivesCaptured: true,
-            timePlayedMinutes: true,
-          },
+          select: { capturedAt: true, ...STAT_TOTALS_SELECT },
         },
       },
     });
@@ -374,19 +367,7 @@ export const getMemberProfile = cachedQuery(
       joinedAt: member.joinedAt?.toISOString() ?? null,
       bestClass: latest?.bestClass ?? null,
       medalCount: member.medals.length,
-      totals: latest
-        ? {
-            kills: latest.kills,
-            deaths: latest.deaths,
-            wins: latest.wins,
-            losses: latest.losses,
-            assists: latest.assists,
-            revives: latest.revives,
-            headshots: latest.headshots,
-            objectivesCaptured: latest.objectivesCaptured,
-            timePlayedMinutes: latest.timePlayedMinutes,
-          }
-        : emptyTotals(),
+      totals: pickTotals(latest),
       medals: member.medals.map((um) => ({
         id: um.medal.id,
         name: um.medal.name,

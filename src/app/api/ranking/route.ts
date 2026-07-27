@@ -6,11 +6,8 @@ import { NextResponse } from "next/server";
 
 import { normalizeSearch } from "@/features/clan/lib/format";
 import { getMonthlyRanking } from "@/features/clan/lib/queries";
-import {
-  RANKING_PAGE_SIZE,
-  type RankingPage,
-} from "@/features/clan/lib/ranking";
-import { monthKey } from "@/lib/month";
+import { RANKING_PAGE_SIZE, type RankingPage } from "@/features/clan/lib/ranking";
+import { isMonthKey, monthKey } from "@/lib/month";
 
 export const dynamic = "force-dynamic";
 
@@ -27,10 +24,14 @@ export async function GET(request: Request): Promise<NextResponse<RankingPage>> 
   const offset = positiveInt(params.get("offset"), 0, 10_000);
   const limit = positiveInt(params.get("limit"), RANKING_PAGE_SIZE, MAX_LIMIT);
   const query = normalizeSearch(params.get("q") ?? "");
+  // Paging and searching must stay on whichever season the page is showing, so
+  // the month travels with every request. It also reaches a cache key, hence the
+  // strict shape check instead of trusting the caller.
+  const month = isMonthKey(params.get("month")) ? params.get("month")! : monthKey(new Date());
 
   // Ranks come from the full board, so filtering afterwards keeps each member's
   // real position instead of renumbering the search result.
-  const board = await getMonthlyRanking(monthKey(new Date()));
+  const board = await getMonthlyRanking(month);
   const filtered = query
     ? board.filter((entry) => normalizeSearch(entry.nickname).includes(query))
     : board;

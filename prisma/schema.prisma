@@ -179,6 +179,27 @@ model StatSnapshot {
   objectivesCaptured Int          @default(0) @map("objectives_captured")
   timePlayedMinutes  Int          @default(0) @map("time_played_minutes")
   bestClass          PlayerClass? @map("best_class")
+  // Teamwork counters (2026-07-27). The ranking scores teamwork above combat,
+  // so these are first-class columns instead of `extra` keys: the monthly delta
+  // reads them on every board render, and jsonb would mean parsing on each row.
+  objectivesDefended   Int @default(0) @map("objectives_defended")
+  objectivesDestroyed  Int @default(0) @map("objectives_destroyed")
+  objectivesArmed      Int @default(0) @map("objectives_armed")
+  objectivesDisarmed   Int @default(0) @map("objectives_disarmed")
+  sectorsDefended      Int @default(0) @map("sectors_defended")
+  /** Seconds standing on an objective. Scored per second, at a tiny weight. */
+  objectiveTimeSeconds Int @default(0) @map("objective_time_seconds")
+  /** Enemies marked for the team. Verified NOT to be Recon-only (see points.ts). */
+  spots                Int @default(0)
+  /** Hit points restored to teammates — a magnitude, not an action count. */
+  healthRestored       Int @default(0) @map("health_restored")
+  /**
+   * Vehicle repairs. Collected but deliberately NOT scored: it is locked to
+   * Engineer, so scoring it taxes everyone who plays another class (decision of
+   * 2026-07-27). Stored anyway because history cannot be backfilled if the clan
+   * later changes its mind.
+   */
+  repairs              Int @default(0)
   // Extra BF6 metrics without a migration.
   extra              Json?
 

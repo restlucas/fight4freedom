@@ -4,6 +4,7 @@ import {
   computeKd,
   computeWinRate,
   deltaForMonth,
+  emptyTotals,
   hasNewActivity,
   hoursPlayed,
   killsPerMatch,
@@ -17,18 +18,7 @@ import {
 } from "./snapshots";
 
 function totals(partial: Partial<StatTotals>): StatTotals {
-  return {
-    kills: 0,
-    deaths: 0,
-    wins: 0,
-    losses: 0,
-    assists: 0,
-    revives: 0,
-    headshots: 0,
-    objectivesCaptured: 0,
-    timePlayedMinutes: 0,
-    ...partial,
-  };
+  return { ...emptyTotals(), ...partial };
 }
 
 function snapshot(capturedAt: string, partial: Partial<StatTotals>): SnapshotLike {

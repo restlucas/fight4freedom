@@ -1,6 +1,7 @@
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import { emptyTotals } from "@/lib/stats/snapshots";
 import { render, screen } from "@/test-utils";
 
 import type { MemberOverview } from "../lib/queries";
@@ -21,6 +22,7 @@ const member: MemberOverview = {
   ],
   bestClass: "assault",
   totals: {
+    ...emptyTotals(),
     kills: 200,
     deaths: 100,
     wins: 12,
@@ -42,9 +44,7 @@ describe("MemberCard", () => {
 
   it("shows the platform mark with its id (not the role) and the compact stats", () => {
     render(<MemberCard member={member} />);
-    expect(
-      screen.getByLabelText(/Plataforma: EA · RRRRRRRREST/),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/Plataforma: EA · RRRRRRRREST/)).toBeInTheDocument();
     expect(screen.queryByText("Admin")).not.toBeInTheDocument();
     expect(screen.getByText("K/D")).toBeInTheDocument();
     expect(screen.getByText("2.00")).toBeInTheDocument(); // K/D = 200/100
@@ -79,18 +79,14 @@ describe("MemberCard", () => {
 
   it("shows the rank insignia derived from the points", () => {
     render(<MemberCard member={member} />);
-    expect(
-      screen.getByLabelText("Patente: General de Divisão · 13.000 pts"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Patente: General de Divisão · 13.000 pts")).toBeInTheDocument();
   });
 
   it("reveals the rank name and points in a tooltip on hover", async () => {
     const user = userEvent.setup();
     render(<MemberCard member={member} />);
 
-    await user.hover(
-      screen.getByLabelText("Patente: General de Divisão · 13.000 pts"),
-    );
+    await user.hover(screen.getByLabelText("Patente: General de Divisão · 13.000 pts"));
 
     // Radix renders the content in a portal, plus a visually hidden copy.
     const tooltips = await screen.findAllByText("General de Divisão");
@@ -100,10 +96,7 @@ describe("MemberCard", () => {
 
   it("crowns only the stats the member leads", () => {
     render(
-      <MemberCard
-        member={member}
-        leaders={{ kd: ["m1"], kills: [], matches: [], hours: [] }}
-      />,
+      <MemberCard member={member} leaders={{ kd: ["m1"], kills: [], matches: [], hours: [] }} />,
     );
     expect(screen.getByLabelText("Líder em K/D")).toBeInTheDocument();
     expect(screen.queryByLabelText("Líder em Kills")).not.toBeInTheDocument();

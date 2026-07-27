@@ -1,10 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { StatTotals } from "@/lib/stats/snapshots";
+import { emptyTotals, type StatTotals } from "@/lib/stats/snapshots";
 import { PlayerStats } from "./player-stats";
 
 const stats: StatTotals = {
+  ...emptyTotals(),
   kills: 200,
   deaths: 100,
   wins: 12,

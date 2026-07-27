@@ -59,10 +59,13 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ## Status (atualizado em 2026-07-27)
 
-**Fase 3 entregue e rodando em produção.** O app está no ar em `fight4freedom.vercel.app`, o
-schema foi aplicado, o `pg_cron` dispara a coleta a cada 10 min e a rota já devolveu relatórios
-válidos. O que resta antes da Fase 4 é operacional, não de código: cadastrar o roster real e
-fazer o teste de fidelidade com o clã.
+**Fases 0 a 3.5 concluídas.** O app está no ar em `fight4freedom.vercel.app`, o schema foi
+aplicado, o `pg_cron` dispara a coleta a cada 10 min e a rota devolve relatórios válidos. A
+Fase 3.5 fechou a pontuação por trabalho em equipe e o histórico de temporadas do ranking.
+
+O que resta antes da Fase 4 é **operacional, não de código**: rodar os dois comandos de migração
+listados no fim da Fase 3.5, cadastrar o roster real pelo painel e fazer o teste de fidelidade da
+§8 com o clã (até ele, não divulgar as seções de stats).
 
 ### Fase 0 — Fundação: concluída
 
@@ -366,6 +369,151 @@ _(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/
   para o próximo ciclo; a rota falha fechada sem `CRON_SECRET`; um ciclo perdido não é incidente.
 - **Snapshots `manual` nunca são sobrescritos** — a coleta só insere linhas novas com
   `source: api`, nunca atualiza linhas existentes.
+
+### Fase 3.5 — Ranking por trabalho em equipe: concluída (2026-07-27)
+
+Etapa criada entre as Fases 3 e 4 por decisão do dono do clã: o esquema de pontuação passa a
+premiar jogo coletivo acima de abate, e o ranking ganha histórico de temporadas.
+
+**Pontuação.** Pesos em `src/lib/stats/points.ts`, agora **definidos** (não mais provisórios).
+O racional completo está no cabeçalho do arquivo; o resumo é que **peso não define prioridade,
+peso × frequência define**. Kills acontecem 34 vezes por partida e objetivo destruído 0,03 vez,
+então "kill peso 3 contra objetivo destruído peso 50" ainda entrega 103 pontos para combate
+contra 1,35. Os pesos foram calibrados contra os números reais dos dois membros do clã até
+equipe ficar em 73,3% e 75,4% do total, com combate em 12,8% e 6,3%. **As frações, não os pesos,
+são o contrato** — e é o que `points.test.ts` afirma, usando os totais reais de carreira.
+
+Duas exclusões deliberadas:
+
+- **`repairs` não pontua.** É travado em Engenheiro: um membro tem 6.756 reparos de carreira, o
+  outro tem exatamente 0 porque nunca joga a classe. Pontuar isso viraria imposto sobre quem joga
+  outra coisa. **Continua sendo coletado**, porque histórico não se reconstrói se o clã mudar de ideia.
+- **`deaths` não desconta.** Jogar o objetivo faz morrer mais; punir morte trabalharia contra o
+  próprio esquema.
+
+`spots` foi verificado antes de entrar: um membro tem 2.581 marcações com só 4,8% do tempo de
+classe em Recon, o que daria 7,76 marcações por minuto de Recon — logo, marcar conta para todas
+as classes, não é exclusivo de Recon.
+
+**Justiça entre classes** é o risco central desse esquema, e o que o segura são os contadores de
+objetivo, que são class-agnósticos (conquistas por partida em 2,25 vs 1,81; tempo em objetivo em
+205 s vs 213 s entre dois perfis bem diferentes). Os contadores de apoio são a metade enviesada,
+então nenhum stat travado em classe pode dominar.
+
+**Schema.** Nove colunas novas em `statSnapshot`: `objectivesDefended`, `objectivesDestroyed`,
+`objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTimeSeconds`, `spots`,
+`healthRestored` e `repairs`. Todas com `@default(0)`, então o `db push` foi **aditivo, sem perda
+de dados**. Para não repetir o erro de listar colunas à mão em query (uma coluna esquecida não
+quebra a compilação, ela silenciosamente zera o delta daquele contador), `snapshots.ts` passa a
+exportar `STAT_TOTALS_SELECT` e `pickTotals`, derivados das próprias chaves de `StatTotals`.
+
+**Migração dos dados.** Os 91 snapshots que existiam foram apagados
+(`pnpm db:clean-examples --reset-snapshots`), porque todos leriam 0 nas colunas novas e o mais
+antigo viraria base falsa — a mesma armadilha do `isIncoherentBucket`, só que vinda do nosso
+próprio histórico. Nada permanente se perdeu: snapshot guarda **total de carreira**, que a API
+reserve a cada ciclo. Preservados: membros, medalhas, concessões, `profile` (acesso ao painel) e
+convites.
+
+**UI do ranking.**
+
+- [x] **Sem destaque para o 1º lugar.** O `RankingSeasonBar` (faixa dourada com avatar, coroa e
+      "Líder do mês") foi **removido**: o esquema premia jogo coletivo, então coroar um indivíduo
+      contradiz a própria pontuação. O destaque agora são os 4 primeiros, pelo divider.
+- [x] Divider "Demais membros" separando os 4 primeiros do resto (4 porque o clã joga em esquadrão
+      de 4). Some durante busca, porque lista filtrada não é pódio, e some quando o board não é
+      maior que o corte.
+- [x] Contador de encerramento movido para dentro do card de busca, alinhado à direita com
+      `ml-auto` (não `justify-between` no pai: o painel quebra em telas estreitas e o
+      `justify-between` afastaria o campo de busca do contador quando dividem a mesma linha).
+      Com o líder fora, o prazo era o único fato de página inteira que restava, e um fato só não
+      justifica uma faixa. O `loading.tsx` foi refeito para espelhar o layout novo (chips de
+      temporada, contador dentro do painel, divider após a 4ª linha).
+- [x] **Altura do card de busca fixada** em `md:h-15`. Para caber em uma linha, o contador virou
+      horizontal: ícone e "Encerra em" à esquerda dos dígitos, e cada chip passou a ter valor e
+      sufixo na **mesma linha** ("08h") em vez de empilhados — empilhado, cada chip era mais alto
+      que o campo de busca e era ele que ditava a altura do painel. A altura só entra a partir de
+      `md`, porque abaixo disso os controles precisam quebrar (travar lá cortaria o campo de busca
+      em vez de encurtar o card), e o `md:flex-nowrap` só é seguro porque o campo de busca ganhou
+      `min-w-0` para encolher enquanto contador e relógio mantêm o tamanho.
+- [x] **Superfície do 1º lugar: cor de card normal, sem transparência nenhuma.** O dourado vive
+      **só na borda e nos acentos** — borda amarela, trilho de 4px à esquerda, chip do número 1 em
+      dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
+
+      Duas tentativas anteriores erraram e vale não repetir. A primeira usava
+                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+
+                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                  composição.
+
+                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                  uma linha de 1px colada na borda, não um tingimento.
+
+                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                  nessa linha.
+
+- [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
+      compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
+      apenas meses em que **algum membro tem 2+ snapshots**, porque com um único snapshot o delta
+      é zero e o mês apareceria como board zerado, parecendo bug.
+- [x] Contador de encerramento só na temporada em curso.
+
+**Histórico mockado.** `pnpm db:mock-history` cria as 3 temporadas anteriores **mais a em curso**,
+com top 10.
+
+Regra importante da temporada em curso: ela **exclui membros que a coleta alcança**
+(`discordId` preenchido). Não é preciosismo, é corretude — o delta é último-menos-primeiro dentro
+do mês, então uma linha mockada de abertura (algumas centenas de kills) seguida de uma linha real
+de fechamento (carreira inteira, dezenas de milhares) reportaria a vida toda do membro como
+progresso do mês. Temporadas encerradas não têm esse risco, porque o coletor só escreve em "agora"
+e nunca cai num mês fechado. O snapshot de fechamento da temporada em curso é estampado em
+**"agora"**, não no fim do mês, para não existir data de captura no futuro.
+Importante entender por que não é uma lista de pontuações: o ranking nunca lê score gravado, ele
+calcula o **delta** entre o primeiro e o último snapshot do mês, e snapshot guarda total
+cumulativo. Então o mock precisa ser uma carreira crescente coerente — dois snapshots por membro
+por mês, cada mês abrindo exatamente onde o anterior fechou. Os dados saem com `source: manual`,
+o que significa que **`pnpm db:clean-examples` apaga esse histórico** (correto, é andaime, mas os
+dois scripts são opostos e a ordem importa).
+
+**Escopo de código encerrado.** Não há mais nada a construir nesta etapa. O que segue abaixo é
+operação e acompanhamento, não trabalho pendente de desenvolvimento.
+
+Operação, uma vez, logo após o deploy deste commit:
+
+```bash
+pnpm db:clean-examples --reset-snapshots --apply   # remove os snapshots pre-migracao
+pnpm db:mock-history --apply                       # recompoe as 4 temporadas
+```
+
+Por que é necessário: confirmado em produção no ciclo de 18:30 de 2026-07-27, o build que estava
+publicado não conhecia as colunas novas, então gravou `kills` correto e **0 nas 9 colunas de
+equipe**. Duas linhas assim viraram base falsa em julho. Não crescem sozinhas (o coletor só grava
+quando os contadores mudam), mas precisam sair antes de a coleta com o código novo acumular por
+cima.
+
+Acompanhamento, sem prazo:
+
+- Os **dois membros reais** aparecem com 0 ponto na temporada em curso até a coleta acumular dois
+  snapshots no mesmo mês. Ficam fora do mock justamente para não misturar dado fabricado com real;
+  conforme jogarem, entram no board por conta própria.
+- **Rever os pesos depois de um mês real com o roster completo.** A calibração usou a carreira de
+  dois membros, ambos com Support dominante. Um mês real de ~50 membros e classes variadas pode
+  revelar distorção que dois perfis não mostram — em especial no `revives`, hoje a maior linha
+  isolada da pontuação (19% a 22%), e parcialmente dependente de classe.
 
 ### Fase 4 — Progressão e polimento
 

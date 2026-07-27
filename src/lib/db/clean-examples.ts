@@ -29,6 +29,20 @@ import { EXAMPLE_NICKNAMES } from "./example-roster";
 
 const APPLY = process.argv.includes("--apply");
 const INCOHERENT_ONLY = process.argv.includes("--incoherent-only");
+/**
+ * Wipes the whole snapshot series, keeping members, medals, awards, profiles and
+ * invites. For when a schema change adds scored counters: every pre-existing row
+ * reads 0 for the new columns, so the oldest one becomes a false baseline and
+ * `deltaForMonth` reports the next real reading as a month of progress — the
+ * same failure `isIncoherentBucket` guards against, only sourced from our own
+ * history instead of the API.
+ *
+ * Safe because snapshots are CUMULATIVE career totals re-served by the API on
+ * every cycle: the current numbers come back within 10 minutes. What is lost is
+ * granular history, which is exactly what has no valid values for the new
+ * columns anyway.
+ */
+const RESET_SNAPSHOTS = process.argv.includes("--reset-snapshots");
 
 /**
  * Rows the guard in `isIncoherentBucket` would drop today: zero kills next to a
@@ -51,6 +65,32 @@ async function findIncoherentApiSnapshots() {
 }
 
 async function main() {
+  if (RESET_SNAPSHOTS) {
+    const total = await db.statSnapshot.count();
+    const bySource = await db.statSnapshot.groupBy({
+      by: ["source"],
+      _count: { _all: true },
+    });
+    console.log(`\n  ${APPLY ? "Apagando" : "Dry run (nada sera apagado)"}: serie de snapshots`);
+    for (const row of bySource) {
+      console.log(`    - ${row.source}: ${row._count._all}`);
+    }
+    console.log(
+      "    membros, medalhas, concessoes, profiles e convites: PRESERVADOS\n" +
+        "    (totais de carreira voltam da API no proximo ciclo)",
+    );
+    if (!APPLY) {
+      console.log("\n  Para aplicar: pnpm db:clean-examples --reset-snapshots --apply\n");
+      return;
+    }
+    const removed = await db.statSnapshot.deleteMany();
+    console.log(`\n  Pronto: ${removed.count} de ${total} snapshots removidos.`);
+    console.log(
+      `  Restam ${await db.member.count()} membros, ${await db.medal.count()} medalhas.\n`,
+    );
+    return;
+  }
+
   const examples = INCOHERENT_ONLY
     ? []
     : await db.member.findMany({

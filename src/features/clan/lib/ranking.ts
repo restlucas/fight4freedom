@@ -14,6 +14,8 @@ export type RankingPage = {
 /** Fetches one page of the monthly ranking. Throws on a non-OK response. */
 export async function fetchRankingPage(params: {
   offset: number;
+  /** Season key ("2026-07"). Without it the server assumes the current month. */
+  month?: string;
   query?: string;
   signal?: AbortSignal;
 }): Promise<RankingPage> {
@@ -22,6 +24,7 @@ export async function fetchRankingPage(params: {
     limit: String(RANKING_PAGE_SIZE),
   });
   if (params.query?.trim()) search.set("q", params.query.trim());
+  if (params.month) search.set("month", params.month);
 
   const response = await fetch(`/api/ranking?${search}`, {
     signal: params.signal,

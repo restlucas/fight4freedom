@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  monthEndsAt,
-  monthKey,
-  monthKeyToReference,
-  monthStartsAt,
-} from "./month";
+import { isMonthKey, monthEndsAt, monthKey, monthKeyToReference, monthStartsAt } from "./month";
 
 describe("monthEndsAt", () => {
   it("returns midnight of the 1st of the next month in Brasília (03:00 UTC)", () => {
@@ -62,14 +57,38 @@ describe("monthKey", () => {
 
 describe("monthKeyToReference", () => {
   it("lands inside the month it came from", () => {
-    expect(monthKeyToReference("2026-07").toISOString()).toBe(
-      "2026-07-15T12:00:00.000Z",
-    );
+    expect(monthKeyToReference("2026-07").toISOString()).toBe("2026-07-15T12:00:00.000Z");
   });
 
   it("round-trips with monthKey", () => {
     for (const key of ["2026-01", "2026-07", "2026-12"]) {
       expect(monthKey(monthKeyToReference(key))).toBe(key);
+    }
+  });
+});
+
+describe("isMonthKey", () => {
+  it("accepts what monthKey produces", () => {
+    expect(isMonthKey(monthKey(new Date()))).toBe(true);
+    expect(isMonthKey("2026-01")).toBe(true);
+    expect(isMonthKey("2026-12")).toBe(true);
+  });
+
+  it("rejects anything else, since the value reaches a cache key", () => {
+    for (const bad of [
+      null,
+      undefined,
+      "",
+      "2026",
+      "2026-1", // unpadded
+      "2026-00",
+      "2026-13",
+      "26-07",
+      "2026-07-15",
+      "abcd-ef",
+      "2026-07; drop table",
+    ]) {
+      expect(isMonthKey(bad)).toBe(false);
     }
   });
 });

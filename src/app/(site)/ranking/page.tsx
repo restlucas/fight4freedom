@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Image from "next/image";
 
 import { RankingList } from "@/features/clan/components/ranking-list";
-import { RankingSeasonBar } from "@/features/clan/components/ranking-season-bar";
+import { RankingMonthPicker } from "@/features/clan/components/ranking-month-picker";
 import { formatMonthLabel } from "@/features/clan/lib/format";
-import { getMonthlyRanking } from "@/features/clan/lib/queries";
+import { getMonthlyRanking, getRankingMonths } from "@/features/clan/lib/queries";
 import { RANKING_PAGE_SIZE } from "@/features/clan/lib/ranking";
-import { monthEndsAt, monthKey } from "@/lib/month";
+import { isMonthKey, monthEndsAt, monthKey, monthKeyToReference } from "@/lib/month";
 import { POINT_WEIGHTS, SCORED_STATS } from "@/lib/stats/points";
 
 export const metadata: Metadata = {
@@ -18,13 +18,34 @@ export const metadata: Metadata = {
 // DB-backed vitrine: render at request time so it always reflects current data.
 export const dynamic = "force-dynamic";
 
-export default async function RankingPage() {
+export default async function RankingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string }>;
+}) {
   const now = new Date();
+  const currentSeason = monthKey(now);
+  const { mes } = await searchParams;
+
+  // Past seasons come from the archive of snapshots, so the picker offers only
+  // months that really have a board. An unknown or malformed `?mes=` falls back
+  // to the open season instead of 404-ing: a stale shared link should still land
+  // somewhere useful.
+  const availableMonths = await getRankingMonths();
+  const months = availableMonths.includes(currentSeason)
+    ? availableMonths
+    : [currentSeason, ...availableMonths];
+  const month = isMonthKey(mes) && months.includes(mes) ? mes : currentSeason;
+  const isOpenSeason = month === currentSeason;
+
   // The board is cached per season; the label and the countdown below stay
   // outside the cache so they are always exact.
-  const board = await getMonthlyRanking(monthKey(now));
+  const board = await getMonthlyRanking(month);
 
-  const leader = board[0]?.points ? board[0] : null;
+  // No single-member spotlight: the scoring scheme rewards squad play, so the
+  // page highlights the top FOUR through the divider in the list instead of
+  // crowning a #1 (decision of 2026-07-27). `topPoints` stays because the rows
+  // size their progress bars against the leader's score.
   const topPoints = board[0]?.points ?? 0;
 
   return (
@@ -49,41 +70,47 @@ export default async function RankingPage() {
 
       <main className="mx-auto w-full max-w-4xl px-4 py-10">
         <header className="mb-5 space-y-1">
-          <h1 className="font-heading text-3xl font-bold drop-shadow-sm">
-            Ranking
-          </h1>
+          <h1 className="font-heading text-3xl font-bold drop-shadow-sm">Ranking</h1>
           <p className="text-muted-foreground text-sm">
-            Temporada de {formatMonthLabel(now)} · pontos pelo progresso do mês.
+            Temporada de {formatMonthLabel(monthKeyToReference(month))}
+            {isOpenSeason ? " · pontos pelo progresso do mês." : " · temporada encerrada."}
           </p>
         </header>
 
-        <RankingSeasonBar
-          leader={leader}
-          endsAt={monthEndsAt(now).toISOString()}
-          className="mb-6"
+        <RankingMonthPicker
+          months={months}
+          current={month}
+          currentSeason={currentSeason}
+          className="mb-5"
         />
 
         {board.length === 0 ? (
           <p className="text-muted-foreground bg-card/60 rounded-lg border border-dashed p-10 text-center backdrop-blur-sm">
-            Nenhum membro no ranking ainda.
+            {isOpenSeason
+              ? "Nenhum membro no ranking ainda."
+              : "Esta temporada não tem pontuação registrada."}
           </p>
         ) : (
           <RankingList
+            key={month}
             initialEntries={board.slice(0, RANKING_PAGE_SIZE)}
             initialTotal={board.length}
             topPoints={topPoints}
+            month={month}
+            // The countdown only means something while the season can still change.
+            endsAt={isOpenSeason ? monthEndsAt(now).toISOString() : null}
           />
         )}
 
-        {/* The scoring rules are provisional; stating them beats a mystery number
-            next to each member. */}
+        {/* Stating the rules beats a mystery number next to each member — and
+            with teamwork weighted above combat, the "why am I below them?"
+            question is answered here instead of in the Discord. */}
         <footer className="text-muted-foreground bg-card/60 mt-8 rounded-lg border px-4 py-3 text-xs backdrop-blur-sm">
-          <span className="font-semibold">Como pontuamos (provisório):</span>{" "}
-          {SCORED_STATS.map(({ key, label }) => {
-            const weight = POINT_WEIGHTS[key];
-            return `${label} ${weight > 0 ? "+" : ""}${weight}`;
-          }).join(" · ")}
-          . Conta apenas o progresso feito dentro do mês.
+          <span className="font-semibold">Como pontuamos:</span> jogo em equipe vale mais que abate.{" "}
+          {SCORED_STATS.map(({ key, label }) => `${label} +${POINT_WEIGHTS[key]}`).join(" · ")}.
+          Tempo em cima do objetivo e cura também pontuam. Morte não desconta, e reparo de veículo
+          não pontua para não penalizar quem não joga Engenheiro. Conta apenas o progresso feito
+          dentro do mês.
         </footer>
       </main>
     </>

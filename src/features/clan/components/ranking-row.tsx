@@ -9,8 +9,13 @@ import type { RankingEntry } from "../lib/queries";
 
 // Only the podium gets colour; everyone else stays neutral so the list reads as
 // a list and not as a wall of badges.
+//
+// Rank 1 is a SOLID gold chip rather than the 20%-alpha tint the other two use.
+// With the leader's row deliberately carrying no background tint, the number is
+// one of the few places the gold can actually land, so it has to read as paint
+// and not as a haze.
 const RANK_ACCENT: Record<number, string> = {
-  1: "border-yellow-400/50 bg-yellow-500/20 text-yellow-200",
+  1: "border-yellow-300 bg-yellow-400 text-yellow-950",
   2: "border-zinc-300/40 bg-zinc-400/20 text-zinc-100",
   3: "border-orange-500/40 bg-orange-600/20 text-orange-200",
 };
@@ -33,7 +38,41 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
       href={`/membros/${entry.memberId}`}
       className={cn(
         "group bg-card/80 hover:border-primary/60 hover:bg-card/95 focus-visible:ring-ring flex items-center gap-3 rounded-lg border px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur-md transition-colors focus-visible:ring-2 focus-visible:outline-none",
-        isLeader && "border-yellow-500/40 bg-yellow-500/[0.08]",
+        // The leader's surface is the PLAIN card colour at full opacity, and the
+        // gold lives entirely in the border and the accents. No tint, no wash.
+        //
+        // Two earlier attempts both read as "transparent" and are worth not
+        // repeating. First `bg-yellow-500/[0.08]`, which REPLACED the `bg-card/80`
+        // above it, leaving the top row with less surface than the rows below —
+        // a faint tint over raw backdrop-blur. Then an opaque `bg-card` under a
+        // `from-yellow-400/20 ... to-transparent` gradient: nothing showed
+        // through any more, but an alpha wash still looks washed out, because a
+        // fading overlay is what transparency looks like even when it is opaque.
+        //
+        // `--card` is `oklch(0.284 0.012 235)`, no alpha, so `bg-card` alone is
+        // solid. `hover:bg-card` is repeated because the base `hover:bg-card/95`
+        // would otherwise reintroduce translucency on hover, and
+        // `backdrop-blur-none` because blurring behind an opaque fill only costs
+        // compositing work.
+        // The gold glow lives INSIDE the row, as an inset shadow blooming from the
+        // edges inward, plus a 1px inset ring on the border.
+        //
+        // Why an inset shadow and not the background wash that was rejected: a
+        // gradient background is a flat film across the whole surface, which is
+        // what made the card read as see-through. An inset shadow is anchored to
+        // the edges and fades to nothing in the middle, so the centre of the row
+        // stays the plain, solid card colour.
+        //
+        // `inset-shadow-*` is its own Tailwind group (`--tw-inset-shadow`), so it
+        // composes with the base `shadow-lg shadow-black/20` instead of fighting
+        // it — the row keeps its depth against the page and gains the gold within.
+        isLeader && [
+          "bg-card hover:bg-card backdrop-blur-none",
+          "border-l-4 border-yellow-400 hover:border-yellow-300",
+          "inset-shadow-[0_0_28px_-4px_rgb(250_204_21_/_0.45)]",
+          "hover:inset-shadow-[0_0_32px_-2px_rgb(250_204_21_/_0.6)]",
+          "ring-1 ring-yellow-400/30 ring-inset",
+        ],
         className,
       )}
     >
@@ -47,10 +86,7 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
       </span>
 
       <Avatar className="size-9 shrink-0">
-        <AvatarImage
-          src={entry.avatarUrl ?? "/member-default.png"}
-          alt={entry.nickname}
-        />
+        <AvatarImage src={entry.avatarUrl ?? "/member-default.png"} alt={entry.nickname} />
         <AvatarFallback className="font-heading text-xs">
           {memberInitials(entry.nickname)}
         </AvatarFallback>
@@ -60,19 +96,13 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
         <p className="font-heading flex items-center gap-1.5 truncate text-base leading-none font-semibold">
           {entry.nickname}
           {isLeader ? (
-            <Crown
-              className="size-3.5 shrink-0 text-yellow-400"
-              aria-label="Líder do mês"
-            />
+            <Crown className="size-3.5 shrink-0 text-yellow-400" aria-label="Líder do mês" />
           ) : null}
         </p>
         {/* Score relative to the leader — gives the list a sense of distance. */}
         <div className="bg-background/70 mt-1.5 h-1 w-full max-w-40 overflow-hidden rounded-full">
           <div
-            className={cn(
-              "h-full rounded-full",
-              isLeader ? "bg-yellow-400" : "bg-primary",
-            )}
+            className={cn("h-full rounded-full", isLeader ? "bg-yellow-400" : "bg-primary")}
             style={{ width: `${share}%` }}
           />
         </div>
@@ -82,9 +112,7 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
         <span className="font-mono text-sm font-bold tabular-nums">
           {formatPoints(entry.points)}
         </span>
-        <span className="text-muted-foreground ml-1 text-[10px] tracking-wide uppercase">
-          pts
-        </span>
+        <span className="text-muted-foreground ml-1 text-[10px] tracking-wide uppercase">pts</span>
       </div>
 
       {/* The whole row is the link, so this is the affordance for it, not a

@@ -35,6 +35,20 @@ export type RawStats = {
   headshots: number;
   objectivesCaptured: number;
   timePlayedMinutes: number;
+  // Teamwork counters — what the monthly ranking is built on (src/lib/stats/points.ts).
+  objectivesDefended: number;
+  objectivesDestroyed: number;
+  objectivesArmed: number;
+  objectivesDisarmed: number;
+  sectorsDefended: number;
+  /** Seconds spent standing on an objective. */
+  objectiveTimeSeconds: number;
+  /** Enemies marked for the team (all classes, not just Recon). */
+  spots: number;
+  /** Hit points restored to teammates. */
+  healthRestored: number;
+  /** Vehicle repairs. Collected but not scored — Engineer-locked. */
+  repairs: number;
   /** Class with the most kills, or null when the source cannot tell. */
   bestClass: PlayerClass | null;
   /**
