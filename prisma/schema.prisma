@@ -87,6 +87,23 @@ model Member {
   rankPoints    Int        @default(0) @map("rank_points")
   joinedAt      DateTime?  @map("joined_at") @db.Date
   active        Boolean    @default(true)
+  /// Collect this member's stats even without a verified Discord link.
+  ///
+  /// The normal rule is that a member enters the collection only after claiming
+  /// their invite, because `discordId` proves they did. This flag is the
+  /// documented exception, added 2026-07-27 for the one-time import of the 98
+  /// members who already existed on the v1 site: they must appear on the vitrine
+  /// and score in the ranking without waiting to log in.
+  ///
+  /// It exists as its own column instead of seeding fake `discordId` values on
+  /// purpose. `discordId` is the single field the whole auth flow treats as proof
+  /// of identity, and writing invented values into it would work today and become
+  /// a trap for whoever next builds on that field.
+  ///
+  /// Default false, so every member registered from here on follows the invite
+  /// flow. Members carrying this flag still need an invite to get a login, a
+  /// profile and their Discord avatar.
+  collectWithoutLogin Boolean @default(false) @map("collect_without_login")
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 

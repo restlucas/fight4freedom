@@ -226,6 +226,28 @@ export function withCompetitionRanks<T>(items: T[], valueOf: (item: T) => number
   });
 }
 
+/**
+ * Sort by value, highest first, and number the rows 1..N so **every position is
+ * unique** — unlike `withCompetitionRanks`, ties do not share a number.
+ *
+ * The monthly board needs this. It has one row per member and a long tail sitting
+ * on zero points, and competition ranks put that whole tail on the same number:
+ * with 8 members scoring, the other 90 all read "9", which looks like a bug
+ * rather than like a tie. Sequential numbering makes the list countable.
+ *
+ * Ordering within equal values is decided by `tieBreak`, so the sequence is
+ * stable between renders instead of depending on how the rows arrived.
+ */
+export function withOrdinalRanks<T>(
+  items: T[],
+  valueOf: (item: T) => number,
+  tieBreak?: (a: T, b: T) => number,
+): Ranked<T>[] {
+  const scored = items.map((item) => ({ ...item, value: valueOf(item) }));
+  scored.sort((a, b) => b.value - a.value || (tieBreak ? tieBreak(a, b) : 0));
+  return scored.map((item, index) => ({ ...item, rank: index + 1 }));
+}
+
 /** Rank members by one of the predefined metrics, highest first. */
 export function rankMembers<T extends RankableMember>(
   members: T[],

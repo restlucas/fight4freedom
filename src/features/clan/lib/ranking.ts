@@ -5,6 +5,22 @@ import type { RankingEntry } from "./queries";
 
 export const RANKING_PAGE_SIZE = 15;
 
+/**
+ * How many places a CLOSED season shows. The open month is the competition, so it
+ * lists everyone; a finished month is a record, and the record worth keeping is
+ * the podium, not the ninetieth place of a month nobody can change any more.
+ *
+ * Applied by both consumers — the page for the first render and the route handler
+ * for paging and search — because capping it in `getMonthlyRanking` would make a
+ * cached query depend on the current date (see src/lib/cache.ts).
+ */
+export const RANKING_HISTORY_LIMIT = 10;
+
+/** The board a season is allowed to expose, already capped when it is closed. */
+export function visibleBoard<T>(board: T[], isOpenSeason: boolean): T[] {
+  return isOpenSeason ? board : board.slice(0, RANKING_HISTORY_LIMIT);
+}
+
 export type RankingPage = {
   entries: RankingEntry[];
   total: number;

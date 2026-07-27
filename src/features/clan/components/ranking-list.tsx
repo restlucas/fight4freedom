@@ -36,6 +36,13 @@ interface RankingListProps {
    * one fact does not justify a band across the page.
    */
   endsAt?: string | null;
+  /**
+   * Set on a closed season, where the board only shows this many places. It
+   * replaces the top-squad divider with a plain label: the divider means "the
+   * squad on top, then everyone else", and on a 10-row podium there is no
+   * "everyone else" to separate from.
+   */
+  limitedToTop?: number | null;
 }
 
 export function RankingList({
@@ -44,6 +51,7 @@ export function RankingList({
   topPoints,
   month,
   endsAt,
+  limitedToTop,
 }: RankingListProps) {
   const [entries, setEntries] = useState(initialEntries);
   const [total, setTotal] = useState(initialTotal);
@@ -132,7 +140,8 @@ export function RankingList({
 
   // `query` (not activeQuery) so the cut disappears as soon as the member types,
   // instead of lingering for the debounce window.
-  const showHighlightDivider = query.trim() === "" && entries.length > RANKING_HIGHLIGHT_COUNT;
+  const showHighlightDivider =
+    !limitedToTop && query.trim() === "" && entries.length > RANKING_HIGHLIGHT_COUNT;
 
   return (
     <div className="space-y-4">
@@ -181,6 +190,14 @@ export function RankingList({
             </p>
             <RankingCountdown endsAt={endsAt} />
           </div>
+        ) : null}
+
+        {/* A closed season has no countdown, so the same right-hand slot says what
+            the shortened list is instead of leaving the card looking truncated. */}
+        {limitedToTop ? (
+          <p className="text-muted-foreground ml-auto shrink-0 text-[10px] font-semibold tracking-widest uppercase">
+            {limitedToTop} melhores colocados
+          </p>
         ) : null}
       </div>
 

@@ -5,6 +5,7 @@ import {
   computeWinRate,
   deltaForMonth,
   emptyTotals,
+  withOrdinalRanks,
   hasNewActivity,
   hoursPlayed,
   killsPerMatch,
@@ -150,5 +151,49 @@ describe("hasNewActivity", () => {
     expect(hasNewActivity(latest, { ...latest, kills: 17_600 })).toBe(true);
     expect(hasNewActivity(latest, { ...latest, losses: 245 })).toBe(true);
     expect(hasNewActivity(latest, { ...latest, timePlayedMinutes: 12_440 })).toBe(true);
+  });
+});
+
+describe("withOrdinalRanks", () => {
+  const board = [
+    { nick: "Zeta", points: 0 },
+    { nick: "Alfa", points: 0 },
+    { nick: "Bravo", points: 500 },
+    { nick: "Charlie", points: 0 },
+    { nick: "Delta", points: 900 },
+  ];
+  const byNick = (a: { nick: string }, b: { nick: string }) =>
+    a.nick.localeCompare(b.nick, "pt-BR");
+
+  it("gives every row its own number, even on a tie", () => {
+    const ranked = withOrdinalRanks(board, (m) => m.points, byNick);
+    expect(ranked.map((m) => m.rank)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("orders by points first, then by the tie-break", () => {
+    const ranked = withOrdinalRanks(board, (m) => m.points, byNick);
+    // 900, 500, then the three zeros alphabetically.
+    expect(ranked.map((m) => m.nick)).toEqual(["Delta", "Bravo", "Alfa", "Charlie", "Zeta"]);
+  });
+
+  it("is what the long tail of a fresh month needs", () => {
+    // Eight members scoring and ninety on zero: competition ranks would print
+    // "9" ninety times, which reads as a bug instead of as a tie.
+    const many = [
+      ...Array.from({ length: 8 }, (_, i) => ({ nick: `Top${i}`, points: 100 - i })),
+      ...Array.from({ length: 90 }, (_, i) => ({
+        nick: `Zero${String(i).padStart(2, "0")}`,
+        points: 0,
+      })),
+    ];
+    const ranked = withOrdinalRanks(many, (m) => m.points, byNick);
+    expect(new Set(ranked.map((m) => m.rank)).size).toBe(98);
+    expect(ranked[ranked.length - 1].rank).toBe(98);
+  });
+
+  it("does not mutate the input", () => {
+    const input = [...board];
+    withOrdinalRanks(input, (m) => m.points, byNick);
+    expect(input).toEqual(board);
   });
 });

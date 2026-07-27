@@ -3,11 +3,15 @@ import Image from "next/image";
 
 import { RankingList } from "@/features/clan/components/ranking-list";
 import { RankingMonthPicker } from "@/features/clan/components/ranking-month-picker";
+import { RankingScoringHelp } from "@/features/clan/components/ranking-scoring-help";
 import { formatMonthLabel } from "@/features/clan/lib/format";
 import { getMonthlyRanking, getRankingMonths } from "@/features/clan/lib/queries";
-import { RANKING_PAGE_SIZE } from "@/features/clan/lib/ranking";
+import {
+  RANKING_HISTORY_LIMIT,
+  RANKING_PAGE_SIZE,
+  visibleBoard,
+} from "@/features/clan/lib/ranking";
 import { isMonthKey, monthEndsAt, monthKey, monthKeyToReference } from "@/lib/month";
-import { POINT_WEIGHTS, SCORED_STATS } from "@/lib/stats/points";
 
 export const metadata: Metadata = {
   title: "Ranking",
@@ -39,8 +43,10 @@ export default async function RankingPage({
   const isOpenSeason = month === currentSeason;
 
   // The board is cached per season; the label and the countdown below stay
-  // outside the cache so they are always exact.
-  const board = await getMonthlyRanking(month);
+  // outside the cache so they are always exact. A closed season is capped to its
+  // top places here rather than inside the cached query, which must not depend on
+  // today's date (see src/lib/cache.ts).
+  const board = visibleBoard(await getMonthlyRanking(month), isOpenSeason);
 
   // No single-member spotlight: the scoring scheme rewards squad play, so the
   // page highlights the top FOUR through the divider in the list instead of
@@ -71,9 +77,12 @@ export default async function RankingPage({
       <main className="mx-auto w-full max-w-4xl px-4 py-10">
         <header className="mb-5 space-y-1">
           <h1 className="font-heading text-3xl font-bold drop-shadow-sm">Ranking</h1>
-          <p className="text-muted-foreground text-sm">
-            Temporada de {formatMonthLabel(monthKeyToReference(month))}
-            {isOpenSeason ? " · pontos pelo progresso do mês." : " · temporada encerrada."}
+          <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
+            <span>
+              Temporada de {formatMonthLabel(monthKeyToReference(month))}
+              {isOpenSeason ? " · pontos pelo progresso do mês." : " · temporada encerrada."}
+            </span>
+            <RankingScoringHelp />
           </p>
         </header>
 
@@ -99,19 +108,9 @@ export default async function RankingPage({
             month={month}
             // The countdown only means something while the season can still change.
             endsAt={isOpenSeason ? monthEndsAt(now).toISOString() : null}
+            limitedToTop={isOpenSeason ? null : RANKING_HISTORY_LIMIT}
           />
         )}
-
-        {/* Stating the rules beats a mystery number next to each member — and
-            with teamwork weighted above combat, the "why am I below them?"
-            question is answered here instead of in the Discord. */}
-        <footer className="text-muted-foreground bg-card/60 mt-8 rounded-lg border px-4 py-3 text-xs backdrop-blur-sm">
-          <span className="font-semibold">Como pontuamos:</span> jogo em equipe vale mais que abate.{" "}
-          {SCORED_STATS.map(({ key, label }) => `${label} +${POINT_WEIGHTS[key]}`).join(" · ")}.
-          Tempo em cima do objetivo e cura também pontuam. Morte não desconta, e reparo de veículo
-          não pontua para não penalizar quem não joga Engenheiro. Conta apenas o progresso feito
-          dentro do mês.
-        </footer>
       </main>
     </>
   );

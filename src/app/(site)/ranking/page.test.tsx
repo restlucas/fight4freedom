@@ -72,10 +72,20 @@ describe("RankingPage", () => {
     expect(screen.getByLabelText("Líder do mês")).toBeInTheDocument();
   });
 
-  it("shows the countdown placeholder before mounting and the point rules", async () => {
+  it("shows the countdown placeholder before mounting", async () => {
     render(await renderPage());
     expect(screen.getByText("Encerra em")).toBeInTheDocument();
-    expect(screen.getByText(/Como pontuamos/)).toBeInTheDocument();
+  });
+
+  it("offers the scoring rules behind a focusable trigger, not a footer block", async () => {
+    render(await renderPage());
+
+    // The rules moved out of a footer nobody scrolled to. A real button matters:
+    // Radix opens the hover card on focus, which is how keyboard and touch reach it.
+    const help = screen.getByRole("button", { name: /como pontuamos o ranking/i });
+    expect(help).toBeInTheDocument();
+    // Collapsed by default — the explanation is on demand now.
+    expect(screen.queryByText(/Morte não desconta/i)).not.toBeInTheDocument();
   });
 
   it("keeps the countdown inside the search panel", async () => {
@@ -92,13 +102,6 @@ describe("RankingPage", () => {
   it("counts only the first page as loaded", async () => {
     render(await renderPage());
     expect(screen.getByRole("status")).toHaveTextContent("3 de 3");
-  });
-
-  it("explains that teamwork outweighs combat", async () => {
-    render(await renderPage());
-    expect(screen.getByText(/jogo em equipe/i)).toBeInTheDocument();
-    // The two exclusions are the ones members will ask about.
-    expect(screen.getByText(/Morte não desconta/i)).toBeInTheDocument();
   });
 });
 
@@ -147,6 +150,35 @@ describe("season history", () => {
     expect(screen.getByText(/temporada encerrada/i)).toBeInTheDocument();
     // The countdown only means something while the season can still change.
     expect(screen.queryByText("Encerra em")).not.toBeInTheDocument();
+  });
+
+  it("shows only the top ten of a closed season", async () => {
+    getRankingMonths.mockResolvedValue([CURRENT, "2026-06"]);
+    getMonthlyRanking.mockResolvedValue(longBoard(40));
+    render(await renderPage({ mes: "2026-06" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("10 de 10");
+    expect(screen.getByText(/10 melhores colocados/i)).toBeInTheDocument();
+    expect(screen.getByText("Membro10")).toBeInTheDocument();
+    expect(screen.queryByText("Membro11")).not.toBeInTheDocument();
+  });
+
+  it("drops the top-squad divider on a closed season", async () => {
+    // A 10-row podium has no "everyone else" to separate from.
+    getRankingMonths.mockResolvedValue([CURRENT, "2026-06"]);
+    getMonthlyRanking.mockResolvedValue(longBoard(40));
+    render(await renderPage({ mes: "2026-06" }));
+
+    expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+  });
+
+  it("keeps the open season uncapped and divided", async () => {
+    getMonthlyRanking.mockResolvedValue(longBoard(40));
+    render(await renderPage());
+
+    expect(screen.getByRole("status")).toHaveTextContent("15 de 40");
+    expect(screen.queryByText(/melhores colocados/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("separator")).toBeInTheDocument();
   });
 
   it("falls back to the open season when ?mes= is unknown or malformed", async () => {

@@ -76,13 +76,19 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ## Status (atualizado em 2026-07-27)
 
-**Fases 0 a 3.5 concluídas.** O app está no ar em `fight4freedom.vercel.app`, o schema foi
-aplicado, o `pg_cron` dispara a coleta a cada 10 min e a rota devolve relatórios válidos. A
-Fase 3.5 fechou a pontuação por trabalho em equipe e o histórico de temporadas do ranking.
+**Fases 0 a 3.6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, o `pg_cron` dispara a
+coleta a cada 10 min, e o **roster real de 98 membros está no banco** (Fase 3.6). O ranking começa a
+contar do zero: não há histórico, e o primeiro board com pontuação aparece quando os membros
+acumularem dois snapshots no mesmo mês.
 
-O que resta antes da Fase 4 é **operacional, não de código**: rodar os dois comandos de migração
-listados no fim da Fase 3.5, cadastrar o roster real pelo painel e fazer o teste de fidelidade da
-§8 com o clã (até ele, não divulgar as seções de stats).
+O que resta antes da Fase 4:
+
+- **Resolver as identidades EA.** O coletor resolve no máximo 10 por ciclo de 10 min, então os 98
+  levam cerca de 100 minutos. Quem tiver `platformId` errado no export fica em "Stats pendentes" e
+  precisa de correção pelo painel — conferir depois que a fila esvaziar.
+- **Teste de fidelidade da §8** com um membro (até ele, não divulgar as seções de stats).
+- **Emitir convites** para os membros ganharem login, perfil e avatar do Discord. O import cobre
+  aparecer no site e pontuar; convite cobre ter conta.
 
 ### Fase 0 — Fundação: concluída
 
@@ -103,10 +109,10 @@ listados no fim da Fase 3.5, cadastrar o roster real pelo painel e fazer o teste
 
 Pontas soltas da Fase 0:
 
-- [ ] Substituir o roster de exemplo pela lista real de membros do `fight4freedom.com.br`.
-      **Não é mais trabalho de seed:** o banco tem dados reais, então o cadastro é pelo painel
-      `/admin` (nick + plataforma + id da plataforma) e a limpeza do que sobrou do seed é o
-      `pnpm db:clean-examples` (ver Scripts de manutenção).
+- [x] **Roster real importado (2026-07-27): 98 membros** do export do `fight4freedom.com.br`,
+      via `pnpm db:import-roster`. Os 29 de exemplo e todos os snapshots mockados foram apagados
+      no mesmo passo — o ranking passa a contar do zero, a partir da primeira coleta.
+      Detalhes na Fase 3.6 abaixo.
 - [x] CI corrigido (2026-07-27). Estava **vermelho desde 25/07** em todo push, nas duas jobs, por
       falta de `DATABASE_URL`: o client do Prisma é construído no escopo do módulo
       (`src/lib/db/index.ts`), então o `next build` estourava em "Failed to collect page data for
@@ -504,31 +510,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                              `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                              com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                              puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                              nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                              que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                              `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                              `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                              hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                              composição.
+                                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                  composição.
 
-                              O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                              (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                              (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                              rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                              pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                              uma linha de 1px colada na borda, não um tingimento.
+                                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                  uma linha de 1px colada na borda, não um tingimento.
 
-                              `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                              nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                              linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                              demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                              porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                              fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                              nessa linha.
+                                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                  nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -578,6 +584,66 @@ Acompanhamento, sem prazo:
   dois membros, ambos com Support dominante. Um mês real de ~50 membros e classes variadas pode
   revelar distorção que dois perfis não mostram — em especial no `revives`, hoje a maior linha
   isolada da pontuação (19% a 22%), e parcialmente dependente de classe.
+
+### Fase 3.6 — Roster real e ajustes do ranking: concluída (2026-07-27)
+
+**98 membros importados** do export do site v1, via `pnpm db:import-roster` (dry run por padrão,
+`--apply` para valer, idempotente). Quatro campos aproveitados; o resto do export é a pontuação do
+site antigo e não tem equivalente aqui:
+
+| Export                         | Nosso campo  | Tratamento                                    |
+| ------------------------------ | ------------ | --------------------------------------------- |
+| `Nome`                         | `nickname`   | trim (três linhas vinham com espaço na ponta) |
+| `ID`                           | `platformId` | trim; é a chave de busca dos stats            |
+| `Plataforma`                   | `platform`   | `PC → ea`, `PS5 → psn`, `XBOX → xbox`         |
+| `progressao.patenteAtual.nome` | `rankPoints` | via escada de `src/lib/ranks.ts`              |
+
+**Por que a patente virou `rankPoints`:** não existe coluna de patente — `ranks.ts` **deriva** a
+patente dos pontos. Então preservar a patente de alguém significa gravar o limiar que a nossa escada
+mapeia para ela. Os limiares deles são outros (Marechal deles é 5.000, o nosso é 20.000), por isso
+só o **nome** da patente atravessa, nunca os pontos. O mapeamento é uma tabela explícita
+(`RANK_ALIASES`) e não regex, porque a notação difere — eles escrevem "3º Sargento", a escada do
+Exército escreve "Terceiro-Sargento" — e patente desconhecida precisa **parar** o import com o nome
+na tela, em vez de jogar todo mundo em Soldado silenciosamente.
+
+**`collectWithoutLogin`, a exceção documentada.** A regra normal é que membro só entra na coleta
+depois de aceitar o convite, porque o `discordId` prova isso. Esses 98 precisam aparecer e pontuar
+sem esperar login, então ganharam uma coluna própria. **Não** semeamos `discordId` falso de
+propósito: é o único campo que todo o fluxo de auth trata como prova de identidade, e valor
+inventado ali funcionaria hoje e viraria armadilha para quem depois construísse sobre ele. Default
+`false`, então todo membro novo daqui em diante segue o convite. Quem carrega a flag **ainda precisa
+de convite** para ter login, perfil e avatar do Discord — até lá, avatar padrão.
+
+**Dois conflitos resolvidos de forma conservadora:**
+
+- O admin aparece no export com `ID: "MELA123"`, enquanto o banco tinha o `RRRRRRRREST`, que
+  resolve na EA e retorna stats. **O banco venceu.** Regra do script: identidade EA já resolvida
+  tem precedência sobre valor não verificado da lista. Sem isso, a coleta do admin quebrava.
+- `xuveroo` **não está** no export mas tem login próprio. Membro com `profile` nunca é apagado,
+  mesmo ausente da lista. Ficaram 99 membros no banco, não 98.
+
+**O arquivo do export não fica em `public/`.** Ele mora em `data/`, que é gitignored. Qualquer coisa
+sob `public/` é servida como asset estático, então o dump — que traz o id de plataforma de todos os
+membros — seria baixável pelo site.
+
+**Ajustes no ranking:**
+
+- [x] **Numeração ordinal em vez de competição.** `withOrdinalRanks` numera 1..N e dá a cada linha
+      seu próprio número. Com 8 membros pontuando e 90 em zero, o ranking de competição imprimia
+      "9" noventa vezes, o que lê como bug e não como empate. Empate desempata alfabeticamente para
+      a ordem ser estável. O `withCompetitionRanks` continua existindo e em uso pelos líderes por
+      estatística, onde empate compartilhar posição é o comportamento certo.
+- [x] **Temporada encerrada mostra só os 10 primeiros** (`RANKING_HISTORY_LIMIT`). O corte é
+      aplicado nos dois consumidores — página e route handler — e **antes da busca**, senão daria
+      para revelar o 40º colocado digitando o nome dele. Não é aplicado dentro do
+      `getMonthlyRanking` porque isso faria uma query cacheada depender da data de hoje.
+- [x] **Sem divider no histórico**, substituído por "10 melhores colocados" alinhado à direita no
+      card de busca. O divider significa "o esquadrão de cima, e depois todos os outros", e num
+      pódio de 10 linhas não há "todos os outros" para separar.
+- [x] **Explicação da pontuação saiu do rodapé** para um hover card atrás de um "?" ao lado da linha
+      da temporada. Troca um bloco a que ninguém rola por um affordance no lugar onde a dúvida
+      nasce: ao lado do número que o membro está questionando. O gatilho é um `<button>` de verdade,
+      porque o Radix abre o hover card também no **foco**, e é assim que teclado e toque chegam nele.
 
 ### Fase 4 — Progressão e polimento
 

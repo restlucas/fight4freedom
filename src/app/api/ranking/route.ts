@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 
 import { normalizeSearch } from "@/features/clan/lib/format";
 import { getMonthlyRanking } from "@/features/clan/lib/queries";
-import { RANKING_PAGE_SIZE, type RankingPage } from "@/features/clan/lib/ranking";
+import { RANKING_PAGE_SIZE, visibleBoard, type RankingPage } from "@/features/clan/lib/ranking";
 import { isMonthKey, monthKey } from "@/lib/month";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +30,10 @@ export async function GET(request: Request): Promise<NextResponse<RankingPage>> 
   const month = isMonthKey(params.get("month")) ? params.get("month")! : monthKey(new Date());
 
   // Ranks come from the full board, so filtering afterwards keeps each member's
-  // real position instead of renumbering the search result.
-  const board = await getMonthlyRanking(month);
+  // real position instead of renumbering the search result. The history cap is
+  // applied BEFORE the search, so a closed season cannot be made to reveal the
+  // 40th place by typing their name.
+  const board = visibleBoard(await getMonthlyRanking(month), month === monthKey(new Date()));
   const filtered = query
     ? board.filter((entry) => normalizeSearch(entry.nickname).includes(query))
     : board;

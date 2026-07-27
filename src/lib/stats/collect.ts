@@ -3,7 +3,11 @@
 // Lifecycle (decided with the clan owner, 2026-07-26): a freshly registered
 // member is NOT collected. They enter the next run only after claiming their
 // invite with Discord — `member.discordId` is set exclusively by that verified
-// flow, so `active && discordId != null` is the eligibility rule.
+// flow, so a Discord link is what normally makes a member eligible.
+//
+// One documented exception (2026-07-27): `collectWithoutLogin`, for the one-time
+// import of the members who already existed on the v1 site. They are collected
+// without ever having logged in. See the column's comment in the schema.
 //
 // The run is deliberately boring and idempotent:
 //   1. resolve missing EA identities (a few per run, so a big backlog cannot
@@ -54,7 +58,10 @@ export async function collectStats(
 ): Promise<CollectReport> {
   const members = await db.member.findMany({
     // The eligibility rule — see the file header.
-    where: { active: true, discordId: { not: null } },
+    where: {
+      active: true,
+      OR: [{ discordId: { not: null } }, { collectWithoutLogin: true }],
+    },
     select: {
       id: true,
       nickname: true,

@@ -21,7 +21,7 @@ import {
   pickTotals,
   STAT_TOTALS_SELECT,
   totalMatches,
-  withCompetitionRanks,
+  withOrdinalRanks,
   type StatTotals,
 } from "@/lib/stats/snapshots";
 
@@ -233,11 +233,16 @@ export const getMonthlyRanking = cachedQuery(
       };
     });
 
-    // Alphabetical first so members tied on points keep a stable, fair order.
-    scored.sort((a, b) => a.nickname.localeCompare(b.nickname, "pt-BR"));
-
+    // Ordinal, not competition ranks: every row gets its own number. Most of the
+    // roster sits on zero points in a fresh month, and sharing one number across
+    // that whole tail reads as a bug. Ties break alphabetically so the order is
+    // stable and does not depend on how rows came out of the database.
     // `value` from the ranking helper duplicates `points`, so it is dropped here.
-    return withCompetitionRanks(scored, (entry) => entry.points).map((entry) => ({
+    return withOrdinalRanks(
+      scored,
+      (entry) => entry.points,
+      (a, b) => a.nickname.localeCompare(b.nickname, "pt-BR"),
+    ).map((entry) => ({
       rank: entry.rank,
       memberId: entry.memberId,
       nickname: entry.nickname,

@@ -48,3 +48,8 @@ next-env.d.ts
 # repo (see src/features/admin/lib/medal-storage.ts). Anything dropped here is a
 # local upload test.
 /public/medals/
+
+# roster exports used by pnpm db:import-roster. Kept OUT of the repo and out of
+# public/: the dump carries every member's exact platform id, and anything under
+# public/ is served as a static file — it would be downloadable from the site.
+/data/
