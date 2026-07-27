@@ -45,9 +45,15 @@ const INCOHERENT_ONLY = process.argv.includes("--incoherent-only");
 const RESET_SNAPSHOTS = process.argv.includes("--reset-snapshots");
 
 /**
- * Rows the guard in `isIncoherentBucket` would drop today: zero kills next to a
- * positive K/D or a positive human-kill count. Kept as SQL because `extra` is
- * jsonb and this is a one-off backfill, not app logic.
+ * Rows `isIncoherentPayload` would drop today: zero kills sitting next to a
+ * positive kill/death ratio, which cannot both be true. Kept as SQL because
+ * `extra` is jsonb and this is a backfill, not app logic.
+ *
+ * Two `extra` shapes are checked because the keys were renamed on 2026-07-27,
+ * when kills stopped counting bots: `allModeKillDeath` is the current name and
+ * `killDeath` the pre-change one. A row written before that also has `kills` in
+ * the OLD semantics (all modes, bots included), which is exactly why the whole
+ * series gets reset rather than reconciled — see `--reset-snapshots`.
  */
 async function findIncoherentApiSnapshots() {
   return db.$queryRaw<{ id: string; nickname: string; captured_at: Date; kills: number }[]>`
@@ -56,10 +62,11 @@ async function findIncoherentApiSnapshots() {
     join member m on m.id = s.member_id
     where s.source = 'api'
       and s.kills = 0
-      and (
-        coalesce((s.extra ->> 'killDeath')::numeric, 0) > 0
-        or coalesce((s.extra ->> 'humanKills')::numeric, 0) > 0
-      )
+      and coalesce(
+        (s.extra ->> 'allModeKillDeath')::numeric,
+        (s.extra ->> 'killDeath')::numeric,
+        0
+      ) > 0
     order by s.captured_at
   `;
 }

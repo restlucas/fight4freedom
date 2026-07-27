@@ -22,9 +22,20 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   `StatsProvider`. O scraping do tracker.gg foi descartado (ver `docs/api-gametools.md` §6 e §10:
   mesma fonte EA, sem antibot, sem worker). A tela de edição manual continua descartada
   (2026-07-25); o valor `manual` do enum `StatSource` permanece no schema como porta de saída.
-- **Bucket canônico (2026-07-26):** kills/stats **completos** — todos os modos, veículos, Portal
-  e REDSEC (`gm_all`, com `seperation=true`). Racional e mapeamento em `docs/api-gametools.md` §3
-  e §10.3.
+- **Recorte canônico (2026-07-27, substitui a decisão de 26/07):** **kills não contam bots.**
+  `kills` = `dividedKills.human`, `deaths` = bucket de classes (o par que a API corrobora:
+  12.320 ÷ 4.126 = 2,99 = `infantryKillDeath`), e **todo o resto** vem do `gm_all` (todos os modos,
+  veículos, Portal e REDSEC, com `seperation=true`).
+
+  A assimetria é o limite da fonte, não descuido: **"todos os modos sem bots" não existe na API da
+  EA.** Não há split humano/bot por modo — `gameModeGroups[]` não tem nenhum campo disso, e
+  `dividedKills.human` é global, calculado sobre o bucket de classes. Aplicar o `humanPrecentage`
+  ao total geral seria inventar número, porque a densidade de IA varia por modo.
+
+  Efeito colateral bem-vindo: as kills do site passam a ser **o mesmo número do tracker.gg**,
+  encerrando a divergência de 5.267 kills (3.892 de recorte de bucket + 1.375 de bots).
+  Racional completo e mapeamento em `docs/api-gametools.md` §3 e §10.3.
+
 - **Cadência da coleta (2026-07-26):** **todos os membros elegíveis a cada 10 min**, em lotes
   sequenciais de **10 jogadores** por requisição (`POST /bf6/multiple/`), para não sobrecarregar a
   API comunitária. ~50 membros = 5 requisições por ciclo.
@@ -222,10 +233,10 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
   `awardedAt`, `awardedBy` (nullable), `note` (nullable). Índice único `(memberId, medalId)`.
 - **`statSnapshot`** (série temporal — o diferencial vs. site atual): `id`, `memberId`
   (FK cascade), `capturedAt` (timestamp), `source` (`manual | api`), `bestClass` e os contadores
-  crus do bucket `gm_all`: `kills`, `deaths`, `wins`, `losses`, `assists`, `revives`,
-  `headshots`, `objectivesCaptured`, `timePlayedMinutes` (todos int), mais `extra` (jsonb:
-  `matches`, `secondsPlayed`, `humanKills`, `killDeath`, `winPercent`, `killsPerMinute`,
-  `damagePerMinute`).
+  crus: `kills` (**só contra humanos**), `deaths` (bucket de classes), e do `gm_all` os `wins`,
+  `losses`, `assists`, `revives`, `headshots`, `objectivesCaptured`, `timePlayedMinutes` (todos
+  int), mais `extra` (jsonb: `allModeKills`, `allModeDeaths`, `classKills`, `allModeKillDeath`,
+  `allModeKillsPerMinute`, `matches`, `secondsPlayed`, `winPercent`, `damagePerMinute`).
   **Não existem colunas `score` nem `matchesPlayed`**: partidas são `wins + losses`, e K/D,
   win-rate, kills por partida e horas são **derivados** em `src/lib/stats/snapshots.ts`, nunca
   armazenados. "Este mês" = último snapshot menos o snapshot mais antigo do mês (via `date-fns`),
@@ -249,11 +260,15 @@ até serem acertados com o clã.
 Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26):
 
 - `provider.ts`: interface `StatsProvider { searchPlayer(name); fetchStats(identities[]) }` e os
-  tipos `PlayerIdentity` (personaId + nucleusId) e `RawStats` — já no **nosso** vocabulário, com a
-  semântica do bucket `gm_all` (docs/api-gametools.md §3).
+  tipos `PlayerIdentity` (personaId + nucleusId) e `RawStats` — já no **nosso** vocabulário. O
+  docblock de `RawStats` é o contrato que qualquer provider substituto tem de honrar: kills sem
+  bots, deaths do mesmo bucket das kills, resto em todos os modos
+  (docs/api-gametools.md §3 e §10.3).
 - `gametools.ts`: `GametoolsProvider`. Zod valida só o que lemos (`.loose()` no resto);
-  `seperation=true` + `format_values=false` sempre; lê o grupo `gm_all`, deriva `bestClass` de
-  `classes[]` e guarda `dividedKills.human` (o número que o tracker.gg exibe) no `extra`. Lotes
+  `seperation=true` + `format_values=false` sempre. Kills de `dividedKills.human`, deaths do
+  top-level (bucket de classes), o resto do grupo `gm_all`, `bestClass` derivado de `classes[]`, e
+  os totais não exibidos guardados no `extra`. **Sem `dividedKills.human`, o membro é tratado como
+  sem dados** — cair para `gm_all.kills` colocaria bots numa coluna que promete não tê-los. Lotes
   sequenciais de 10 via `POST /bf6/multiple/`; lote com erro é pulado e tentado no ciclo seguinte.
   Testado contra `gametools.fixture.ts`, um payload real trimado — o parser não depende da rede.
 - `collect.ts`: o ciclo de coleta — elegíveis (`active` + `discordId`), resolve identidades
@@ -400,6 +415,25 @@ objetivo, que são class-agnósticos (conquistas por partida em 2,25 vs 1,81; te
 205 s vs 213 s entre dois perfis bem diferentes). Os contadores de apoio são a metade enviesada,
 então nenhum stat travado em classe pode dominar.
 
+**Kills passaram a excluir bots (2026-07-27, depois da calibração).** `kills` virou
+`dividedKills.human` e `deaths` passou a vir do bucket de classes. O detalhe que torna isso
+não-óbvio: **"todos os modos sem bots" não existe na API da EA** — não há split humano/bot por
+modo, e o `dividedKills.human` é global, calculado sobre o bucket de classes. Aplicar o
+`humanPrecentage` (89,96%) ao total geral daria 15.821, número que não existe em lugar nenhum e que
+suporia densidade de IA igual em todos os modos.
+
+O par kills/deaths não foi escolhido por gosto: 12.320 ÷ 4.126 = **2,99**, exatamente o
+`infantryKillDeath` que a API publica. Com `gm_all.deaths` daria 2,49, razão que ela nunca reporta.
+
+Efeito sobre a pontuação: `kills` pesa 0,3 e responde por ~11% do total, então o ranking muda pouco.
+Efeito sobre a vitrine: as kills passam a ser **o mesmo número do tracker.gg**, encerrando a
+divergência de 5.267 kills (3.892 de recorte de bucket, 1.375 de bots).
+
+**Pendência aberta:** `devidedAssists.human` (1.277) também existe, contra os 6.080 que gravamos.
+A proporção de 21% é muito distante dos 90% das kills, o que sugere que "assist humano" mede outra
+coisa, não uma simples exclusão de bots. **Não foi trocado.** Vale investigar antes, porque
+`assists` pesa 0,8 e responde por ~10% da pontuação — trocar às cegas mexeria no ranking.
+
 **Schema.** Nove colunas novas em `statSnapshot`: `objectivesDefended`, `objectivesDestroyed`,
 `objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTimeSeconds`, `spots`,
 `healthRestored` e `repairs`. Todas com `@default(0)`, então o `db push` foi **aditivo, sem perda
@@ -440,31 +474,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                      `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                      com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                      puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                      nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                      que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                  composição.
+                      `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                      `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                      hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                      composição.
 
-                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                  uma linha de 1px colada na borda, não um tingimento.
+                      O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                      (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                      (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                      rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                      pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                      uma linha de 1px colada na borda, não um tingimento.
 
-                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                  nessa linha.
+                      `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                      nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                      linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                      demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                      porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                      fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                      nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -638,7 +672,9 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
   persistem; avatar do Discord chega no `member.avatarUrl`; conceder e revogar medalha reflete
   imediatamente em `/medalhas`, `/membros` e no perfil do membro.
 - **Fase 3:** `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/stats/collect`
-  devolve o relatório e insere snapshot correto para 1 membro real (conferir kills = `gm_all`);
+  devolve o relatório e insere snapshot correto para 1 membro real (conferir
+  kills = `dividedKills.human`, **não** `gm_all.kills`, e que `extra.allModeKills` guarda o total
+  com bots);
   sem o header devolve 401; segundo ciclo sem partida nova não grava linha (`unchanged`); membro
   com `platformId` errado aparece como `identity-pending` e ganha o badge "Stats pendentes";
   membro sem Discord vinculado não aparece no relatório; snapshot `manual` não é sobrescrito.
@@ -651,7 +687,8 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
   otimista com rollback + `toast`, lógica pura testável em `src/lib/*`, alias `@/*`, RSC por padrão.
 - **Spike concluído (2026-07-25/26):** `docs/api-gametools.md` respondeu tudo o que travava a
   Fase 3 — fonte é a própria EA (sem "abrir o perfil" para atualizar), paridade número a número
-  com o tracker.gg, bucket canônico `gm_all` definido, endpoints e armadilhas mapeados.
+  com o tracker.gg, endpoints e armadilhas mapeados. O recorte canônico foi revisado em 27/07:
+  kills sem bots (§10.3).
 - **Pendência com o clã** (única restante, não bloqueia o deploy): teste de fidelidade/frescor da
   §8 do estudo — conferir com um membro se os números batem com a tela do jogo e medir o atraso
   da EA após uma partida. Até lá, não divulgar as seções de stats.

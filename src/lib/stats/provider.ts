@@ -21,12 +21,24 @@ export type PlayerIdentity = {
 
 /**
  * One member's cumulative stats, already translated to OUR vocabulary.
- * Values come from the canonical `gm_all` bucket (all modes, vehicles, Portal
- * and REDSEC included — clan decision, docs/api-gametools.md §10.3), so a
- * provider swap must honour the same semantics.
+ *
+ * Semantics a replacement provider must honour (clan decisions, see
+ * docs/api-gametools.md §10.3):
+ *
+ *   - `kills` counts ONLY kills against real players. Bots and AI are excluded.
+ *   - `deaths` comes from the same bucket the kill count belongs to, so K/D
+ *     stays a coherent ratio rather than a mix of two different scopes.
+ *   - every other counter covers ALL modes (vehicles, Portal and REDSEC
+ *     included), because the source publishes no human/bot split for them.
+ *
+ * That asymmetry is real and intentional: it is the most honest reading the
+ * source allows. A provider that cannot separate bot kills should return null
+ * for the member rather than quietly counting them.
  */
 export type RawStats = {
+  /** Kills against real players. Bots excluded. */
   kills: number;
+  /** Deaths from the same bucket as `kills`. */
   deaths: number;
   wins: number;
   losses: number;

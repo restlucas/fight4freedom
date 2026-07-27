@@ -91,8 +91,22 @@ const playerStatsSchema = z
     id: z.coerce.string(),
     /** nucleusId. */
     userId: z.coerce.string(),
+    /**
+     * CLASS-bucket totals. The top level of this payload mixes buckets and is
+     * mostly a trap (docs/api-gametools.md §5.3), but these two are the class
+     * bucket exactly, and that is the bucket `dividedKills.human` is a subset
+     * of — so they are the only coherent partner for our kill count.
+     */
+    kills: z.number(),
+    deaths: z.number(),
     gameModeGroups: z.array(gameModeGroupSchema).default([]),
     classes: z.array(classEntrySchema).default([]),
+    /**
+     * `human` is the canonical kill count for this site: kills against real
+     * players, bots excluded (clan decision, 2026-07-27). Nullish because the
+     * API omits the object for profiles with nothing in it; a member without it
+     * is treated as no-data rather than as zero.
+     */
     dividedKills: z.object({ human: z.number() }).loose().nullish(),
   })
   .loose();
@@ -122,45 +136,75 @@ const CLASS_NAME_TO_ENUM: Record<string, PlayerClass> = {
 };
 
 /**
- * Whether a `gm_all` bucket contradicts itself and must not be trusted.
+ * Whether a payload contradicts itself and must not be trusted.
  *
  * Observed live on 2026-07-26 21:00: the API returned `kills: 0` and
- * `deaths: 0` while the SAME bucket reported `killDeath: 3.55`, `kpm: 1.41`
- * and `dividedKills.human: 12320` — a partially zeroed payload, not a reading.
- * It cost us twice: a bogus snapshot, and then a fake `0 -> 17587` jump that
+ * `deaths: 0` inside `gm_all` while the SAME bucket reported `killDeath: 3.55`
+ * and `kpm: 1.41` — a partially zeroed response, not a reading. It cost us
+ * twice: a bogus snapshot, and then a fake `0 -> 17587` jump that
  * `hasNewActivity` accepted as real play, which poisons the month delta
  * (`deltaForMonth` baselines on the month's earliest snapshot).
+ *
+ * `gm_all` still matters even though kills no longer come from it: every
+ * teamwork counter does, so a broken bucket means a broken snapshot.
  *
  * The test is strictly self-contradiction, never "the numbers look small": a
  * genuinely fresh player (zero kills, zero ratios) is coherent and must pass,
  * otherwise we would never record anyone's first session.
  */
-export function isIncoherentBucket(
+export function isIncoherentPayload(
+  player: GametoolsPlayer,
   all: z.infer<typeof gameModeGroupSchema>,
-  humanKills: number | null,
 ): boolean {
-  // Every one of these is derived FROM kills upstream, so none can outlive it.
-  if (all.kills === 0 && (all.killDeath > 0 || all.kpm > 0 || (humanKills ?? 0) > 0)) return true;
+  // Ratios are derived FROM kills upstream, so neither can outlive it.
+  if (all.kills === 0 && (all.killDeath > 0 || all.kpm > 0)) return true;
   // Nobody finishes a match without dying at least once.
   if (all.kills === 0 && all.deaths === 0 && all.matches > 0) return true;
+  // Human kills are a SUBSET of the class bucket, so they cannot exceed it.
+  const human = player.dividedKills?.human;
+  if (human != null && player.kills > 0 && human > player.kills) return true;
   return false;
 }
 
 /**
- * Translates one API player into our vocabulary, reading the canonical
- * `gm_all` bucket. Null when the profile has no game-mode data (private or
- * never played) or when the bucket contradicts itself — the collector skips
- * those instead of recording zeros, and retries on the next run.
+ * Translates one API player into our vocabulary.
+ *
+ * Two buckets, on purpose, and the pairing is not arbitrary:
+ *
+ *   - `kills` is `dividedKills.human` — kills against real players, bots
+ *     excluded (clan decision, 2026-07-27, replacing the earlier "everything
+ *     including bots" rule).
+ *   - `deaths` is the CLASS-bucket death count, because that is the bucket
+ *     `dividedKills.human` lives in. Corroborated by the API itself:
+ *     12320 / 4126 = 2.99, which is exactly the `infantryKillDeath` it
+ *     publishes. Pairing human kills with `gm_all.deaths` instead yields 2.49,
+ *     a ratio the API never reports — the signature of mixed buckets.
+ *   - every other counter stays on `gm_all`, because no human/bot split exists
+ *     for them. That asymmetry is deliberate and documented in the plan.
+ *
+ * Null when the profile has no game-mode data, no human kill count, or when the
+ * payload contradicts itself — the collector skips those instead of recording
+ * zeros, and retries on the next run.
  */
 export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity) | null {
   const all = player.gameModeGroups.find((group) => group.id === "gm_all");
   if (!all) return null;
 
-  const humanKills = player.dividedKills?.human ?? null;
-  if (isIncoherentBucket(all, humanKills)) {
+  // No human split means we cannot produce the canonical number. Falling back to
+  // `gm_all.kills` would silently mix bot kills into a column that promises none.
+  const humanKills = player.dividedKills?.human;
+  if (humanKills == null) {
     console.warn(
-      `[stats] payload incoerente para persona ${player.id}: kills=${all.kills} deaths=${all.deaths} ` +
-        `killDeath=${all.killDeath} humanKills=${humanKills} — descartado, retenta no proximo ciclo`,
+      `[stats] persona ${player.id} sem dividedKills.human — sem kills canonicas, retenta no proximo ciclo`,
+    );
+    return null;
+  }
+
+  if (isIncoherentPayload(player, all)) {
+    console.warn(
+      `[stats] payload incoerente para persona ${player.id}: gm_all kills=${all.kills} ` +
+        `deaths=${all.deaths} killDeath=${all.killDeath} | classe kills=${player.kills} ` +
+        `human=${humanKills} — descartado, retenta no proximo ciclo`,
     );
     return null;
   }
@@ -175,8 +219,9 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
   return {
     personaId: player.id,
     nucleusId: player.userId,
-    kills: all.kills,
-    deaths: all.deaths,
+    // Bots excluded. See the docblock for why deaths comes from the class bucket.
+    kills: humanKills,
+    deaths: player.deaths,
     wins: all.wins,
     losses: all.losses,
     assists: all.killAssists,
@@ -200,14 +245,19 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
       // Exact play time and round count, for auditing the "played?" signal.
       secondsPlayed: all.secondsPlayed,
       matches: all.matches,
-      // What tracker.gg displays as "Kills" — kept so a member comparing the
-      // site with their tracker profile can be answered with data.
-      humanKills,
-      // Pre-computed by the API over the same bucket, so they are coherent
-      // with the counters above (never recompute mixing buckets).
-      killDeath: all.killDeath,
+      // The two kill totals we deliberately do NOT show, kept so "why does the
+      // site say fewer kills than X?" is answerable from the row itself. Before
+      // 2026-07-27 `allModeKills` was the number on the site.
+      allModeKills: all.kills,
+      allModeDeaths: all.deaths,
+      classKills: player.kills,
+      // Ratios the API pre-computes over the ALL-MODE bucket. Prefixed because
+      // they are NOT this member's displayed K/D or KPM: ours derive from the
+      // human kill count, so they are lower by design.
+      allModeKillDeath: all.killDeath,
+      allModeKillsPerMinute: all.kpm,
+      // Win rate and damage never depended on the kill bucket, so they stand.
       winPercent: all.winPercent,
-      killsPerMinute: all.kpm,
       damagePerMinute: all.dpm,
     },
   };

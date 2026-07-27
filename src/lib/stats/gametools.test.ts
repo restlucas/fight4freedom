@@ -36,13 +36,17 @@ describe("parsePlayersPayload", () => {
 describe("toRawStats", () => {
   const player = parsePlayersPayload(gametoolsPlayerFixture)[0];
 
-  it("reads the gm_all bucket, never the top-level aggregate", () => {
+  it("counts only kills against real players, never the bot-inclusive totals", () => {
     const raw = toRawStats(player);
     expect(raw).not.toBeNull();
-    // The fixture's top-level says kills: 13695 (class bucket). The canonical
-    // value is the gm_all scoreboard total — docs/api-gametools.md §10.
-    expect(raw!.kills).toBe(17587);
-    expect(raw!.deaths).toBe(4955);
+    // The fixture carries three kill totals. 17587 is gm_all (all modes, bots
+    // included) and 13695 is the class bucket (also bot-inclusive). The canonical
+    // one is 12320: humans only — clan decision, docs/api-gametools.md §10.3.
+    expect(raw!.kills).toBe(12_320);
+    // Deaths come from the class bucket, the one the human count is a subset of.
+    // 12320 / 4126 = 2.99, exactly the `infantryKillDeath` the API publishes;
+    // pairing with gm_all's 4955 would give 2.49, a ratio it never reports.
+    expect(raw!.deaths).toBe(4_126);
     expect(raw!.wins).toBe(268);
     expect(raw!.losses).toBe(244);
     expect(raw!.assists).toBe(6080);
@@ -65,10 +69,15 @@ describe("toRawStats", () => {
     expect(raw.bestClass).toBe("support");
   });
 
-  it("keeps the tracker.gg-visible number and coherent averages in extra", () => {
+  it("parks the totals it does not show in extra, so a member can be answered", () => {
     const raw = toRawStats(player)!;
-    expect(raw.extra.humanKills).toBe(12_320);
-    expect(raw.extra.killDeath).toBe(3.55);
+    // "Why does the site say fewer kills than the tracker?" is answerable from
+    // the snapshot row alone, without another API call.
+    expect(raw.extra.allModeKills).toBe(17_587);
+    expect(raw.extra.allModeDeaths).toBe(4_955);
+    expect(raw.extra.classKills).toBe(13_695);
+    // The all-mode ratio is kept but PREFIXED: it is not this member's K/D.
+    expect(raw.extra.allModeKillDeath).toBe(3.55);
     expect(raw.extra.winPercent).toBe(52.34);
   });
 
@@ -79,9 +88,29 @@ describe("toRawStats", () => {
     })[0];
     expect(toRawStats(withoutGroups)).toBeNull();
   });
+
+  it("returns null when the payload has no human kill count", () => {
+    // Falling back to a bot-inclusive total would put bot kills into a column
+    // that promises none, which is worse than skipping the member this cycle.
+    const noSplit = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      dividedKills: null,
+    })[0];
+    expect(toRawStats(noSplit)).toBeNull();
+  });
+
+  it("rejects a human count larger than the bucket it belongs to", () => {
+    // Humans are a subset of the class bucket, so this can only be corruption.
+    const impossible = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      kills: 100,
+      dividedKills: { human: 12_320 },
+    })[0];
+    expect(toRawStats(impossible)).toBeNull();
+  });
 });
 
-describe("isIncoherentBucket / partially zeroed payloads", () => {
+describe("isIncoherentPayload / partially zeroed payloads", () => {
   /** Rebuilds the fixture with gm_all overridden, as the API delivers it. */
   function playerWithBucket(overrides: Record<string, number>) {
     return parsePlayersPayload({
@@ -94,19 +123,15 @@ describe("isIncoherentBucket / partially zeroed payloads", () => {
 
   it("discards the exact payload the API served on 2026-07-26 (kills 0, K/D 3.55)", () => {
     // The bogus row that reached production: everything else intact, only
-    // kills and deaths zeroed. See isIncoherentBucket's docblock.
+    // gm_all's kills and deaths zeroed. Still fatal even though kills no longer
+    // come from gm_all — every teamwork counter does.
     const player = playerWithBucket({ kills: 0, deaths: 0 });
     expect(toRawStats(player)).toBeNull();
   });
 
   it("discards zeroed kills even when the ratios were zeroed too, if matches were played", () => {
     const player = playerWithBucket({ kills: 0, deaths: 0, killDeath: 0, kpm: 0 });
-    // dividedKills.human still betrays it, and so would the matches count.
-    expect(toRawStats(player)).toBeNull();
-  });
-
-  it("still discards when humanKills is the only survivor", () => {
-    const player = playerWithBucket({ kills: 0, deaths: 0, killDeath: 0, kpm: 0, matches: 0 });
+    // Nobody plays 512 rounds without dying once, so the bucket is broken.
     expect(toRawStats(player)).toBeNull();
   });
 
