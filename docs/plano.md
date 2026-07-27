@@ -53,9 +53,25 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   Aumentar o lote não acelera, faz falhar. O payload reforça: ~700 KB por jogador, então 10
   jogadores voltaram como 8,2 MB.
 
-  Consequência aceita: com ~100 membros, uma varredura completa leva **duas ou três execuções**, não
-  uma. Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
+  Consequência: com ~100 membros, uma varredura completa leva **duas ou três execuções**, não uma.
+  Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
   chega** — quem uma execução não alcança é exatamente quem a próxima começa atendendo.
+
+  **Continuação encadeada (2026-07-27).** Uma execução que para no orçamento com fila pendente
+  **dispara a sucessora** em vez de deixar o resto do ciclo ocioso. Medido no primeiro ciclo real:
+  37 de 76 membros em 41,9 s, e depois 9 minutos parado. Sem continuação, a varredura levava 20 a
+  30 min contra um teto de frescor de ~10 min na fonte — o roster ficava duas a três vezes mais
+  velho do que precisava.
+
+  Como funciona: `after()` do Next dispara a sucessora **depois** da resposta já ter saído, porque
+  esperar por ela manteria a execução atual viva e estouraria justamente o orçamento que a
+  continuação existe para contornar. A profundidade viaja em `?chain=N` e a origem é lida do próprio
+  request, então preview e domínio custom funcionam sem URL fixa.
+
+  **Duas condições de parada, e a segunda é a que importa:** para quando `deferred` chega a zero, e
+  para no `MAX_CHAIN_DEPTH` (4) mesmo que a primeira esteja errada. Rota que chama a si mesma é o
+  único ponto do projeto sem freio externo, então o teto é o que separa cadeia de laço infinito.
+  `route.test.ts` trava as duas.
 
   A cadência de 10 min passa a 20 min quando o desenvolvimento terminar (ver a seção no fim deste
   documento).
@@ -533,31 +549,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                              `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                              com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                              puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                              nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                              que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                          composição.
+                                              `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                              `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                              hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                              composição.
 
-                                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                          uma linha de 1px colada na borda, não um tingimento.
+                                              O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                              (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                              (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                              rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                              pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                              uma linha de 1px colada na borda, não um tingimento.
 
-                                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                          nessa linha.
+                                              `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                              nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                              linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                              demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                              porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                              fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                              nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
