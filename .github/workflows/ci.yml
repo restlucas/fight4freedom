@@ -54,9 +54,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # `prisma generate` already ran via postinstall (it needs no connection).
-      # This applies the schema so the build can read a real database.
+      # This applies the schema so the build can read a real database. No
+      # `--skip-generate`: Prisma 7 dropped that flag from `db push` and exits 1
+      # on unknown options, printing help instead of an error.
       - name: Apply database schema
-        run: pnpm exec prisma db push --skip-generate
+        run: pnpm exec prisma db push
 
       - name: Lint
         run: pnpm lint
@@ -112,7 +114,7 @@ jobs:
       # business owning.
       - name: Prepare database
         run: |
-          pnpm exec prisma db push --skip-generate
+          pnpm exec prisma db push
           pnpm exec tsx src/lib/db/seed.ts
 
       - name: Run E2E tests
