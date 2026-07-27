@@ -463,13 +463,17 @@ misturado (seção 5.3).
 5. **Paridade com o tracker.gg** nos quatro stats de duelo, verificada contra a API em 2026-07-27:
    kills 12.320, deaths 4.126, assists 4.365, revives 3.062.
 
-### Divergência que sobra, e é conhecida
+### Headshots: não existe no bucket de classes
 
-`headshots` usa `gm_all.headshotKills` (2.874). O top-level tem `headShots` = 1.973, que
-provavelmente é o bucket de classes, mas **não foi possível confirmar por soma** porque `classes[]`
-não expõe headshots. Headshot é um recorte de kill, então pela regra acima deveria ir para o bucket
-de classes. Ficou como está por falta de verificação, não por decisão — é a próxima divergência que
-um membro vai notar.
+`headshots` usa `gm_all.headshotKills` (2.874), e isso **não é concessão, é a única leitura
+possível**. Verificado em 2026-07-27: nenhuma das cinco entradas de `classes[]` tem qualquer campo
+com "head". Os campos de uma classe são só `kills`, `deaths`, `assists`, `revives`, `killDeath`,
+`kpm`, `spawns`, `score` e `secondsPlayed`.
+
+O `headShots` = 1.973 do top-level **não é** o bucket de classes — uma versão anterior desta seção
+levantou essa suspeita e ela está descartada. Pelos `weaponGroups[]` ele parece ser um recorte por
+arma, mas isso não foi confirmado e não importa: como o bucket de classes não tem headshots, não há
+alternativa a escolher.
 
 <details>
 <summary>Decisão anterior (2026-07-26), mantida como histórico</summary>

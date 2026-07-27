@@ -14,17 +14,22 @@ function progress(partial: Partial<StatTotals>): StatTotals {
 }
 
 /**
- * Real career totals from the gm_all bucket, captured 2026-07-27. These are what
- * the weights were fitted against, so they are the only honest input for the
+ * Real career totals for the two clan members, read through `toRawStats` against
+ * the live API on 2026-07-27, AFTER the bucket change (kills without bots, and
+ * assists/revives from the class bucket). These are the only honest input for the
  * share assertions below — invented numbers would let a bad weight pass.
+ *
+ * They will drift as the two keep playing, and that is fine: the assertions check
+ * PROPORTIONS, not absolute totals, so the snapshot only needs to be
+ * representative. Refresh them if the shares ever start looking implausible.
  */
 const MELANSIA: StatTotals = {
-  kills: 17_587,
-  deaths: 4_955,
+  kills: 12_320,
+  deaths: 4_126,
   wins: 268,
   losses: 244,
-  assists: 6_080,
-  revives: 3_451,
+  assists: 4_365,
+  revives: 3_062,
   headshots: 2_874,
   objectivesCaptured: 1_152,
   timePlayedMinutes: 12_431,
@@ -41,11 +46,11 @@ const MELANSIA: StatTotals = {
 
 /** Second real member: 47 matches, never plays Engineer (repairs = 0). */
 const XUVEROO: StatTotals = {
-  kills: 625,
+  kills: 589,
   deaths: 391,
   wins: 25,
   losses: 22,
-  assists: 488,
+  assists: 448,
   revives: 219,
   headshots: 88,
   objectivesCaptured: 85,
@@ -98,6 +103,7 @@ describe("computePoints", () => {
 describe("teamwork priority (the actual contract)", () => {
   // The weights are only meaningful through the shares they produce, because
   // frequency varies by three orders of magnitude between these counters.
+  // Measured on 2026-07-27: 74.4% and 75.4% teamwork, 10.4% and 6.0% combat.
   it("gives teamwork at least 70% of a real member's score", () => {
     expect(teamworkShare(MELANSIA)).toBeGreaterThan(0.7);
     expect(teamworkShare(XUVEROO)).toBeGreaterThan(0.7);

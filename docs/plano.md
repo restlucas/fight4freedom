@@ -451,10 +451,18 @@ O `devidedAssists.human` (1.277) não serve de substituto: suas partes irmãs s�
 adicionados nesta fase. Todos liam 0 pelo `.default(0)` do Zod e **nenhum teste podia detectar**.
 Corrigido com os valores reais, e agora há teste afirmando cada um.
 
-**Divergência que sobra:** `headshots` usa `gm_all.headshotKills` (2.874). O top-level tem
-`headShots` = 1.973, provavelmente o bucket de classes, mas **não deu para confirmar por soma**
-porque `classes[]` não expõe headshots. Pela regra, headshot é recorte de kill e deveria ir para o
-bucket de classes. Ficou como está por falta de verificação, não por decisão.
+**Headshots: investigado e encerrado (2026-07-27).** `headshots` fica no `gm_all.headshotKills`
+(2.874), e isso **não é concessão, é a única leitura possível**. Confirmado varrendo o payload:
+nenhuma das cinco entradas de `classes[]` tem qualquer campo com "head". O `headShots` = 1.973 do
+top-level, que eu havia suspeitado ser o bucket de classes, **não é** — o bucket de classes não
+tem headshots. Não existe alternativa a escolher.
+
+**Constantes de teste atualizadas (2026-07-27).** O `points.test.ts` usava os totais de carreira
+pré-mudança (kills 17.587, assists 6.080, revives 3.451), que descreviam dados que a coleta já não
+produz. Relidos pela API através do `toRawStats`. As frações **melhoraram** e seguem dentro da
+meta: equipe 74,4% e 75,4% (era 73,3% e 75,4%), combate 10,4% e 6,0% (era 12,8% e 6,3%). Nenhum
+peso precisou de retoque — as kills caírem ~30% encolheu combate mais rápido do que a queda de
+assists (−28%) e revives (−11%) encolheu apoio.
 
 **Schema.** Nove colunas novas em `statSnapshot`: `objectivesDefended`, `objectivesDestroyed`,
 `objectivesArmed`, `objectivesDisarmed`, `sectorsDefended`, `objectiveTimeSeconds`, `spots`,
@@ -496,31 +504,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                              `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                              com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                              puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                              nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                              que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                          composição.
+                              `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                              `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                              hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                              composição.
 
-                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                          uma linha de 1px colada na borda, não um tingimento.
+                              O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                              (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                              (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                              rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                              pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                              uma linha de 1px colada na borda, não um tingimento.
 
-                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                          nessa linha.
+                              `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                              nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                              linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                              demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                              porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                              fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                              nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista

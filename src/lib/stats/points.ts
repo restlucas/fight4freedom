@@ -9,12 +9,13 @@
 // WHY THESE NUMBERS, AND WHY NOT ROUNDER ONES
 //
 // Weight alone does not set priority — weight TIMES frequency does, and the
-// frequencies are wildly different. Measured on the two real members (career
-// totals from the gm_all bucket, over 512 and 47 matches):
+// frequencies are wildly different. Measured on the two real members over 512 and
+// 47 matches, re-read on 2026-07-27 after kills dropped bots and assists/revives
+// moved to the class bucket:
 //
-//   kills                34.35 and 13.30 per match
-//   killAssists          11.88 and 10.38
-//   revives               6.74 and  4.66
+//   kills                24.06 and 12.53 per match
+//   assists               8.52 and  9.53
+//   revives               5.98 and  4.66
 //   spots                 5.04 and  2.28
 //   objectivesDefended    4.85 and  3.17
 //   objectivesCaptured    2.25 and  1.81
@@ -24,9 +25,13 @@
 //   objectivesDisarmed     0.02 and  0.11
 //
 // So a kill at weight 3 against an objective destroyed at weight 50 still hands
-// combat 103 points per match versus 1.35 — the opposite of the intent. The
-// weights below were fitted against those real numbers to land teamwork at
-// 73.3% and 75.4% of each member's score, with combat at 12.8% and 6.3%.
+// combat 72 points per match versus 1.35 — the opposite of the intent. The
+// weights below were fitted against these real numbers and land teamwork at
+// 74.4% and 75.4% of each member's score, with combat at 10.4% and 6.0%.
+//
+// The bucket change did not require retuning: kills fell ~30% while assists and
+// revives fell 28% and 11%, so combat shrank faster than support and the shares
+// moved in the intended direction on their own.
 //
 // Consequence for maintenance: changing a weight without re-checking the share
 // it produces is guesswork. The shares, not the weights, are the contract, which
