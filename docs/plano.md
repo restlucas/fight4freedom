@@ -556,31 +556,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                                      `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                                      com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                                      puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                                      nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                                      que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                                  composição.
+                                                      `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                                      `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                                      hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                                      composição.
 
-                                                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                                  uma linha de 1px colada na borda, não um tingimento.
+                                                      O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                                      (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                                      (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                                      rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                                      pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                                      uma linha de 1px colada na borda, não um tingimento.
 
-                                                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                                  nessa linha.
+                                                      `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                                      nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                                      linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                                      demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                                      porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                                      fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                                      nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -690,6 +690,51 @@ membros — seria baixável pelo site.
       da temporada. Troca um bloco a que ninguém rola por um affordance no lugar onde a dúvida
       nasce: ao lado do número que o membro está questionando. O gatilho é um `<button>` de verdade,
       porque o Radix abre o hover card também no **foco**, e é assim que teclado e toque chegam nele.
+
+### Fase 3.7 — Diagnóstico de sincronização no painel: concluída (2026-07-27)
+
+Uma coluna **Stats** em `/admin/membros` dizendo se a coleta de cada membro está funcionando, e um
+botão para tirar da coleta quem tem cadastro errado.
+
+**O problema era de dados, não de UI.** Não havia como saber se a última busca falhou: snapshot só é
+gravado quando os contadores mudam, então um membro buscado com sucesso e sem novidade fica
+**idêntico** a um membro cuja busca quebrou — nenhuma linha nova nos dois casos. Três colunas novas
+resolvem: `statsCheckedAt` (quando tentamos, com sucesso ou não), `statsStatus` (o desfecho) e
+`statsPaused` (o interruptor do admin).
+
+O coletor grava o desfecho com um `updateMany` por grupo de resultado a cada lote, não um update por
+membro — uma varredura toca ~76 linhas e isso a mantém em poucas declarações. O `statsCheckedAt`
+avança **em toda tentativa, inclusive nas que falham**: a pergunta do painel é "quando tentamos e o
+que aconteceu", e um timestamp que só anda no sucesso não responde isso.
+
+**Seis estados, cada um com uma ação:**
+
+| Badge                 | Significa                          | O que fazer                                   |
+| --------------------- | ---------------------------------- | --------------------------------------------- |
+| Sincronizando (verde) | Última tentativa leu os stats      | Nada                                          |
+| Aguardando            | Na fila, nunca tentado             | Esperar                                       |
+| ID não encontrado     | O id não casa com nenhuma conta EA | Corrigir o id                                 |
+| Sem dados de BF6      | Conta achada, sem stats de BF6     | Conferir o id: casou com outra conta homônima |
+| Pausado               | Admin tirou da coleta              | Retomar quando corrigir                       |
+| Fora da coleta        | Inativo ou sem vínculo             | —                                             |
+
+Os dois estados de erro são **problemas diferentes com correções diferentes**, e o badge antigo
+"Stats pendentes" juntava os dois — são exatamente os 23 e os 5 diagnosticados na Fase 3.6. Abaixo do
+badge vai o tempo desde a última tentativa, que é o que transforma badge em diagnóstico:
+"Sincronizando" com verificação de dois dias atrás significa coleta parada, e sem o timestamp isso
+parece saudável.
+
+O estado é resolvido em `queries.ts` (`syncState`), não no JSX: a resposta depende de quatro colunas
+interagindo, e espalhar isso em ternário é como um membro acaba exibido como "sincronizando"
+enquanto o coletor nunca olha para ele.
+
+**Pausar em vez de desativar.** Antes, para impedir o coletor de gastar requisição com um id errado,
+a única saída era `active = false` — que tira o membro de `/membros` e do ranking também, punindo a
+pessoa por um problema de cadastro. Pausado continua visível, só não consome requisição. O botão só
+aparece quando pausar faz sentido; para quem já está fora da coleta seria um controle mentiroso.
+
+Também separei duas colunas que estavam misturadas: "Conta" exibia o badge de stats dentro dela,
+confundindo login do Discord com coleta. São perguntas diferentes e agora são colunas diferentes.
 
 ### Fase 4 — Progressão e polimento
 
@@ -845,17 +890,20 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
 Lista curta de coisas que estão de um jeito **porque estamos desenvolvendo**, e que precisam mudar
 antes de considerar o projeto em regime.
 
-### Cadência da coleta: 10 min → 30 min
+### Cadência da coleta: 10 min → 20 min, no máximo
 
-Decidido em 2026-07-27, revisado de 20 para 30 min no mesmo dia depois da continuação encadeada
-entrar. Com a cadeia, um tick cobre até 5 execuções (~185 membros de capacidade), então uma
-varredura completa cabe dentro de um único tick e disparar de 10 em 10 min passa a sobrepor ciclos
-sem ganhar frescor: o cache de borda do gametools é de ~10 min de qualquer forma
+Decidido em 2026-07-27. A ideia de 30 min foi levantada e **descartada no mesmo dia**: a cadeia cobre
+a capacidade, mas não repesca falha de requisição (ver a ressalva abaixo), e a 30 min um membro que
+deu 504 esperaria meia hora pela segunda chance. Vinte minutos é o teto.
+
+O racional para sair dos 10: com a cadeia, um tick cobre até 5 execuções (~185 membros de
+capacidade), então uma varredura completa cabe num tick e disparar de 10 em 10 min passa a sobrepor
+ciclos sem ganhar frescor — o cache de borda do gametools é de ~10 min de qualquer forma
 (`docs/api-gametools.md` §10.2), e stats só mudam quando alguém joga.
 
 ```sql
 select cron.unschedule('collect-bf6-stats');
-select cron.schedule('collect-bf6-stats', '*/30 * * * *', $$
+select cron.schedule('collect-bf6-stats', '*/20 * * * *', $$
   select net.http_post(
     url                  := 'https://<dominio-do-app>/api/stats/collect',
     headers              := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
@@ -875,11 +923,11 @@ Detalhe que parece falha e não é: as execuções gravaram 5, 4, 1, 1, 1, em qu
 tem snapshot, releitura com contadores iguais devolve `unchanged` e **não grava**. A queda é o poço de
 nunca-coletados esvaziando.
 
-**Condição 2 — subir o `timeout_milliseconds` para 60000** (já no SQL acima). Com 30 s o `pg_net`
-desiste antes de a função responder, então o corpo do relatório **nunca chega**. A gravação não se
-perde (persistência é por lote), mas a observabilidade sim: sem o relatório não há como ver quem
-ficou em `identity-pending` nem quantos foram `deferred`. Foi possível confirmar a cadeia por
-timestamp, mas isso é perícia, não monitoramento.
+**Condição 2 — `timeout_milliseconds` em 60000: APLICADO (2026-07-27, `jobid 3`).** Com 30 s o
+`pg_net` desistia antes de a função responder e o corpo do relatório **nunca chegava**. A gravação
+não se perdia (persistência é por lote), mas a observabilidade sim: sem o relatório não há como ver
+quem ficou em `identity-pending` nem quantos foram `deferred`. Confirmar a cadeia por timestamp
+funcionou uma vez, mas é perícia, não monitoramento.
 
 **Custo conhecido de subir a cadência:** falha de requisição (504, o erro comum dessa API) resulta
 em `noData`, **não** em `deferred`, e por isso **não** é repescada pela cadeia — ela espera o próximo

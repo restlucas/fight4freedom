@@ -207,3 +207,37 @@ export async function revokeInviteAction(
 
   return { ok: true, data: undefined };
 }
+
+/**
+ * Takes a member out of the stats collection, or puts them back.
+ *
+ * Exists because the honest alternative was worse: to stop the collector from
+ * burning requests on a member whose platform id is wrong, an admin would have
+ * had to set `active = false`, which also removes them from /membros and from
+ * the ranking — punishing the member for a data-entry problem.
+ *
+ * Purges the vitrine cache because a paused member stops accruing snapshots, and
+ * the ranking is derived from those.
+ */
+export async function toggleMemberStatsAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const parsed = memberIdSchema.safeParse({ memberId: formData.get("memberId") });
+  if (!parsed.success) return actionError("Membro inválido.");
+
+  const paused = formData.get("paused") === "true";
+
+  // updateMany, not update: a member deleted between the page render and this
+  // submit should be a no-op, not a thrown "record not found".
+  const { count } = await db.member.updateMany({
+    where: { id: parsed.data.memberId },
+    data: { statsPaused: paused },
+  });
+  if (count === 0) return actionError("Membro não encontrado.");
+
+  revalidateVitrine(CACHE_TAG.members);
+  return { ok: true, data: undefined };
+}

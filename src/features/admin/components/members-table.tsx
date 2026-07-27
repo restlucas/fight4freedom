@@ -35,6 +35,7 @@ import {
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
 
+import { MemberSyncCell } from "@/features/admin/components/member-sync-cell";
 import type { AdminMedal, AdminMember } from "@/features/admin/lib/queries";
 import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
 import { RESPONSIVE_TABLE, STICKY_HEAD, TABLE_FRAME } from "@/features/admin/lib/table-styles";
@@ -157,16 +158,17 @@ export function MembersTable({ members, medals }: MembersTableProps) {
         <Table className={RESPONSIVE_TABLE}>
           <TableHeader className={STICKY_HEAD}>
             <TableRow>
-              <TableHead className="md:w-[40%]">Membro</TableHead>
-              <TableHead className="hidden sm:table-cell md:w-[14%]">Cargo</TableHead>
-              <TableHead className="md:w-[18%]">Conta</TableHead>
-              <TableHead className="md:w-[28%]">Ações</TableHead>
+              <TableHead className="md:w-[32%]">Membro</TableHead>
+              <TableHead className="hidden lg:table-cell lg:w-[10%]">Cargo</TableHead>
+              <TableHead className="md:w-[14%]">Conta</TableHead>
+              <TableHead className="md:w-[18%]">Stats</TableHead>
+              <TableHead className="md:w-[26%]">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground h-24 text-center">
+                <TableCell colSpan={5} className="text-muted-foreground h-24 text-center">
                   {members.length === 0
                     ? "Nenhum membro cadastrado."
                     : "Nenhum membro encontrado com esses filtros."}
@@ -206,28 +208,17 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                     </div>
                   </TableCell>
 
-                  <TableCell className="hidden sm:table-cell">
+                  <TableCell className="hidden lg:table-cell">
                     <span className="text-muted-foreground text-sm">{ROLE_LABEL[member.role]}</span>
                   </TableCell>
 
+                  {/* "Conta" is about Discord login only. Whether stats collect is
+                      a different question with its own column — they used to be
+                      conflated here, which is why "Stats pendentes" showed up
+                      inside the account cell and confused the two. */}
                   <TableCell>
                     {member.hasAccount ? (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="secondary" className="gap-1">
-                          Vinculada
-                        </Badge>
-                        {/* Discord linked = eligible for collection; whether it
-                            actually collects depends on the EA identity bind. */}
-                        {member.statsLinked ? null : (
-                          <Badge
-                            variant="outline"
-                            className="text-muted-foreground"
-                            title="Id da plataforma não encontrado na EA. Confira se é o id exato da conta; a coleta tenta de novo a cada ciclo."
-                          >
-                            Stats pendentes
-                          </Badge>
-                        )}
-                      </div>
+                      <Badge variant="secondary">Vinculada</Badge>
                     ) : member.pendingInvite ? (
                       <Badge variant="outline" className="gap-1">
                         Convite pendente
@@ -236,6 +227,15 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                     ) : (
                       <span className="text-muted-foreground text-xs">Sem conta</span>
                     )}
+                  </TableCell>
+
+                  <TableCell>
+                    <MemberSyncCell
+                      memberId={member.id}
+                      nickname={member.nickname}
+                      sync={member.sync}
+                      onChanged={() => router.refresh()}
+                    />
                   </TableCell>
 
                   <TableCell>

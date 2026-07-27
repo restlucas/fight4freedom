@@ -28,7 +28,7 @@
 // members a run cannot reach are the ones the next run starts with, and nothing
 // already downloaded is thrown away when the clock runs out.
 
-import type { Prisma } from "@prisma/client";
+import type { Prisma, StatsSyncStatus } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
@@ -86,6 +86,24 @@ export type CollectReport = {
  */
 const RUN_BUDGET_MS = 45_000;
 
+/**
+ * Records the outcome of an attempt against a set of members.
+ *
+ * One `updateMany` per outcome group rather than one update per member: a sweep
+ * touches ~76 rows, and this keeps that at a handful of statements.
+ *
+ * `statsCheckedAt` is written on every attempt, including failures — the panel's
+ * question is "when did we last try and what happened", and a timestamp that
+ * only moves on success cannot answer it.
+ */
+async function markStatus(memberIds: string[], status: StatsSyncStatus): Promise<void> {
+  if (memberIds.length === 0) return;
+  await db.member.updateMany({
+    where: { id: { in: memberIds } },
+    data: { statsStatus: status, statsCheckedAt: new Date() },
+  });
+}
+
 export async function collectStats(
   provider: StatsProvider = gametoolsProvider,
 ): Promise<CollectReport> {
@@ -97,6 +115,10 @@ export async function collectStats(
     // The eligibility rule — see the file header.
     where: {
       active: true,
+      // An admin can take a member out of the collection without hiding them
+      // from the vitrine — for a known-bad platform id, so the run stops
+      // spending requests on a lookup that cannot succeed.
+      statsPaused: false,
       OR: [{ discordId: { not: null } }, { collectWithoutLogin: true }],
     },
     select: {
@@ -168,16 +190,23 @@ export async function collectStats(
   }
 
   const collectable = members.filter((m) => m.eaPersonaId && m.eaNucleusId);
-  for (const member of members) {
-    if (!member.eaPersonaId || !member.eaNucleusId) {
-      report.identityPending += 1;
-      report.members.push({
-        id: member.id,
-        nickname: member.nickname,
-        outcome: "identity-pending",
-      });
-    }
+  const pending = members.filter((m) => !m.eaPersonaId || !m.eaNucleusId);
+  for (const member of pending) {
+    report.identityPending += 1;
+    report.members.push({
+      id: member.id,
+      nickname: member.nickname,
+      outcome: "identity-pending",
+    });
   }
+  // Stamped even though nothing was fetched: the panel needs to show that the
+  // collector DID look at this member and still could not bind their identity,
+  // which is what separates "wrong id" from "never tried".
+  await markStatus(
+    pending.map((m) => m.id),
+    "identity_pending",
+  );
+
   if (collectable.length === 0) return report;
 
   // --- 2. Latest snapshot per member, to diff against -----------------------
@@ -218,10 +247,16 @@ export async function collectStats(
     handled += slice.length;
 
     const rows: Prisma.StatSnapshotCreateManyInput[] = [];
+    // Outcome per member in this batch, so the panel can tell a working sync
+    // from a broken one. `ok` covers both "counters moved" and "nothing new".
+    const okIds: string[] = [];
+    const noDataIds: string[] = [];
+
     for (const member of slice) {
       const raw = stats.get(member.eaPersonaId!);
       if (!raw) {
         report.noData += 1;
+        noDataIds.push(member.id);
         report.members.push({
           id: member.id,
           nickname: member.nickname,
@@ -229,6 +264,7 @@ export async function collectStats(
         });
         continue;
       }
+      okIds.push(member.id);
 
       if (!hasNewActivity(latestByMember.get(member.id) ?? null, raw)) {
         report.unchanged += 1;
@@ -275,6 +311,7 @@ export async function collectStats(
     if (rows.length > 0) {
       await db.statSnapshot.createMany({ data: rows });
     }
+    await Promise.all([markStatus(okIds, "ok"), markStatus(noDataIds, "no_data")]);
   }
 
   return report;

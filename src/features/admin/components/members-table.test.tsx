@@ -35,6 +35,7 @@ function member(
     platform,
     platformId: null,
     statsLinked: true,
+    sync: { state: "ok", checkedAt: null, canPause: true, paused: false },
     role,
     active: true,
     avatarUrl: null,
@@ -122,9 +123,7 @@ describe("MembersTable", () => {
 
     await user.type(screen.getByLabelText("Buscar membro"), "zzz");
 
-    expect(
-      screen.getByText("Nenhum membro encontrado com esses filtros."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Nenhum membro encontrado com esses filtros.")).toBeInTheDocument();
   });
 
   it("paginates and stores the page size under the app's prefix", async () => {
@@ -145,9 +144,7 @@ describe("MembersTable", () => {
     await user.click(screen.getByLabelText("Resultados por página"));
     await user.click(screen.getByRole("option", { name: "25" }));
 
-    expect(
-      window.localStorage.getItem("@fight4freedom/admin/members-page-size"),
-    ).toBe("25");
+    expect(window.localStorage.getItem("@fight4freedom/admin/members-page-size")).toBe("25");
     // Changing the size goes back to the first page, now holding everyone.
     expect(rowNames()).toHaveLength(12);
   });

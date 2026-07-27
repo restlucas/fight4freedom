@@ -10,7 +10,7 @@ import type { PlayerIdentity, RawStats, StatsProvider } from "./provider";
  * time budget. The per-player translation is covered in gametools.test.ts.
  */
 const db = {
-  member: { findMany: vi.fn(), update: vi.fn() },
+  member: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   statSnapshot: { findMany: vi.fn(), createMany: vi.fn() },
 };
 vi.mock("@/lib/db", () => ({ db }));
@@ -86,6 +86,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   db.statSnapshot.findMany.mockResolvedValue([]);
   db.statSnapshot.createMany.mockResolvedValue({ count: 0 });
+  db.member.updateMany.mockResolvedValue({ count: 0 });
   clock = 1_700_000_000_000;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
 });
@@ -182,5 +183,81 @@ describe("collectStats time budget", () => {
     const report = await collectStats(fakeProvider());
     expect(report.deferred).toBe(0);
     expect(report.updated).toBe(8);
+  });
+});
+
+describe("collectStats sync status", () => {
+  /** The status writes, as {status, ids} pairs, in call order. */
+  function statusWrites() {
+    return db.member.updateMany.mock.calls
+      .map(([args]) => args)
+      .filter((a) => a?.data?.statsStatus)
+      .map((a) => ({ status: a.data.statsStatus, ids: a.where.id.in as string[] }));
+  }
+
+  it("skips members an admin paused", async () => {
+    // The where clause is the contract: a paused member must never reach the API.
+    db.member.findMany.mockResolvedValue([]);
+    await collectStats(fakeProvider());
+
+    const where = db.member.findMany.mock.calls[0][0].where;
+    expect(where.statsPaused).toBe(false);
+    expect(where.active).toBe(true);
+  });
+
+  it("records ok for members it managed to read", async () => {
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1), member("Beto", null, 2)]);
+
+    await collectStats(fakeProvider());
+
+    const ok = statusWrites().find((w) => w.status === "ok");
+    expect(ok?.ids).toEqual(["id-Ana", "id-Beto"]);
+  });
+
+  it("records no_data separately from ok, in the same batch", async () => {
+    // Two members, one of whom the provider has nothing for. Their statuses must
+    // not be lumped together: one needs an id fix, the other needs nothing.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1), member("Beto", null, 2)]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async (players) => {
+      const map = new Map();
+      map.set(players[0].personaId, rawStats(10));
+      return map;
+    });
+
+    const report = await collectStats(provider);
+
+    expect(report.noData).toBe(1);
+    expect(statusWrites()).toEqual(
+      expect.arrayContaining([
+        { status: "ok", ids: ["id-Ana"] },
+        { status: "no_data", ids: ["id-Beto"] },
+      ]),
+    );
+  });
+
+  it("stamps members whose identity never resolved", async () => {
+    // Without this the panel cannot tell "wrong id" from "never attempted".
+    db.member.findMany.mockResolvedValue([
+      { ...member("SemId", null, 1), eaPersonaId: null, eaNucleusId: null },
+    ]);
+
+    const report = await collectStats(fakeProvider());
+
+    expect(report.identityPending).toBe(1);
+    expect(statusWrites()).toContainEqual({ status: "identity_pending", ids: ["id-SemId"] });
+  });
+
+  it("always moves the checked-at timestamp, including on failure", async () => {
+    // "When did we last try" must answer even when the answer is "and it failed".
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => new Map());
+
+    await collectStats(provider);
+
+    const write = db.member.updateMany.mock.calls[0][0];
+    expect(write.data.statsStatus).toBe("no_data");
+    expect(write.data.statsCheckedAt).toBeInstanceOf(Date);
   });
 });

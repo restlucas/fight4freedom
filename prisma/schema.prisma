@@ -57,6 +57,23 @@ enum PlayerClass {
   @@map("player_class")
 }
 
+/// Result of the last collection attempt for a member, so the admin panel can
+/// tell a working sync from a broken one. Mirrors the outcomes in
+/// src/lib/stats/collect.ts, minus `deferred` — a member the run never reached
+/// keeps whatever status the previous run gave them, because "we ran out of
+/// time" says nothing about whether their data is fetchable.
+enum StatsSyncStatus {
+  /// Fetched and read. Covers both "counters moved" and "nothing new to record".
+  ok
+  /// Fetched, but the source has no BF6 data for this identity. Usually means
+  /// the platform id resolved to the wrong EA account.
+  no_data
+  /// No EA identity yet: the platform id does not match any EA account.
+  identity_pending
+
+  @@map("stats_sync_status")
+}
+
 model Member {
   id       String   @id @default(uuid())
   nickname String
@@ -104,6 +121,19 @@ model Member {
   /// flow. Members carrying this flag still need an invite to get a login, a
   /// profile and their Discord avatar.
   collectWithoutLogin Boolean @default(false) @map("collect_without_login")
+  /// Admin switch to take a member out of the collection without hiding them
+  /// from the vitrine. For when the platform id is known to be wrong: the
+  /// alternative was setting `active = false`, which also removes them from
+  /// /membros and from the ranking, punishing the member for a data problem.
+  statsPaused Boolean @default(false) @map("stats_paused")
+  /// When the collector last ATTEMPTED this member, successful or not.
+  ///
+  /// Needed because a snapshot only exists when counters moved, so the snapshot
+  /// table cannot answer "did the last fetch work?" — a member fetched fine with
+  /// nothing new to record looks exactly like a member whose fetch failed.
+  statsCheckedAt DateTime?        @map("stats_checked_at") @db.Timestamptz(6)
+  /// Outcome of that attempt. Null means never attempted.
+  statsStatus    StatsSyncStatus? @map("stats_status")
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 

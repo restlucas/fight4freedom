@@ -52,6 +52,7 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
     platform: "xbox",
     platformId: "Panzer 128",
     statsLinked: true,
+    sync: { state: "ok", checkedAt: null, canPause: true, paused: false },
     role: "member",
     active: true,
     avatarUrl: null,
@@ -64,11 +65,7 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
 }
 
 /** Opens the dialog, which is what an admin does before anything else. */
-async function open(props: {
-  member: AdminMember;
-  medals?: AdminMedal[];
-  onChanged?: () => void;
-}) {
+async function open(props: { member: AdminMember; medals?: AdminMedal[]; onChanged?: () => void }) {
   const user = userEvent.setup();
   render(
     <MemberMedalsDialog
@@ -92,16 +89,12 @@ describe("MemberMedalsDialog", () => {
   it("counts the member's medals on the trigger", () => {
     render(
       <MemberMedalsDialog
-        member={member([
-          { medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null },
-        ])}
+        member={member([{ medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null }])}
         medals={medals}
         onChanged={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: /Medalhas de Panzer/ })).toHaveTextContent(
-      "1",
-    );
+    expect(screen.getByRole("button", { name: /Medalhas de Panzer/ })).toHaveTextContent("1");
   });
 
   it("lists an award with its date and note", async () => {
@@ -122,9 +115,7 @@ describe("MemberMedalsDialog", () => {
 
   it("offers only medals the member does not have yet", async () => {
     await open({
-      member: member([
-        { medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null },
-      ]),
+      member: member([{ medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null }]),
     });
 
     const options = screen.getAllByRole("option");
@@ -150,9 +141,7 @@ describe("MemberMedalsDialog", () => {
 
   it("revokes an award by the member/medal pair", async () => {
     const user = await open({
-      member: member([
-        { medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null },
-      ]),
+      member: member([{ medalId: SNIPER_ID, awardedAt: "2026-07-01T12:00:00.000Z", note: null }]),
     });
 
     await user.click(screen.getByRole("button", { name: "Remover Franco-atirador" }));
@@ -188,9 +177,7 @@ describe("MemberMedalsDialog", () => {
     expect(screen.getByRole("button", { name: "Remover Evento de sábado" })).toBeEnabled();
 
     finish({ ok: true, data: undefined });
-    await waitFor(() =>
-      expect(screen.queryByRole("status", { name: "Removendo" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Removendo" })).toBeNull());
   });
 
   it("keeps the failure on screen instead of pretending it worked", async () => {

@@ -1,9 +1,62 @@
 // Admin reads. Deliberately NOT cached: the panel must always show the live
 // state, and a stale row here means an admin acts on wrong information.
 
-import type { MedalTier, MemberRole, Platform } from "@prisma/client";
+import type { MedalTier, MemberRole, Platform, StatsSyncStatus } from "@prisma/client";
 
 import { db } from "@/lib/db";
+
+/**
+ * What the panel shows in the "Stats" column, already resolved to ONE state.
+ *
+ * Derived here rather than in the component because the answer depends on four
+ * columns interacting (`active`, `statsPaused`, eligibility, `statsStatus`), and
+ * splitting that logic across a JSX ternary is how a member ends up shown as
+ * "syncing" while the collector never looks at them.
+ *
+ * Order matters: a paused member is paused even if their last attempt failed,
+ * and an ineligible member is ineligible even if paused.
+ */
+export type MemberSyncState =
+  /** Inactive, or eligible for nothing — the collector skips them entirely. */
+  | "off"
+  /** An admin took them out of the collection on purpose. */
+  | "paused"
+  /** Eligible and never attempted yet. */
+  | "waiting"
+  /** Last attempt read their stats. */
+  | "ok"
+  /** Last attempt found no BF6 data — usually the id resolved to another account. */
+  | "no_data"
+  /** No EA identity: the platform id matches no EA account. */
+  | "identity_pending";
+
+export type MemberSync = {
+  state: MemberSyncState;
+  /** ISO instant of the last attempt, successful or not. Null if never tried. */
+  checkedAt: string | null;
+  /** Whether an admin may pause/resume this member (pointless when "off"). */
+  canPause: boolean;
+  paused: boolean;
+};
+
+function syncState(m: {
+  active: boolean;
+  statsPaused: boolean;
+  discordId: string | null;
+  collectWithoutLogin: boolean;
+  eaPersonaId: string | null;
+  statsStatus: StatsSyncStatus | null;
+}): MemberSyncState {
+  const eligible = m.active && (m.discordId !== null || m.collectWithoutLogin);
+  if (!eligible) return "off";
+  if (m.statsPaused) return "paused";
+  // The stored outcome is the truth about the last attempt; the identity column
+  // is the fallback for members the collector has not stamped yet.
+  if (m.statsStatus === "ok") return "ok";
+  if (m.statsStatus === "no_data") return "no_data";
+  if (m.statsStatus === "identity_pending" || !m.eaPersonaId) return "identity_pending";
+  return "waiting";
+}
 
 export type AdminInvite = {
   id: string;
@@ -32,6 +85,8 @@ export type AdminMember = {
    * but a wrong nickname stays pending forever, so the panel surfaces it.
    */
   statsLinked: boolean;
+  /** Everything the panel needs to say whether stats are syncing. */
+  sync: MemberSync;
   role: MemberRole;
   active: boolean;
   avatarUrl: string | null;
@@ -59,6 +114,10 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       active: true,
       avatarUrl: true,
       discordId: true,
+      collectWithoutLogin: true,
+      statsPaused: true,
+      statsStatus: true,
+      statsCheckedAt: true,
       profiles: { select: { isAdmin: true } },
       medals: {
         orderBy: { awardedAt: "desc" },
@@ -85,6 +144,12 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
     platform: m.platform,
     platformId: m.platformId,
     statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
+    sync: {
+      state: syncState(m),
+      checkedAt: m.statsCheckedAt?.toISOString() ?? null,
+      canPause: m.active && (m.discordId !== null || m.collectWithoutLogin),
+      paused: m.statsPaused,
+    },
     role: m.role,
     active: m.active,
     avatarUrl: m.avatarUrl,
