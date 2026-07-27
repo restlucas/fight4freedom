@@ -114,14 +114,21 @@ acumularem dois snapshots no mesmo mês.
 
 O que resta antes da Fase 4:
 
-- **Corrigir 23 `platformId` inválidos.** A fila de identidades foi drenada em 27/07 com
-  `pnpm db:resolve-identities` (script novo, roda local e por isso ignora o cap de 10 por ciclo da
-  função): **74 de 97 resolvidas em 229 s**. As 23 restantes não existem na EA com o id que veio do
-  export — 12 `ea`, 8 `psn`, 3 `xbox` — e ficam em "Stats pendentes" até um admin corrigir pelo
-  painel. Rodar o script de novo recupera falhas transitórias: a primeira passada deixou 30
-  pendentes e a segunda baixou para 23.
+- **Corrigir ~28 `platformId` pelo painel.** Estado em 27/07, com 99 elegíveis: **71 já têm
+  snapshot**, e os outros 28 se dividem em dois problemas com a mesma causa.
 
-  **Custo de deixar assim:** esses 23 consomem as 10 buscas de identidade de todo ciclo (~10 s do
+  **23 sem identidade EA.** A fila foi drenada com `pnpm db:resolve-identities` (roda local, e por
+  isso ignora o cap de 10 por ciclo da função): 74 de 97 em 229 s. Reexecutar recupera falhas
+  transitórias — a primeira passada deixou 30 pendentes, a segunda 23. Esses não existem na EA com o
+  id que veio do export (12 `ea`, 8 `psn`, 3 `xbox`).
+
+  **5 com identidade mas sem nenhum dado de BF6.** `dusales`, `exposiitto`, `F4F Richard`, `Ovaca` e
+  `Wislan Andrade`. Consultados um a um contra a API: **sem `gm_all`, sem `classes`, `human = 0`**.
+  Não é falha do coletor — o `toRawStats` devolve `null` corretamente e o membro vira `noData`. O
+  sinal provável é pior que id errado: a busca casou com **outra conta EA de mesmo nome de exibição**,
+  então estamos apontando para a pessoa errada. Vale conferir o id com cada um desses cinco.
+
+  **Custo de deixar assim:** os 23 consomem as 10 buscas de identidade de todo ciclo (~10 s do
   orçamento de 45 s) em tentativas que sempre falham, e esse tempo sai do fetch de quem tem
   identidade válida.
 
@@ -549,31 +556,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                              `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                              com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                              puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                              nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                              que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                              `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                              `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                              hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                              composição.
+                                                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                                  composição.
 
-                                              O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                              (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                              (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                              rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                              pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                              uma linha de 1px colada na borda, não um tingimento.
+                                                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                                  uma linha de 1px colada na borda, não um tingimento.
 
-                                              `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                              nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                              linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                              demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                              porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                              fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                              nessa linha.
+                                                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                                  nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -838,30 +845,47 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
 Lista curta de coisas que estão de um jeito **porque estamos desenvolvendo**, e que precisam mudar
 antes de considerar o projeto em regime.
 
-### Cadência da coleta: 10 min → 20 min
+### Cadência da coleta: 10 min → 30 min
 
-Decidido em 2026-07-27. Hoje o `pg_cron` dispara `/api/stats/collect` a cada 10 minutos, o que era
-adequado quando havia 2 membros elegíveis. Com ~100, cada varredura já leva duas ou três execuções
-(ver o orçamento de tempo em `src/lib/stats/collect.ts`), então disparar de 10 em 10 min só
-sobrepõe ciclos sem ganhar frescor: o cache de borda do gametools é de ~10 min de qualquer forma
+Decidido em 2026-07-27, revisado de 20 para 30 min no mesmo dia depois da continuação encadeada
+entrar. Com a cadeia, um tick cobre até 5 execuções (~185 membros de capacidade), então uma
+varredura completa cabe dentro de um único tick e disparar de 10 em 10 min passa a sobrepor ciclos
+sem ganhar frescor: o cache de borda do gametools é de ~10 min de qualquer forma
 (`docs/api-gametools.md` §10.2), e stats só mudam quando alguém joga.
-
-Mudança, uma linha no SQL Editor do Supabase:
 
 ```sql
 select cron.unschedule('collect-bf6-stats');
-select cron.schedule('collect-bf6-stats', '*/20 * * * *', $$
+select cron.schedule('collect-bf6-stats', '*/30 * * * *', $$
   select net.http_post(
     url                  := 'https://<dominio-do-app>/api/stats/collect',
     headers              := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
-    timeout_milliseconds := 30000
+    timeout_milliseconds := 60000
   );
 $$);
 ```
 
-**Não** mexer no `timeout_milliseconds`: ele governa quanto o `pg_net` espera pela resposta, não
-quanto a função roda. Com a gravação por lote, um ciclo que estoura os 30 s do `pg_net` continua
-tendo persistido tudo o que baixou até ali.
+**Condição 1 — a cadeia dispara em produção: CONFIRMADO (2026-07-27).** O `after()` do Next depende
+da plataforma manter a função viva depois de a resposta sair, o que funciona no teste e podia não
+funcionar no ambiente real. Verificado pelos **timestamps das gravações**, sem depender do relatório:
+no tick das 22:50 houve escrita aos 24 s, 38 s, 42 s, **80 s e 137 s**. Uma execução com orçamento de
+45 s termina por volta dos 45 s, então as duas últimas só podem ter vindo de invocações posteriores —
+ao menos três execuções num tick. Cobertura foi de 60 para 71 dos 76 membros com identidade.
+
+Detalhe que parece falha e não é: as execuções gravaram 5, 4, 1, 1, 1, em queda. Depois que um membro
+tem snapshot, releitura com contadores iguais devolve `unchanged` e **não grava**. A queda é o poço de
+nunca-coletados esvaziando.
+
+**Condição 2 — subir o `timeout_milliseconds` para 60000** (já no SQL acima). Com 30 s o `pg_net`
+desiste antes de a função responder, então o corpo do relatório **nunca chega**. A gravação não se
+perde (persistência é por lote), mas a observabilidade sim: sem o relatório não há como ver quem
+ficou em `identity-pending` nem quantos foram `deferred`. Foi possível confirmar a cadeia por
+timestamp, mas isso é perícia, não monitoramento.
+
+**Custo conhecido de subir a cadência:** falha de requisição (504, o erro comum dessa API) resulta
+em `noData`, **não** em `deferred`, e por isso **não** é repescada pela cadeia — ela espera o próximo
+tick. A 10 min um membro que falhou volta a ser tentado em 10 min; a 30 min, espera 30. Se as falhas
+se mostrarem frequentes, o caminho é fazer a cadeia repescar `noData` (com cuidado: membro que falha
+sempre consumiria a cadeia inteira todo tick), não voltar a cadência para 10 min.
 
 ### Outras pontas do modo desenvolvimento
 
