@@ -107,13 +107,48 @@ const CLASS_NAME_TO_ENUM: Record<string, PlayerClass> = {
 };
 
 /**
+ * Whether a `gm_all` bucket contradicts itself and must not be trusted.
+ *
+ * Observed live on 2026-07-26 21:00: the API returned `kills: 0` and
+ * `deaths: 0` while the SAME bucket reported `killDeath: 3.55`, `kpm: 1.41`
+ * and `dividedKills.human: 12320` — a partially zeroed payload, not a reading.
+ * It cost us twice: a bogus snapshot, and then a fake `0 -> 17587` jump that
+ * `hasNewActivity` accepted as real play, which poisons the month delta
+ * (`deltaForMonth` baselines on the month's earliest snapshot).
+ *
+ * The test is strictly self-contradiction, never "the numbers look small": a
+ * genuinely fresh player (zero kills, zero ratios) is coherent and must pass,
+ * otherwise we would never record anyone's first session.
+ */
+export function isIncoherentBucket(
+  all: z.infer<typeof gameModeGroupSchema>,
+  humanKills: number | null,
+): boolean {
+  // Every one of these is derived FROM kills upstream, so none can outlive it.
+  if (all.kills === 0 && (all.killDeath > 0 || all.kpm > 0 || (humanKills ?? 0) > 0)) return true;
+  // Nobody finishes a match without dying at least once.
+  if (all.kills === 0 && all.deaths === 0 && all.matches > 0) return true;
+  return false;
+}
+
+/**
  * Translates one API player into our vocabulary, reading the canonical
  * `gm_all` bucket. Null when the profile has no game-mode data (private or
- * never played) — the collector skips those instead of recording zeros.
+ * never played) or when the bucket contradicts itself — the collector skips
+ * those instead of recording zeros, and retries on the next run.
  */
 export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity) | null {
   const all = player.gameModeGroups.find((group) => group.id === "gm_all");
   if (!all) return null;
+
+  const humanKills = player.dividedKills?.human ?? null;
+  if (isIncoherentBucket(all, humanKills)) {
+    console.warn(
+      `[stats] payload incoerente para persona ${player.id}: kills=${all.kills} deaths=${all.deaths} ` +
+        `killDeath=${all.killDeath} humanKills=${humanKills} — descartado, retenta no proximo ciclo`,
+    );
+    return null;
+  }
 
   // `classes[]` includes an "All" row; the real classes map 1:1 to our enum.
   let best: { className: string; kills: number } | null = null;
@@ -143,7 +178,7 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
       matches: all.matches,
       // What tracker.gg displays as "Kills" — kept so a member comparing the
       // site with their tracker profile can be answered with data.
-      humanKills: player.dividedKills?.human ?? null,
+      humanKills,
       // Pre-computed by the API over the same bucket, so they are coherent
       // with the counters above (never recompute mixing buckets).
       killDeath: all.killDeath,

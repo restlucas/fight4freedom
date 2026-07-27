@@ -9,10 +9,35 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Both jobs need a reachable Postgres: the Prisma client is built at module scope
+# (src/lib/db/index.ts), so `next build` evaluates it while collecting page data
+# and `pnpm dev` needs it to render the vitrine. It is a throwaway container on
+# purpose — CI must never point at the Supabase project, which holds real
+# members and would be wiped by the seed step below.
+env:
+  DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fight4freedom_test
+  DIRECT_URL: postgresql://postgres:postgres@localhost:5432/fight4freedom_test
+
 jobs:
   verify:
     name: Lint, type-check, test, build
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Matches the Supabase major version (Postgres 17).
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fight4freedom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v7
 
@@ -27,6 +52,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # `prisma generate` already ran via postinstall (it needs no connection).
+      # This applies the schema so the build can read a real database.
+      - name: Apply database schema
+        run: pnpm exec prisma db push --skip-generate
 
       - name: Lint
         run: pnpm lint
@@ -43,6 +73,21 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fight4freedom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v7
 
@@ -60,6 +105,15 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
+
+      # Schema + seed data, so the vitrine renders members, medals and a ranking
+      # instead of empty states. `tsx` directly, not `pnpm db:seed`, because that
+      # script wraps the command in `dotenv -e .env.local`, a file CI has no
+      # business owning.
+      - name: Prepare database
+        run: |
+          pnpm exec prisma db push --skip-generate
+          pnpm exec tsx src/lib/db/seed.ts
 
       - name: Run E2E tests
         run: pnpm test:e2e

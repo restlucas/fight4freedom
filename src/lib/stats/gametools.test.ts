@@ -81,6 +81,75 @@ describe("toRawStats", () => {
   });
 });
 
+describe("isIncoherentBucket / partially zeroed payloads", () => {
+  /** Rebuilds the fixture with gm_all overridden, as the API delivers it. */
+  function playerWithBucket(overrides: Record<string, number>) {
+    return parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      gameModeGroups: gametoolsPlayerFixture.gameModeGroups.map((group) =>
+        group.id === "gm_all" ? { ...group, ...overrides } : group,
+      ),
+    })[0];
+  }
+
+  it("discards the exact payload the API served on 2026-07-26 (kills 0, K/D 3.55)", () => {
+    // The bogus row that reached production: everything else intact, only
+    // kills and deaths zeroed. See isIncoherentBucket's docblock.
+    const player = playerWithBucket({ kills: 0, deaths: 0 });
+    expect(toRawStats(player)).toBeNull();
+  });
+
+  it("discards zeroed kills even when the ratios were zeroed too, if matches were played", () => {
+    const player = playerWithBucket({ kills: 0, deaths: 0, killDeath: 0, kpm: 0 });
+    // dividedKills.human still betrays it, and so would the matches count.
+    expect(toRawStats(player)).toBeNull();
+  });
+
+  it("still discards when humanKills is the only survivor", () => {
+    const player = playerWithBucket({ kills: 0, deaths: 0, killDeath: 0, kpm: 0, matches: 0 });
+    expect(toRawStats(player)).toBeNull();
+  });
+
+  it("accepts a brand-new player with a genuinely empty scoreboard", () => {
+    // Coherent zeros must pass, otherwise a member's first session is never
+    // recorded. dividedKills has to be zeroed here as well.
+    const player = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      dividedKills: { human: 0 },
+      gameModeGroups: gametoolsPlayerFixture.gameModeGroups.map((group) =>
+        group.id === "gm_all"
+          ? {
+              ...group,
+              kills: 0,
+              deaths: 0,
+              killDeath: 0,
+              kpm: 0,
+              matches: 0,
+              wins: 0,
+              losses: 0,
+            }
+          : group,
+      ),
+    })[0];
+    const raw = toRawStats(player);
+    expect(raw).not.toBeNull();
+    expect(raw!.kills).toBe(0);
+  });
+
+  it("accepts a first session: zero kills but deaths on the board", () => {
+    const player = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      dividedKills: { human: 0 },
+      gameModeGroups: gametoolsPlayerFixture.gameModeGroups.map((group) =>
+        group.id === "gm_all"
+          ? { ...group, kills: 0, deaths: 7, killDeath: 0, kpm: 0, matches: 1 }
+          : group,
+      ),
+    })[0];
+    expect(toRawStats(player)).not.toBeNull();
+  });
+});
+
 describe("chunk", () => {
   it("splits into consecutive slices of at most size", () => {
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);

@@ -11,6 +11,7 @@
 import type { MedalTier, MemberRole, Platform, PlayerClass, StatSource } from "@prisma/client";
 
 import { generateInviteToken, hashInviteToken, inviteExpiresAt, inviteUrl } from "../auth/invite";
+import { EXAMPLE_NICKNAMES } from "./example-roster";
 import { db } from "./index";
 
 // Three snapshots (last month + earlier this month + now) so "this month"
@@ -90,41 +91,6 @@ const REAL_MEMBERS: SeedMember[] = [
     // General de Divisão (12.500), partway to General de Exército (16.000).
     rankPoints: 13_000,
   },
-];
-
-// EXAMPLE ROSTER — placeholders so the ranking, the infinite scroll (15 per
-// page) and the sort filters have enough data to exercise. Replace with the
-// real roster from fight4freedom.com.br.
-const EXAMPLE_NICKNAMES = [
-  "Vortex",
-  "TangoDown",
-  "BlackWolf",
-  "Reaper",
-  "GhostBR",
-  "Panzer",
-  "Falcao",
-  "ZeusPrime",
-  "Nomad",
-  "Viper",
-  "Havoc",
-  "Sabotage",
-  "IronHand",
-  "NightOwl",
-  "Kraken",
-  "Bandido",
-  "Trovao",
-  "Cascavel",
-  "Predador",
-  "Sentinela",
-  "Fantasma",
-  "Tempestade",
-  "Aguia",
-  "Lobo",
-  "Escorpiao",
-  "Chumbo",
-  "Rajada",
-  "Coyote",
-  "Meteoro",
 ];
 
 const PLATFORMS: Platform[] = ["ea", "xbox", "psn"];
@@ -295,7 +261,53 @@ async function createBootstrapInvite(memberId: string, nickname: string) {
   console.log(`  ${url}\n`);
 }
 
+/**
+ * The seed is destructive by design: it clears the tables it owns to rebuild a
+ * deterministic board. That was harmless while the database held nothing but
+ * seed data, but production now has members who claimed their invite with
+ * Discord (`discordId` is only ever set by that verified flow), the `profile`
+ * rows that grant panel access, and `api` snapshots written by the collector.
+ * Reseeding there would delete the admin's own access with no way back, since
+ * granting admin requires already being admin.
+ *
+ * So refuse when the database shows signs of real use. `SEED_FORCE=1` is the
+ * deliberate override, for wiping a scratch database on purpose.
+ */
+async function assertSafeToSeed() {
+  const [claimed, collected] = await Promise.all([
+    db.member.count({ where: { discordId: { not: null } } }),
+    db.statSnapshot.count({ where: { source: "api" } }),
+  ]);
+  if (claimed === 0 && collected === 0) return;
+
+  if (process.env.SEED_FORCE === "1") {
+    console.warn(
+      `\n  SEED_FORCE=1: apagando ${claimed} membro(s) com Discord vinculado e ` +
+        `${collected} snapshot(s) reais da coleta.\n`,
+    );
+    return;
+  }
+
+  console.error(
+    [
+      "",
+      "  Seed abortado: este banco tem dados reais.",
+      `    - membros com Discord vinculado: ${claimed}`,
+      `    - snapshots gravados pela coleta (source: api): ${collected}`,
+      "",
+      "  Rodar o seed apagaria esses membros, os profiles (acesso ao painel) e o",
+      "  historico real de stats. Para cadastrar membros use o painel /admin.",
+      "  Para limpar apenas o roster de exemplo: pnpm db:clean-examples",
+      "  Se realmente quiser zerar este banco: SEED_FORCE=1 pnpm db:seed",
+      "",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 async function seed() {
+  await assertSafeToSeed();
+
   console.log("Clearing existing data...");
   await db.highlight.deleteMany();
   await db.memberMedal.deleteMany();

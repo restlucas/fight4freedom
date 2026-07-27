@@ -17,6 +17,7 @@ Base do projeto: o template `nextjs-starter` (Next 16 App Router + React 19 + TS
 Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo).
 
 ### Decisões firmadas com o usuário
+
 - **Fonte de dados (2026-07-26):** stats vêm da **API do gametools.network**, atrás de
   `StatsProvider`. O scraping do tracker.gg foi descartado (ver `docs/api-gametools.md` §6 e §10:
   mesma fonte EA, sem antibot, sem worker). A tela de edição manual continua descartada
@@ -46,6 +47,7 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 - Sem pressão de prazo; entregue em fases ("o que der pra fazer").
 
 ### Riscos assumidos (API gametools)
+
 - **Terceiro comunitário, sem SLA nem rate limit publicado.** Mitigações: uma leva de lotes por
   ciclo, nunca chamar a API no runtime das páginas (o banco é a fonte do site), falha silenciosa
   com retry no ciclo seguinte, e a interface `StatsProvider` para trocar de fonte sem reescrever.
@@ -55,12 +57,15 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ---
 
-## Status (atualizado em 2026-07-26)
+## Status (atualizado em 2026-07-27)
 
-**Fase 3 com código entregue** (Fases 0, 1 e 2 entregues); faltam os passos operacionais
-(db push, seed, `CRON_SECRET`, agendador) listados na seção da Fase 3 abaixo.
+**Fase 3 entregue e rodando em produção.** O app está no ar em `fight4freedom.vercel.app`, o
+schema foi aplicado, o `pg_cron` dispara a coleta a cada 10 min e a rota já devolveu relatórios
+válidos. O que resta antes da Fase 4 é operacional, não de código: cadastrar o roster real e
+fazer o teste de fidelidade com o clã.
 
 ### Fase 0 — Fundação: concluída
+
 - [x] Projeto criado a partir do template `nextjs-starter`; git reiniciado do zero (branch `main`).
 - [x] Identidade ajustada: `package.json`, `layout.tsx` (metadata do clã), `README.md`, `.env.example`.
 - [x] `src/lib/env.ts` (ponto único de leitura; getters lazy para vars server-only).
@@ -76,13 +81,22 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 - [x] Branding BF6 em `globals.css` (azul `#0084C9` + superfícies `#242B2F`/`#2F383E`, dark por
       padrão) e fontes Barlow + Barlow Condensed.
 
-Pontas soltas da Fase 0 (não bloqueiam nada):
-- [ ] Substituir o roster de exemplo do seed pela lista real de membros do `fight4freedom.com.br`.
-- [ ] Atualizar o CI (`.github/workflows/ci.yml`) para o fluxo do Prisma (`prisma generate` roda no
-      `postinstall`; conferir se precisa de `DATABASE_URL`/`DIRECT_URL` como secrets).
-- [ ] (Quando quiser) repo remoto `restlucas/fight4freedom`.
+Pontas soltas da Fase 0:
+
+- [ ] Substituir o roster de exemplo pela lista real de membros do `fight4freedom.com.br`.
+      **Não é mais trabalho de seed:** o banco tem dados reais, então o cadastro é pelo painel
+      `/admin` (nick + plataforma + id da plataforma) e a limpeza do que sobrou do seed é o
+      `pnpm db:clean-examples` (ver Scripts de manutenção).
+- [x] CI corrigido (2026-07-27). Estava **vermelho desde 25/07** em todo push, nas duas jobs, por
+      falta de `DATABASE_URL`: o client do Prisma é construído no escopo do módulo
+      (`src/lib/db/index.ts`), então o `next build` estourava em "Failed to collect page data for
+      /auth/callback" e o servidor do Playwright não renderizava nada. Correção: um serviço
+      Postgres 17 descartável em cada job, com `prisma db push` (e `seed` na job de E2E).
+      **CI nunca aponta para o Supabase** — a job de E2E roda o seed, que apaga tudo.
+- [x] Repo remoto `restlucas/fight4freedom`.
 
 ### Fase 1 — Vitrine pública: concluída
+
 - [x] `/` home BF6 (hero com vídeo, destaques, canais do Discord), header por classe e footer.
 - [x] `/membros` + `/membros/[id]` com stats, patentes, medalhas e coroa do líder por estatística.
 - [x] `/medalhas` catálogo com tiers, carrossel e agrupamento.
@@ -93,6 +107,7 @@ Pontas soltas da Fase 0 (não bloqueiam nada):
       `src/lib/site-config.ts`, mas a feature foi movida para o Backlog.
 
 ### Fase 2 — Auth + painel: concluída
+
 - [x] Supabase Auth com Discord OAuth, fluxo de convite por token (`/entrar`, `/convite/[token]`),
       `middleware.ts` protegendo `/admin`, tabela `profile` + `requireAdmin()`.
 - [x] Avatar do membro importado do Discord no callback do OAuth (`src/app/auth/callback/route.ts`),
@@ -109,7 +124,7 @@ Pontas soltas da Fase 0 (não bloqueiam nada):
       que ele pede** e mover a nossa junto, senão o 500 volta.
 - [x] **Atribuir/remover medalhas a membros:** diálogo por membro em `/admin/membros` com as
       conquistadas (data + nota interna + remover) e a concessão (medalha + nota opcional).
-      Actions em `award-actions.ts`: concessão é *upsert* na chave `(memberId, medalId)` — reconceder
+      Actions em `award-actions.ts`: concessão é _upsert_ na chave `(memberId, medalId)` — reconceder
       corrige a nota sem quebrar no índice único e preserva o `awardedAt` original; revogação usa
       `deleteMany` para não explodir numa corrida entre dois admins. Ambas invalidam as tags
       `medals` **e** `members`, porque catálogo, listagem e perfil leem essa junção.
@@ -126,6 +141,7 @@ Pontas soltas da Fase 0 (não bloqueiam nada):
 Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melhores jogadas.
 
 ### Fase 3 — Coleta de stats via API: código entregue (2026-07-26)
+
 - [x] Spike concluído: `docs/api-gametools.md` valida a fonte, o bucket `gm_all` e a paridade
       com o tracker.gg. O plano de scraper foi substituído por este fluxo.
 - [x] Camada de stats: `src/lib/stats/provider.ts` (interface), `gametools.ts` (client com Zod,
@@ -135,18 +151,31 @@ Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melh
 - [x] CRUD de membros: campo de tracker removido; `platformId` passou a ser obrigatório e é a
       chave de busca; identidade EA resolvida no cadastro/edição (best-effort) e exposta no painel
       como badge "Stats pendentes" quando o id não foi encontrado na EA.
-- [ ] Rodar `pnpm db:push` (troca `tracker_handle` por `ea_persona_id`/`ea_nucleus_id`) e
-      `pnpm db:seed`.
-- [ ] Definir `CRON_SECRET` (local e Vercel) e criar o agendamento (ver Deploy > Agendamento).
-- [ ] Trocar o roster de exemplo pela lista real e validar a primeira coleta de ponta a ponta.
+- [x] `pnpm db:push` aplicado (`tracker_handle` saiu, `ea_persona_id`/`ea_nucleus_id` entraram)
+      e `pnpm db:seed` rodado.
+- [x] `CRON_SECRET` definido e agendamento criado no Supabase (`pg_cron` + `pg_net`, `*/10`).
+- [x] Primeira coleta real validada de ponta a ponta: a rota devolveu
+      `{eligible: 2, updated: 0, unchanged: 2, ...}` com os dois membros que já vincularam o
+      Discord, e gravou snapshots `source: api` conferindo com o `gm_all`.
+- [x] **Armadilha do agendador resolvida (2026-07-27):** ~47% dos ciclos morriam em silêncio.
+      O `pg_net` tem timeout **padrão de 5 s** e a rota leva de 2 a 6 s (a chamada ao gametools
+      com cache frio), então metade das execuções era abortada. O pior é o diagnóstico: o
+      `cron.job_run_details` marca `succeeded` porque o SQL rodou; a falha só aparece em
+      `net._http_response` (`timed_out = true`). Correção: `timeout_milliseconds := 30000` na
+      chamada do job (o SQL na seção Deploy > Agendamento já está atualizado).
+      **Ao depurar coleta, olhar `net._http_response`, não `cron.job_run_details`.**
+- [x] **Guarda contra payload parcialmente zerado (2026-07-27):** ver a seção de armadilhas da
+      camada de stats abaixo.
+- [ ] Cadastrar o roster real no painel e rodar o teste de fidelidade da §8 com o clã.
 
-**Próximo passo:** aplicar o schema, agendar a coleta e rodar a primeira leva real.
+**Próximo passo:** roster real + teste de fidelidade. Depois disso, Fase 4.
 
 ---
 
 ## Stack a adicionar sobre o nextjs-starter
 
 Instalar por projeto (o starter não traz nada disso):
+
 - **Supabase**: Postgres + Auth (Discord OAuth) + **Storage** (arte das medalhas; vídeos quando
   melhores jogadas sair do Backlog).
 - **Prisma 7** (`@prisma/client` + `@prisma/adapter-pg` + `prisma`): schema em
@@ -189,11 +218,15 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
 - **`memberMedal`** (junção): `id`, `memberId` (FK cascade), `medalId` (FK cascade),
   `awardedAt`, `awardedBy` (nullable), `note` (nullable). Índice único `(memberId, medalId)`.
 - **`statSnapshot`** (série temporal — o diferencial vs. site atual): `id`, `memberId`
-  (FK cascade), `capturedAt` (timestamp), `source` (`scraper | manual | api`),
-  colunas de stats BF6: `kills`, `deaths`, `matchesPlayed`, `wins`, `score`,
-  `timePlayedMinutes` (todos int), `extra` (jsonb, para métricas extras sem migração).
-  K/D e win-rate são **derivados** (não armazenados). "Este mês" = último snapshot menos o
-  snapshot mais antigo do mês (via `date-fns`).
+  (FK cascade), `capturedAt` (timestamp), `source` (`manual | api`), `bestClass` e os contadores
+  crus do bucket `gm_all`: `kills`, `deaths`, `wins`, `losses`, `assists`, `revives`,
+  `headshots`, `objectivesCaptured`, `timePlayedMinutes` (todos int), mais `extra` (jsonb:
+  `matches`, `secondsPlayed`, `humanKills`, `killDeath`, `winPercent`, `killsPerMinute`,
+  `damagePerMinute`).
+  **Não existem colunas `score` nem `matchesPlayed`**: partidas são `wins + losses`, e K/D,
+  win-rate, kills por partida e horas são **derivados** em `src/lib/stats/snapshots.ts`, nunca
+  armazenados. "Este mês" = último snapshot menos o snapshot mais antigo do mês (via `date-fns`),
+  o que torna qualquer linha ruim no início do mês uma base de cálculo errada para o mês inteiro.
 - **`highlight`** (melhores jogadas — **tabela criada, feature no Backlog**): `id`, `title`, `description` (nullable),
   `memberId` (FK, nullable — de quem é a jogada), `videoPath` (caminho no bucket Storage),
   `thumbnailPath` (nullable), `durationSeconds` (int, validado ≤ 60), `playedAt` (date — base
@@ -201,14 +234,17 @@ TanStack Query só se algum trecho do painel exigir interatividade cliente pesad
 - **`profile`** (Fase 2): mapeia usuário autenticado (Supabase `auth.users.id`) → papel de
   sistema `isAdmin` (bool) e opcional `memberId`. Controla quem acessa o painel.
 
-Ranking é **calculado em query/RSC**, não persistido (ex.: mais partidas no mês, melhor K/D,
-maior score do mês), a partir de `statSnapshot`.
+Ranking é **calculado em query/RSC**, não persistido (mais partidas no mês, melhor K/D, mais
+pontos do mês), a partir de `statSnapshot`. Os pontos vêm de `POINT_WEIGHTS`
+(`src/lib/stats/points.ts`) aplicados ao **delta do mês**, e os pesos continuam **provisórios**
+até serem acertados com o clã.
 
 ---
 
 ## Camada de dados de stats — `src/lib/stats/`
 
 Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26):
+
 - `provider.ts`: interface `StatsProvider { searchPlayer(name); fetchStats(identities[]) }` e os
   tipos `PlayerIdentity` (personaId + nucleusId) e `RawStats` — já no **nosso** vocabulário, com a
   semântica do bucket `gm_all` (docs/api-gametools.md §3).
@@ -225,13 +261,35 @@ Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26)
   `deltaForMonth(snapshots, month)`, `rankMembers(...)` — com testes colocados (`*.test.ts`).
 
 O valor `manual` do enum `StatSource` continua no schema (custa zero); um `manual-provider.ts`
-só será escrito se algum dia voltar a edição manual.
+só será escrito se algum dia voltar a edição manual. Como a coleta só escreve `api`, na prática
+**toda linha `manual` no banco é placeholder do seed**.
+
+### Armadilha: payload parcialmente zerado (2026-07-26/27)
+
+Aconteceu na primeira coleta real. A API devolveu, no mesmo bucket `gm_all`, `kills: 0` e
+`deaths: 0` junto com `killDeath: 3.55`, `kpm: 1.41` e `dividedKills.human: 12320`. Ou seja: não
+era um jogador zerado, era uma resposta corrompida em dois campos.
+
+O prejuízo veio em dobro. Primeiro gravamos um snapshot falso. No ciclo seguinte a API respondeu
+certo (17587 kills) e o `hasNewActivity` leu `0 -> 17587` como partida nova, gravando um segundo
+snapshot e um pico fictício. Como o `deltaForMonth` usa o snapshot **mais antigo do mês** como
+base, esse membro passaria a exibir a carreira inteira como progresso do mês.
+
+Correção: `isIncoherentBucket()` em `gametools.ts`, chamada por `toRawStats`, que devolve `null`
+(= trata como sem dados, e o coletor retenta no ciclo seguinte) quando o bucket se contradiz:
+
+- `kills == 0` com `killDeath`, `kpm` ou `humanKills` positivos — os três derivam de kills;
+- `kills == 0` e `deaths == 0` com `matches > 0` — ninguém termina partida sem morrer uma vez.
+
+O teste é sempre **contradição interna**, nunca "os números parecem baixos": um jogador de
+primeira sessão tem zeros coerentes e precisa passar, senão nunca gravamos a estreia de ninguém.
 
 ---
 
 ## Fases
 
 ### Fase 0 — Fundação (sem depender do scraper nem da chave de nada)
+
 1. Clonar o starter como `fight4freedom` (padrão do usuário) ou criar a pasta a partir dele.
 2. Renomear metadata/título placeholder em `src/app/layout.tsx` (tem TODO) para a marca do clã;
    ajustar branding/tema (cores do clã) em `src/app/globals.css`.
@@ -242,8 +300,10 @@ só será escrito se algum dia voltar a edição manual.
 5. Criar `src/lib/db/seed.ts` com membros/medalhas/atribuições e alguns `statSnapshot` de exemplo
    (dá conteúdo real para a vitrine da Fase 1). Migrar manualmente a lista de membros do site atual.
 
-### Fase 1 — MVP: Vitrine pública (dados semeados) — *entrega apresentável*
+### Fase 1 — MVP: Vitrine pública (dados semeados) — _entrega apresentável_
+
 Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-component`.
+
 - `/` — **home convidativa**: hero com CTA "Junte-se ao clã" (link Discord), destaques
   (nº de membros, medalhas concedidas, top do mês), identidade visual do clã.
 - `/membros` — **listagem de membros**: cards/tabela com avatar, nick, plataforma, cargo,
@@ -266,6 +326,7 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - Testes: unit (Vitest) na lógica de ranking/derivados; E2E (Playwright) navegando as páginas.
 
 ### Fase 2 — Auth + Painel administrativo
+
 - [x] Supabase Auth com **Discord OAuth**; `middleware.ts` protegendo `/admin`;
       tabela `profile` + guard `requireAdmin()` (análogo ao `requireUserId()` do Routina).
 - [x] **Avatar do membro via Discord:** a foto vem do `user_metadata.avatar_url` no callback do
@@ -282,7 +343,8 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - **Removido do escopo:** edição manual de stats e upload de melhores jogadas (ver Backlog).
 
 ### Fase 3 — Coleta de stats via API gametools — a cada 10 min, todos os elegíveis
-*(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/api-gametools.md`.)*
+
+_(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/api-gametools.md`.)_
 
 - **Sem worker, sem Docker, sem Railway.** A coleta é uma Route Handler no próprio app
   (`/api/stats/collect`) disparada por um agendador externo (ver Deploy > Agendamento). O que o
@@ -306,6 +368,7 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
   `source: api`, nunca atualiza linhas existentes.
 
 ### Fase 4 — Progressão e polimento
+
 - Gráficos de progressão (Recharts) no perfil e no ranking (série temporal de `statSnapshot`).
 - "Membro do mês", conquistas automáticas sugeridas a partir de deltas, refino visual/animações.
 
@@ -317,7 +380,9 @@ Features acordadas como desejáveis, mas **fora de todas as fases planejadas**. 
 clã quiser; nada nas Fases 2–4 depende delas.
 
 ### Melhores jogadas (vitrine + upload de vídeo)
+
 Decisão de 2026-07-25: não construir agora. O que fica pronto para quando voltar:
+
 - Tabela `highlight` já existe no `prisma/schema.prisma` e o seed popula 3 registros.
 - Rota `/melhores-jogadas` existe como placeholder "Em breve", linkada em `src/lib/site-config.ts`.
 - Escopo quando for retomado: grade de clipes curtos (≤ 1 min) com player, título, autor e data;
@@ -327,8 +392,10 @@ Decisão de 2026-07-25: não construir agora. O que fica pronto para quando volt
 - Pendência de produto: decidir se o link sai do menu enquanto a página for um placeholder.
 
 ### Edição manual de stats
+
 Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só da coleta via API
 (Fase 3). Preencher 6 campos por membro à mão para ~50 membros não se sustenta na operação do clã.
+
 - O que **fica** no código: valor `manual` no enum `StatSource` e a interface `StatsProvider`.
   Custo zero hoje e evita mudança de schema depois.
 - O argumento ficou mais forte em 2026-07-26: a fonte automática deixou de ser frágil (API em vez
@@ -338,11 +405,13 @@ Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só
 ---
 
 ## Deploy
+
 - **App:** Vercel. **DB/Auth/Storage:** Supabase. **Coleta de stats:** dentro do próprio app
   (`/api/stats/collect`) — nenhuma infra nova.
 - CI do starter já roda lint → type-check → test → build + E2E; manter e rodar antes de commitar.
 
 ### Convite de admin (bootstrap)
+
 O primeiro acesso ao painel vem do convite que o `pnpm db:seed` imprime no terminal. O token é
 guardado **hasheado**, então um link perdido não é recuperável — só substituível, e o painel não
 resolve (conceder admin exige já ser admin). Para reemitir sem apagar o banco:
@@ -355,6 +424,7 @@ Sem argumento ele pega o membro com cargo `admin`; passe o nick para escolher ou
 (`pnpm invite:admin Vortex`). O link novo invalida o anterior não usado, como no painel.
 
 ### Agendamento da coleta (a cada 10 min)
+
 A rota é agnóstica de agendador: qualquer coisa que faça um GET/POST com
 `Authorization: Bearer $CRON_SECRET` serve. Decisão: **Supabase pg_cron + pg_net** — já pagamos
 pelo Supabase, é preciso no horário e gratuito, enquanto o Vercel Cron no plano Hobby só permite
@@ -368,8 +438,11 @@ select cron.schedule(
   '*/10 * * * *',
   $$
   select net.http_post(
-    url     := 'https://<dominio-do-app>/api/stats/collect',
-    headers := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb
+    url                  := 'https://<dominio-do-app>/api/stats/collect',
+    headers              := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
+    -- OBRIGATÓRIO. O padrão do pg_net é 5 s e a rota leva de 2 a 6 s, então sem
+    -- isso ~metade dos ciclos é abortada. Ver a Fase 3 no Status.
+    timeout_milliseconds := 30000
   );
   $$
 );
@@ -378,7 +451,38 @@ select cron.schedule(
 Para inspecionar/remover: `select * from cron.job;` e `select cron.unschedule('collect-bf6-stats');`.
 Trocou o `CRON_SECRET`? Atualizar nos dois lugares (Vercel env + job).
 
+**Como saber se a coleta está mesmo rodando.** O `cron.job_run_details` mostra se o _SQL_ rodou,
+não se o HTTP respondeu — ele marca `succeeded` mesmo quando a requisição foi abortada. A verdade
+está em `net._http_response`:
+
+```sql
+select created, status_code, timed_out, left(content, 300)
+from net._http_response
+order by created desc
+limit 10;
+```
+
+`status_code` nulo com `timed_out = true` é ciclo perdido. Com `200`, o `content` traz o relatório
+por membro, que é a forma mais rápida de ver quem está em `identity-pending`.
+
+**Nota de segurança:** o `CRON_SECRET` fica em texto puro no `command` do job, legível por
+qualquer um com acesso ao SQL Editor do projeto. É aceitável (só admins têm), mas se o segredo
+vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** reagendar o job.
+
+### Scripts de manutenção
+
+- `pnpm db:seed` — **destrutivo**: limpa e reconstrói as tabelas que ele governa. Desde 2026-07-27
+  ele **se recusa a rodar** quando o banco tem membro com Discord vinculado ou snapshot
+  `source: api`, porque isso apagaria os membros reais e os `profile` que dão acesso ao painel
+  (e conceder admin exige já ser admin, então não há volta). Override deliberado: `SEED_FORCE=1`.
+- `pnpm db:clean-examples` — remove só o andaime do seed de um banco que já tem gente real:
+  os 29 membros inventados, os snapshots `manual` (placeholders por definição) e os snapshots
+  `api` que a guarda de coerência hoje rejeitaria. **Dry run por padrão**; aplica com `--apply`.
+  É o caminho para tirar os dados de exemplo quando o roster real entrar pelo painel.
+- `pnpm invite:admin` — reemite o convite de admin (ver Convite de admin acima).
+
 ## Verificação
+
 - **Fase 0:** `pnpm db:push` cria as tabelas; `seed` popula; `pnpm dev` sobe; type-check/lint/build verdes.
 - **Fase 1:** as rotas renderizam com dados do seed; o ranking do mês bate com os snapshots;
   testes puros de ranking/derivados passam; E2E navega as páginas; visual conferido em light/dark.
@@ -392,6 +496,7 @@ Trocou o `CRON_SECRET`? Atualizar nos dois lugares (Vercel env + job).
   membro sem Discord vinculado não aparece no relatório; snapshot `manual` não é sobrescrito.
 
 ## Observações
+
 - Medalhas são **curadas e atribuídas por admins** (critérios como "20 kills sem morrer" não são
   detectáveis na API) — a coleta alimenta só stats numéricas; medalhas são manuais por design.
 - Reaproveitar padrões do Routina: `requireUserId`/`requireAdmin` + `revalidatePath` nas actions,

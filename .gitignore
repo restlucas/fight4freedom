@@ -43,3 +43,8 @@ next-env.d.ts
 
 # claude code (personal settings stay local; .claude/settings.json is shared)
 .claude/settings.local.json
+
+# medal artwork lives in the Supabase Storage bucket F4F-Medals, never in the
+# repo (see src/features/admin/lib/medal-storage.ts). Anything dropped here is a
+# local upload test.
+/public/medals/
