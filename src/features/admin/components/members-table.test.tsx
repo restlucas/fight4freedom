@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { render, screen } from "@/test-utils";
@@ -38,7 +39,13 @@ function member(
     platform,
     platformId: null,
     statsLinked: true,
-    sync: { state: syncState, checkedAt: null, canPause: true, paused: false },
+    sync: {
+      state: syncState,
+      checkedAt: null,
+      lastAttemptFailed: false,
+      canPause: true,
+      paused: false,
+    },
     role,
     active: true,
     avatarUrl: null,
@@ -227,5 +234,63 @@ describe("MembersTable — coluna Stats", () => {
     await user.click(screen.getByRole("button", { name: /atualizar/i }));
 
     expect(refresh).toHaveBeenCalled();
+  });
+});
+
+describe("MembersTable — relógio da coleta", () => {
+  function checked(nickname: string, at: string | null): AdminMember {
+    const base = member(nickname, "member", "ea");
+    return { ...base, sync: { ...base.sync, checkedAt: at } };
+  }
+
+  it("reports the newest attempt across the whole roster", () => {
+    // Newest, not oldest: the question is "is the collector alive", and one
+    // member stuck at the back of the queue does not mean it stopped.
+    vi.useFakeTimers();
+    try {
+      const now = new Date("2026-07-28T12:00:00Z");
+      vi.setSystemTime(now);
+      render(
+        <MembersTable
+          members={[
+            checked("Antigo", "2026-07-28T09:00:00.000Z"),
+            checked("Recente", "2026-07-28T11:56:00.000Z"),
+            checked("Nunca", null),
+          ]}
+          medals={[]}
+        />,
+      );
+
+      expect(screen.getByText(/Última coleta de dados há 4 min/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps counting while the panel stays open", async () => {
+    // Computed once at render, the label froze at "há 1 min" while the real gap
+    // grew. A frozen relative time is worse than none: it reads as fresh.
+    vi.useFakeTimers();
+    try {
+      const start = new Date("2026-07-28T12:00:00Z");
+      vi.setSystemTime(start);
+      render(
+        <MembersTable members={[checked("Panzer", "2026-07-28T11:59:00.000Z")]} medals={[]} />,
+      );
+      expect(screen.getByText(/há 1 min/)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60_000);
+      });
+
+      expect(screen.getByText(/há 11 min/)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says so plainly when nothing was ever collected", () => {
+    render(<MembersTable members={[checked("Panzer", null)]} medals={[]} />);
+    expect(screen.getByText("A coleta ainda não rodou")).toBeInTheDocument();
   });
 });

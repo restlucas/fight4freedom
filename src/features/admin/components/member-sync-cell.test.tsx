@@ -1,5 +1,4 @@
 import userEvent from "@testing-library/user-event";
-import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { render, screen } from "@/test-utils";
@@ -13,7 +12,14 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const { MemberSyncCell } = await import("./member-sync-cell");
 
 function sync(overrides: Partial<MemberSync> = {}): MemberSync {
-  return { state: "ok", checkedAt: null, canPause: true, paused: false, ...overrides };
+  return {
+    state: "ok",
+    checkedAt: null,
+    lastAttemptFailed: false,
+    canPause: true,
+    paused: false,
+    ...overrides,
+  };
 }
 
 function renderCell(overrides: Partial<MemberSync> = {}) {
@@ -44,81 +50,66 @@ describe("state labels", () => {
     expect(screen.getByText(text)).toBeInTheDocument();
   });
 
-  it("blames the id only when the id is provably the problem", () => {
+  it("blames the id only when the id is provably the problem", async () => {
     // identity_pending IS a certain diagnosis: no EA account matches.
+    const user = userEvent.setup();
     renderCell({ state: "identity_pending" });
-    expect(screen.getByTitle(/não corresponde a nenhuma conta EA/i)).toBeInTheDocument();
+
+    await user.hover(screen.getByRole("button", { name: /ID não encontrado: o que significa/i }));
+
+    expect(await screen.findByText(/não corresponde a nenhuma conta EA/i)).toBeInTheDocument();
   });
 
-  it("does not accuse the id when the cause is unknown", () => {
-    // Measured 2026-07-27: 15 members in this state, only 5 genuinely dataless —
-    // the rest were transient 504s. A confident "wrong id" here would send an
-    // admin chasing ten problems that do not exist.
+  it("does not accuse the id when the cause is unknown", async () => {
+    // Reserved now for members who never had stats at all. Even then the cause
+    // is a guess — a failed batch and an empty profile look identical from here
+    // — so the copy lists the possibilities instead of picking one.
+    const user = userEvent.setup();
     renderCell({ state: "no_data" });
-    const badge = screen.getByText("Sem retorno");
-    const title = badge.getAttribute("title") ?? "";
-    expect(title).toMatch(/instabilidade da fonte/i);
-    expect(title).toMatch(/se persistir/i);
+
+    await user.hover(screen.getByRole("button", { name: /Sem retorno: o que significa/i }));
+
+    const explanation = await screen.findByText(/Nenhuma tentativa até agora/i);
+    expect(explanation.textContent).toMatch(/instabilidade da fonte/i);
+    expect(explanation.textContent).toMatch(/perfil sem partidas/i);
+  });
+
+  it("says nothing extra when the badge is already the whole story", () => {
+    // "Sincronizando" used to carry a tooltip reading "a coleta leu os stats
+    // deste membro" — a hover card that only restates the label teaches admins
+    // to ignore hover cards, including the ones that carry a real caveat.
+    renderCell({ state: "ok" });
+    expect(screen.queryByRole("button", { name: /o que significa/i })).not.toBeInTheDocument();
   });
 });
 
-describe("last attempt", () => {
-  it("shows how long ago the collector last tried", () => {
-    // A green badge with a two-day-old check is a stalled sync, and without the
-    // timestamp it reads as healthy.
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    renderCell({ state: "ok", checkedAt: twoHoursAgo });
-    expect(screen.getByText("há 2 h")).toBeInTheDocument();
+describe("a failed round on a healthy member", () => {
+  it("still reads as syncing, with a warning beside it", async () => {
+    // Measured 2026-07-28: 24 of the 29 members marked "Sem retorno" had stats
+    // from earlier rounds. The source 504s on roughly half the batches and the
+    // whole batch comes back empty, so calling them broken sent an admin hunting
+    // two dozen id problems that did not exist.
+    const user = userEvent.setup();
+    renderCell({ state: "ok", lastAttemptFailed: true });
+
+    expect(screen.getByText("Sincronizando")).toBeInTheDocument();
+    await user.hover(screen.getByRole("button", { name: /última leitura falhou para Panzer/i }));
+
+    expect(await screen.findByText(/continuam válidos/i)).toBeInTheDocument();
   });
 
-  it("says nothing when there was never an attempt", () => {
-    renderCell({ state: "waiting", checkedAt: null });
-    expect(screen.queryByText(/^há /)).not.toBeInTheDocument();
-  });
-
-  it("keeps counting while the panel stays open", async () => {
-    // The label used to be computed once at render, so an admin watching the
-    // collector work saw "há 1 min" freeze while the real gap grew to twenty.
-    // A frozen relative timestamp is worse than none: it reads as fresh.
-    vi.useFakeTimers();
-    try {
-      const start = new Date("2026-07-28T12:00:00Z").getTime();
-      vi.setSystemTime(start);
-      renderCell({ state: "ok", checkedAt: new Date(start - 60_000).toISOString() });
-      expect(screen.getByText("há 1 min")).toBeInTheDocument();
-
-      await act(async () => {
-        vi.advanceTimersByTime(10 * 60_000);
-      });
-
-      expect(screen.getByText("há 11 min")).toBeInTheDocument();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("stops the shared clock once the last cell unmounts", () => {
-    // One module-level timer serves every row. If unmounting the table left it
-    // running, navigating away from the panel would keep a timer alive for the
-    // rest of the session.
-    vi.useFakeTimers();
-    try {
-      const { unmount } = render(
-        <MemberSyncCell
-          memberId="m1"
-          nickname="Panzer"
-          sync={sync({ checkedAt: new Date().toISOString() })}
-          onChanged={vi.fn()}
-        />,
-      );
-      expect(vi.getTimerCount()).toBe(1);
-      unmount();
-      expect(vi.getTimerCount()).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("shows no warning when the last round went through", () => {
+    renderCell({ state: "ok", lastAttemptFailed: false });
+    expect(
+      screen.queryByRole("button", { name: /última leitura falhou/i }),
+    ).not.toBeInTheDocument();
   });
 });
+
+// The "last collection" clock used to live under every badge. It is one line
+// above the table now — see members-table.test.tsx — because the collector
+// sweeps everyone in the same runs, so ~100 per-row counters were ~100 copies
+// of a single fact.
 
 describe("pause toggle", () => {
   it("pauses a collecting member", async () => {
@@ -143,9 +134,13 @@ describe("pause toggle", () => {
   });
 
   it("hides the toggle when the member is out of the collection anyway", () => {
-    // Pausing something the collector already ignores would be a lie of a control.
+    // Pausing something the collector already ignores would be a lie of a
+    // control. Named rather than "any button": the badge's own hover-card
+    // trigger is a button too.
     renderCell({ state: "off", canPause: false });
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /(pausar|retomar) a coleta/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not report success when the action fails", async () => {

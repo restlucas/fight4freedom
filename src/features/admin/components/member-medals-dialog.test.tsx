@@ -52,7 +52,7 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
     platform: "xbox",
     platformId: "Panzer 128",
     statsLinked: true,
-    sync: { state: "ok", checkedAt: null, canPause: true, paused: false },
+    sync: { state: "ok", checkedAt: null, lastAttemptFailed: false, canPause: true, paused: false },
     role: "member",
     active: true,
     avatarUrl: null,

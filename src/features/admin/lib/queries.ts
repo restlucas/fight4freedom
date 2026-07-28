@@ -34,28 +34,49 @@ export type MemberSync = {
   state: MemberSyncState;
   /** ISO instant of the last attempt, successful or not. Null if never tried. */
   checkedAt: string | null;
+  /**
+   * The last attempt brought nothing back, but the member HAS stats from before
+   * — so the collection works and only this round missed. Shown as a warning
+   * next to a healthy badge, never as a broken state (see `syncState`).
+   */
+  lastAttemptFailed: boolean;
   /** Whether an admin may pause/resume this member (pointless when "off"). */
   canPause: boolean;
   paused: boolean;
 };
 
-function syncState(m: {
+type SyncInput = {
   active: boolean;
   statsPaused: boolean;
   discordId: string | null;
   collectWithoutLogin: boolean;
   eaPersonaId: string | null;
   statsStatus: StatsSyncStatus | null;
-}): MemberSyncState {
+  /** Whether the member has ever had stats recorded. */
+  hasStats: boolean;
+};
+
+function syncState(m: SyncInput): MemberSyncState {
   const eligible = m.active && (m.discordId !== null || m.collectWithoutLogin);
   if (!eligible) return "off";
   if (m.statsPaused) return "paused";
   // The stored outcome is the truth about the last attempt; the identity column
   // is the fallback for members the collector has not stamped yet.
   if (m.statsStatus === "ok") return "ok";
-  if (m.statsStatus === "no_data") return "no_data";
+  // A failed attempt on a member who already HAS stats is not a broken member,
+  // it is a bad round. Measured on 2026-07-28: of 29 members carrying "no_data",
+  // 24 had earlier snapshots — the source 504s on roughly half the batches, and
+  // the whole batch comes back empty. Calling those 24 "Sem retorno" sent an
+  // admin hunting two dozen id problems that did not exist. They read as
+  // syncing, with a warning icon carrying the caveat.
+  if (m.statsStatus === "no_data") return m.hasStats ? "ok" : "no_data";
   if (m.statsStatus === "identity_pending" || !m.eaPersonaId) return "identity_pending";
   return "waiting";
+}
+
+/** True only when the badge is healthy BECAUSE of history, not this attempt. */
+function lastAttemptFailed(m: SyncInput): boolean {
+  return syncState(m) === "ok" && m.statsStatus === "no_data";
 }
 
 export type AdminInvite = {
@@ -118,6 +139,9 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       statsPaused: true,
       statsStatus: true,
       statsCheckedAt: true,
+      // Only the count: "has this member ever had stats" is what separates a
+      // transient failure from a member the collector genuinely cannot read.
+      _count: { select: { snapshots: true } },
       profiles: { select: { isAdmin: true } },
       medals: {
         orderBy: { awardedAt: "desc" },
@@ -138,39 +162,43 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
     },
   });
 
-  return members.map((m) => ({
-    id: m.id,
-    nickname: m.nickname,
-    platform: m.platform,
-    platformId: m.platformId,
-    statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
-    sync: {
-      state: syncState(m),
-      checkedAt: m.statsCheckedAt?.toISOString() ?? null,
-      canPause: m.active && (m.discordId !== null || m.collectWithoutLogin),
-      paused: m.statsPaused,
-    },
-    role: m.role,
-    active: m.active,
-    avatarUrl: m.avatarUrl,
-    discordId: m.discordId,
-    hasAccount: m.profiles.length > 0,
-    isAdmin: m.profiles.some((p) => p.isAdmin),
-    pendingInvite: m.invites[0]
-      ? {
-          id: m.invites[0].id,
-          grantsAdmin: m.invites[0].grantsAdmin,
-          discordUsername: m.invites[0].discordUsername,
-          expiresAt: m.invites[0].expiresAt.toISOString(),
-          usedAt: null,
-        }
-      : null,
-    awards: m.medals.map((award) => ({
-      medalId: award.medalId,
-      awardedAt: award.awardedAt.toISOString(),
-      note: award.note,
-    })),
-  }));
+  return members.map((m) => {
+    const input: SyncInput = { ...m, hasStats: m._count.snapshots > 0 };
+    return {
+      id: m.id,
+      nickname: m.nickname,
+      platform: m.platform,
+      platformId: m.platformId,
+      statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
+      sync: {
+        state: syncState(input),
+        checkedAt: m.statsCheckedAt?.toISOString() ?? null,
+        lastAttemptFailed: lastAttemptFailed(input),
+        canPause: m.active && (m.discordId !== null || m.collectWithoutLogin),
+        paused: m.statsPaused,
+      },
+      role: m.role,
+      active: m.active,
+      avatarUrl: m.avatarUrl,
+      discordId: m.discordId,
+      hasAccount: m.profiles.length > 0,
+      isAdmin: m.profiles.some((p) => p.isAdmin),
+      pendingInvite: m.invites[0]
+        ? {
+            id: m.invites[0].id,
+            grantsAdmin: m.invites[0].grantsAdmin,
+            discordUsername: m.invites[0].discordUsername,
+            expiresAt: m.invites[0].expiresAt.toISOString(),
+            usedAt: null,
+          }
+        : null,
+      awards: m.medals.map((award) => ({
+        medalId: award.medalId,
+        awardedAt: award.awardedAt.toISOString(),
+        note: award.note,
+      })),
+    };
+  });
 }
 
 export type AdminMedal = {

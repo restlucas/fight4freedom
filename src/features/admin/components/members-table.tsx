@@ -26,6 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -41,8 +42,10 @@ import {
   PLATFORM_LABEL,
   ROLE_LABEL,
 } from "@/features/clan/lib/format";
+import { useNow } from "@/hooks/use-now";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
+import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 
 import { MemberSyncCell } from "@/features/admin/components/member-sync-cell";
@@ -92,6 +95,24 @@ const NEXT_SYNC_SORT: Record<SyncSort, SyncSort> = {
   healthy: "off",
 };
 
+/**
+ * When the collector last touched ANY member — the newest attempt on the roster.
+ *
+ * Newest and not oldest: the question the header answers is "is the collector
+ * alive", and one neglected member at the back of the queue does not mean it
+ * stopped. Members it never tried carry no timestamp and are skipped.
+ */
+function lastCollection(members: readonly AdminMember[]): string | null {
+  let latest: string | null = null;
+  for (const member of members) {
+    const at = member.sync.checkedAt;
+    // String comparison is safe here: every value comes from `toISOString()`,
+    // which is fixed-width UTC, so lexical order IS chronological order.
+    if (at !== null && (latest === null || at > latest)) latest = at;
+  }
+  return latest;
+}
+
 export function MembersTable({ members, medals }: MembersTableProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
@@ -108,6 +129,8 @@ export function MembersTable({ members, medals }: MembersTableProps) {
   );
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminMember | null>(null);
+  const now = useNow();
+  const lastCollectedAt = lastCollection(members);
 
   const q = normalizeSearch(query);
   const filtered = members.filter(
@@ -203,23 +226,36 @@ export function MembersTable({ members, medals }: MembersTableProps) {
           </Button>
         </div>
 
-        <Dialog open={creating} onOpenChange={setCreating}>
-          <DialogTrigger asChild>
-            <Button className="gap-1.5">
-              <Plus className="size-4" />
-              Novo membro
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Novo membro</DialogTitle>
-              <DialogDescription>
-                Cadastre o membro e depois gere o convite para ele vincular a conta do Discord.
-              </DialogDescription>
-            </DialogHeader>
-            <MemberForm onDone={done} />
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-3">
+          {/* One line for the whole roster instead of a timestamp under every
+              badge: the collector sweeps everyone in the same runs, so ~100
+              per-row counters were ~100 copies of one fact. It ticks on its own
+              (useNow), because a frozen relative time reads as fresh. */}
+          <p className="text-muted-foreground text-xs whitespace-nowrap">
+            {lastCollectedAt === null
+              ? "A coleta ainda não rodou"
+              : `Última coleta de dados ${now === null ? "…" : timeAgo(lastCollectedAt, now)}`}
+          </p>
+          <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
+
+          <Dialog open={creating} onOpenChange={setCreating}>
+            <DialogTrigger asChild>
+              <Button className="gap-1.5">
+                <Plus className="size-4" />
+                Novo membro
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Novo membro</DialogTitle>
+                <DialogDescription>
+                  Cadastre o membro e depois gere o convite para ele vincular a conta do Discord.
+                </DialogDescription>
+              </DialogHeader>
+              <MemberForm onDone={done} />
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Percentage widths + table-fixed from md up: every row sizes its columns

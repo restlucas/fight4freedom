@@ -7,8 +7,15 @@ import type { MemberSyncState } from "./queries";
 export type SyncLabel = {
   /** Text on the badge and in the filter. */
   text: string;
-  /** What it means and who has to act. Shown on hover. */
-  title: string;
+  /**
+   * What it means and who has to act, shown in a hover card on the badge.
+   *
+   * Optional because a healthy badge needs no explanation: "Sincronizando" said
+   * everything the old tooltip ("a coleta leu os stats deste membro") repeated.
+   * A hover card that only restates the label trains admins to ignore hover
+   * cards, including the ones that matter.
+   */
+  title?: string;
   className: string;
   /** Extra classes for the icon, e.g. the spin on a state that means "working". */
   iconClassName?: string;
@@ -17,7 +24,6 @@ export type SyncLabel = {
 export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
   ok: {
     text: "Sincronizando",
-    title: "A coleta leu os stats deste membro na última tentativa.",
     className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
   },
   waiting: {
@@ -41,13 +47,13 @@ export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
   },
   no_data: {
     text: "Sem retorno",
-    // Deliberately does NOT say "wrong id". Measured on 2026-07-27: 15 members
-    // carried this state while only 5 genuinely lack BF6 data — the other 10 were
-    // transient 504s from the source. The collector cannot yet tell the two apart
-    // (a failed batch and an empty profile both come back as "no player"), so
-    // claiming a cause here would send an admin chasing ten phantom id problems.
+    // Now reserved for members who have NEVER had stats — the ones with history
+    // are shown as syncing with a warning instead (see queries.ts `syncState`),
+    // because a failed batch and an empty profile look identical from here and
+    // labelling both as broken buried the five real cases among two dozen
+    // phantom ones.
     title:
-      "A última tentativa não trouxe estatísticas. Pode ser instabilidade da fonte, que se resolve sozinha no próximo ciclo, ou o id ter casado com outra conta de mesmo nome. Só investigue se persistir por várias horas.",
+      "Nenhuma tentativa até agora trouxe estatísticas deste membro. Pode ser um id que casou com outra conta de mesmo nome, um perfil sem partidas de BF6, ou uma sequência de instabilidade da fonte. Confira o id com o membro se continuar assim por várias horas.",
     className: "border-orange-500/40 bg-orange-500/10 text-orange-300",
   },
   paused: {
@@ -61,6 +67,19 @@ export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
     className: "text-muted-foreground",
   },
 };
+
+/**
+ * The caveat behind the warning icon next to an otherwise healthy badge.
+ *
+ * Lives here with the other copy so the wording of "we missed this round" is
+ * written once, next to the wording of every state it can appear beside.
+ */
+export const SYNC_RETRY_NOTICE = {
+  label: "A última leitura falhou",
+  heading: "A última leitura falhou",
+  body: "Os stats deste membro estão no site e continuam válidos — só a tentativa mais recente voltou vazia. A fonte (gametools) devolve erro em parte dos lotes, e quando isso acontece o lote inteiro volta sem ninguém. O coletor tenta de novo no próximo ciclo.",
+  action: "Nada a fazer. Só investigue se o membro passar horas sem atualizar.",
+} as const;
 
 /**
  * States ordered by how much they want an admin's attention, which is also the
