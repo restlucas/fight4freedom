@@ -492,6 +492,66 @@ semânticas na mesma coluna.
 
 ---
 
+## 11. Conta certa no nome, errada na pessoa (2026-07-28)
+
+Investigação dos 4 membros que o primeiro ciclo no Railway reportou como `no_data` e que **nunca**
+tinham sido lidos com sucesso. Tudo abaixo foi verificado contra a API real.
+
+### O que a fonte devolve para eles
+
+Não é "stats zerados", é **payload sem estrutura**: `gameModeGroups` vazio, `classes` vazio, zero
+tempo jogado, e `/bf6/profile/` sem patente e sem badge. Um jogador genuinamente novo é diferente —
+ele tem a estrutura, preenchida de zeros. A ausência da estrutura significa que a EA não tem registro
+de BF6 naquela conta.
+
+### A causa
+
+O `eaName` cadastrado casou com uma conta EA que **existe e não é da pessoa**. O `pickIdentity` só
+desempata **entre vários** candidatos; quando a busca devolve **uma** conta, ele vincula em silêncio,
+e não há nenhum passo que pergunte "essa conta tem BF6?".
+
+### O caso resolvido, que prova a tese
+
+|                                          | valor                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------- |
+| `eaName` cadastrado                      | `Bravo_six762` — **0 resultados** na busca da EA                          |
+| nome real (topo do perfil no tracker.gg) | `F4F WISLAN` — 1 conta, `xboxone`, persona `1978424143`                   |
+| stats da conta correta                   | `dividedKills.human` 7.111 · `gm_all` 65.533 kills / 836 partidas / 315 h |
+
+**Console é servido normalmente.** Uma hipótese anterior desta investigação supunha que stats de
+console não passavam por este caminho da EA. Está descartada: a conta acima é Xbox e tem dados
+completos.
+
+### O que aprendemos sobre a busca `/bf6/player/`
+
+- É **case-insensitive** e casa o nome **inteiro**, não prefixo arbitrário: `Bravo_six` acha
+  `Bravo_Six`, mas `dusale` não acha `dusales`.
+- **Nomes podem conter espaço** (`F4F WISLAN`).
+- **Não aceita parâmetro de plataforma.** Só `name`, `playerid`, `nucleus_id` e `limit`. Não há como
+  procurar uma gamertag no namespace de Xbox ou PSN.
+- Buscar por `nucleus_id` **lista todas as personas da conta**, uma por plataforma. Útil para
+  diagnóstico, mas atenção: a premissa do passo 2 do `pickIdentity` ("toda persona de uma conta
+  devolve stats idênticas") foi verificada só em membros de PC. Nos casos vazios ela vale na direção
+  inútil — todas devolvem igualmente nada.
+- Em nenhuma das dezenas de contas que apareceram havia persona **`psn`**. Só `ea`, `steam` e
+  `xboxone`. Pode ser amostra, mas merece teste próprio antes de culpar o nome de um membro de
+  PlayStation.
+
+### Dois avisos de método
+
+- **Os ids na URL do tracker.gg são internos da Tracker Network.** Não são `personaId` nem
+  `nucleusId`, e não servem de ponte para o gametools.
+- **A coluna `platform` do nosso banco é só exibição.** O `dusales` está gravado como `psn` e a conta
+  dele tem personas `xboxone`, `ea` e `steam`, nenhuma `psn`.
+
+### Pendente
+
+Três dos quatro (`exposiitto`, `dusales`, `F4F Richard`) seguem sem solução: nenhum nome construível
+a partir do que sabemos devolve conta com dados. O nome exibido no tracker.gg funcionou em 1 de 4,
+então não é fonte confiável. O caminho é pedir o **EA ID** a cada um.
+
+---
+
 ## Anexo: endpoints do BF6 disponíveis
 
 A API expõe 18 rotas para BF6. As que interessam a este projeto:

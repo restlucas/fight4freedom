@@ -45,15 +45,30 @@ export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
       "O id da plataforma não corresponde a nenhuma conta EA. Confira o id exato com o membro e corrija no cadastro — a coleta tenta de novo a cada ciclo até lá.",
     className: "border-amber-500/40 bg-amber-500/10 text-amber-300",
   },
+  never_read: {
+    text: "Conta errada?",
+    // The state that exists because its absence cost days. Four members had been
+    // failing every single cycle since registration, wearing the same badge as
+    // members whose batch merely 504'd that round — so nobody looked. Digging into
+    // them on 2026-07-28 found the cause and it was the same for all four: the
+    // `eaName` matched an EA account that exists but is not theirs, with no BF6
+    // data at all. One was fixed by the name alone (`Bravo_six762` → `F4F WISLAN`,
+    // an account with 836 matches and 315 h played).
+    //
+    // Phrased as a question because it is a strong suspicion, not a certainty: a
+    // member who genuinely owns BF6 but has never played a match looks the same.
+    title:
+      "A coleta NUNCA conseguiu ler este membro, nem uma vez. Isso não é instabilidade da fonte — essa se corrige sozinha no ciclo seguinte. Quase sempre significa que o nome EA cadastrado casou com outra conta de nome parecido, que existe mas não é dele. Peça o EA ID exato ao membro (o nome que aparece no app da EA, não o nick do clã nem a gamertag do console) e corrija no cadastro.",
+    className: "border-rose-500/40 bg-rose-500/10 text-rose-300",
+  },
   no_data: {
     text: "Sem retorno",
-    // Now reserved for members who have NEVER had stats — the ones with history
-    // are shown as syncing with a warning instead (see queries.ts `syncState`),
-    // because a failed batch and an empty profile look identical from here and
-    // labelling both as broken buried the five real cases among two dozen
-    // phantom ones.
+    // Reserved for a member who HAS been read before and now cannot be. Rarer than
+    // it looks: a failed round on someone with snapshots reads as syncing with a
+    // warning, and one who was never read at all is `never_read`. What is left is
+    // the odd middle — read successfully once, no snapshot yet, failing now.
     title:
-      "Nenhuma tentativa até agora trouxe estatísticas deste membro. Pode ser um id que casou com outra conta de mesmo nome, um perfil sem partidas de BF6, ou uma sequência de instabilidade da fonte. Confira o id com o membro se continuar assim por várias horas.",
+      "Este membro já foi lido com sucesso antes, mas as tentativas recentes voltam vazias. Pode ser instabilidade da fonte, que se resolve sozinha, ou uma conta que trocou de nome. Investigue se continuar assim por várias horas.",
     className: "border-orange-500/40 bg-orange-500/10 text-orange-300",
   },
   paused: {
@@ -91,6 +106,9 @@ export const SYNC_RETRY_NOTICE = {
  * "Fora da coleta" and "Pausado", which is the opposite of useful.
  */
 export const SYNC_STATES_BY_URGENCY: readonly MemberSyncState[] = [
+  // First, because it is the only state that never resolves on its own and the
+  // only one whose fix is known: correct the eaName.
+  "never_read",
   "identity_pending",
   "no_data",
   "waiting",

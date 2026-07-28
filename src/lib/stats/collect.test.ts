@@ -29,6 +29,10 @@ function member(nickname: string, checkedAt: string | null, index: number) {
     eaPersonaId: `persona-${index}`,
     eaNucleusId: `nucleus-${index}`,
     statsCheckedAt: checkedAt ? new Date(checkedAt) : null,
+    // A read that WORKED at some point. Defaulted to a real instant so only the
+    // tests that mean "never once" have to say so — that is the distinction
+    // `neverRead` is built on.
+    statsReadAt: new Date("2026-07-28T09:00:00Z"),
   };
 }
 
@@ -240,6 +244,55 @@ describe("collectStats time budget", () => {
     const report = await collectStats(fakeProvider());
     expect(report.deferred).toBe(0);
     expect(report.updated).toBe(8);
+  });
+});
+
+describe("collectStats neverRead", () => {
+  it("names members who have NEVER been read, separately from the noData count", async () => {
+    // The signal that was missing until 2026-07-28. Four members had been failing
+    // every cycle since registration, indistinguishable inside `noData` from
+    // members whose batch merely 504'd that round — so nobody investigated, and
+    // the cause turned out to be one an admin can fix in a minute: `eaName` bound
+    // to a coincidentally-named EA account with no BF6 data.
+    const semLeitura = { ...member("NuncaLido", "2026-07-28T08:00:00Z", 1), statsReadAt: null };
+    const comLeitura = member("JaLido", "2026-07-28T08:00:00Z", 2);
+    db.member.findMany.mockResolvedValue([semLeitura, comLeitura]);
+    const provider = fakeProvider();
+    // A response that DID come back, with neither member in it — the shape of an
+    // empty profile, not of a dead request (which would return an empty Map and
+    // go to a retry round instead).
+    provider.fetchStats = vi.fn(async () => new Map([["persona-outro", rawStats(1)]]));
+
+    const report = await collectStats(provider);
+
+    expect(report.noData).toBe(2);
+    // Only the one that never worked. The other is a bad round and needs nobody.
+    expect(report.neverRead).toEqual(["NuncaLido"]);
+  });
+
+  it("stays empty when every member has been read at some point", async () => {
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => new Map());
+
+    const report = await collectStats(provider);
+
+    expect(report.noData).toBe(1);
+    expect(report.neverRead).toEqual([]);
+  });
+
+  it("catches a never-read member whose batch died in every round too", async () => {
+    // Same member, other path: the request never came back at all, so they fall
+    // out of the last retry round instead of out of a batch response. Both paths
+    // have to report them, or the signal depends on how the failure happened.
+    const semLeitura = { ...member("NuncaLido", null, 1), statsReadAt: null };
+    db.member.findMany.mockResolvedValue([semLeitura]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => new Map());
+
+    const report = await collectStats(provider);
+
+    expect(report.neverRead).toEqual(["NuncaLido"]);
   });
 });
 

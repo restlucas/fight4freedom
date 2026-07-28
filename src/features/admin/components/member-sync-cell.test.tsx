@@ -43,6 +43,7 @@ describe("state labels", () => {
     ["ok", "Sincronizando"],
     ["waiting", "Aguardando 1ª leitura"],
     ["identity_pending", "ID não encontrado"],
+    ["never_read", "Conta errada?"],
     ["no_data", "Sem retorno"],
     ["paused", "Pausado"],
     ["off", "Fora da coleta"],
@@ -61,18 +62,36 @@ describe("state labels", () => {
     expect(await screen.findByText(/não corresponde a nenhuma conta EA/i)).toBeInTheDocument();
   });
 
-  it("does not accuse the id when the cause is unknown", async () => {
-    // Reserved now for members who never had stats at all. Even then the cause
-    // is a guess — a failed batch and an empty profile look identical from here
-    // — so the copy lists the possibilities instead of picking one.
+  it("tells the admin what to fix when a member was NEVER read", async () => {
+    // The state that exists because its absence cost days: four members had been
+    // failing every cycle since registration, wearing the same badge as members
+    // whose batch merely 504'd that round, so nobody looked. The copy has to name
+    // the cause (wrong EA account) AND the exact field to ask the member for,
+    // because "EA ID" is not the clan nick and not the console gamertag — which is
+    // precisely the confusion that produced all four.
     const user = userEvent.setup();
-    renderCell({ state: "no_data" });
+    renderCell({ state: "never_read", readAt: null });
+
+    await user.hover(screen.getByRole("button", { name: /Conta errada\?: o que significa/i }));
+
+    const explanation = await screen.findByText(/NUNCA conseguiu ler/i);
+    expect(explanation.textContent).toMatch(/não é instabilidade da fonte/i);
+    expect(explanation.textContent).toMatch(/EA ID/i);
+    expect(explanation.textContent).toMatch(/não o nick do clã nem a gamertag/i);
+  });
+
+  it("does not accuse the account when the member HAS been read before", async () => {
+    // The middle case, and the reason `no_data` still exists: read successfully at
+    // some point, failing now. That is a source problem or a renamed account, not
+    // a wrong binding, so the copy must not send an admin hunting an id.
+    const user = userEvent.setup();
+    renderCell({ state: "no_data", readAt: "2026-07-28T09:00:00.000Z" });
 
     await user.hover(screen.getByRole("button", { name: /Sem retorno: o que significa/i }));
 
-    const explanation = await screen.findByText(/Nenhuma tentativa até agora/i);
+    const explanation = await screen.findByText(/já foi lido com sucesso antes/i);
     expect(explanation.textContent).toMatch(/instabilidade da fonte/i);
-    expect(explanation.textContent).toMatch(/perfil sem partidas/i);
+    expect(explanation.textContent).not.toMatch(/EA ID/i);
   });
 
   it("says nothing extra when the badge is already the whole story", () => {

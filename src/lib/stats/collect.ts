@@ -78,6 +78,19 @@ export type CollectReport = {
   retriedBatches: number;
   /** Members a retry round rescued. The retry's whole justification, measurable. */
   recoveredByRetry: number;
+  /**
+   * Members who ended the run with no data AND have never been read successfully,
+   * not once — `statsReadAt` is null. Nicknames, because this list is meant to be
+   * read by a human in the worker log.
+   *
+   * Separated from `noData` because the two ask for different actions and looked
+   * identical until 2026-07-28. A member with history whose batch 504'd is a bad
+   * round and needs nothing. A member who has NEVER been read is almost always
+   * bound to the wrong EA account — the name matched some account, just not
+   * theirs — and no number of cycles will fix that. Four of them sat in `noData`
+   * for days, indistinguishable from transient failures.
+   */
+  neverRead: string[];
   members: { id: string; nickname: string; outcome: MemberOutcome }[];
 };
 
@@ -183,6 +196,9 @@ export async function collectStats(
       // When we last TRIED this member — the queue order. See the sort below for
       // why this is not the snapshot date.
       statsCheckedAt: true,
+      // When a read last WORKED. Null after a run that failed means "never once",
+      // which is the signal for `neverRead` — see its field in CollectReport.
+      statsReadAt: true,
     },
   });
 
@@ -215,6 +231,7 @@ export async function collectStats(
     roundsRun: 0,
     retriedBatches: 0,
     recoveredByRetry: 0,
+    neverRead: [],
     members: [],
   };
   if (members.length === 0) return report;
@@ -346,8 +363,13 @@ export async function collectStats(
       if (!raw) {
         // Absent from a response that DID come back: the source has nothing for
         // this player. Settled here and now, never queued for a retry round.
+        //
+        // This is where a wrong `eaName` lands, and it is the common case — the
+        // account exists, so the response includes it, just empty. `isEmptyProfile`
+        // in ./gametools.ts logs the persona and says what to check.
         report.noData += 1;
         noDataIds.push(member.id);
+        if (member.statsReadAt === null) report.neverRead.push(member.nickname);
         report.members.push({
           id: member.id,
           nickname: member.nickname,
@@ -467,6 +489,9 @@ export async function collectStats(
     report.noData += pool.length;
     for (const member of pool) {
       report.members.push({ id: member.id, nickname: member.nickname, outcome: "no-data" });
+      // Never read once, across every cycle this member has existed for. See the
+      // `neverRead` field: this is the shape of a wrong `eaName`, not bad luck.
+      if (member.statsReadAt === null) report.neverRead.push(member.nickname);
     }
     await markStatus(
       pool.map((m) => m.id),

@@ -157,6 +157,13 @@ const playerStatsSchema = z
      * is treated as no-data rather than as zero.
      */
     dividedKills: z.object({ human: z.number() }).loose().nullish(),
+    /**
+     * Top-level play time. Read ONLY by `isEmptyProfile` — never as a stat, since
+     * the top level mixes buckets (§5.3) and the counters we keep come from
+     * `gm_all`. Defaulted because a completely empty profile omits it, and that
+     * omission is exactly the case the predicate exists to catch.
+     */
+    secondsPlayed: z.number().default(0),
   })
   .loose();
 
@@ -247,7 +254,47 @@ export function isIncoherentPayload(
  * count, or when the payload contradicts itself — the collector skips those
  * instead of recording zeros, and retries on the next run.
  */
+/**
+ * Whether the account has NO Battlefield 6 record at all.
+ *
+ * Not "a fresh player with zeros" — a fresh player still gets the structure, with
+ * `gameModeGroups` and the five `classes[]` rows filled with zeros. This is the
+ * shape of a response where EA has nothing to say about the account: both lists
+ * empty and no time played.
+ *
+ * It matters because it has ONE likely cause, and it is not the source being
+ * flaky: **the bound account is not the member's**. Investigated on 2026-07-28 for
+ * the four members who had never once been read — every persona of their accounts
+ * came back like this, while `/bf6/profile/` returned no rank and no badges. One
+ * of the four was then resolved by fixing `eaName` (`Bravo_six762` → `F4F WISLAN`),
+ * and the correct account had 65.533 kills across 836 matches.
+ *
+ * A name search that finds A account is not a name search that finds THE account:
+ * `pickIdentity` only disambiguates between several candidates, so a single
+ * coincidentally-named account binds silently and is retried forever.
+ */
+export function isEmptyProfile(player: GametoolsPlayer): boolean {
+  return (
+    player.gameModeGroups.length === 0 &&
+    player.classes.length === 0 &&
+    (player.secondsPlayed ?? 0) === 0
+  );
+}
+
 export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity) | null {
+  // Checked before anything else so the log names the actual cause. Falling
+  // through to the "sem dividedKills.human" warning below would describe a
+  // missing field, when the truth is that the whole profile is absent — and that
+  // difference is what separates "retry next cycle" from "fix the eaName".
+  if (isEmptyProfile(player)) {
+    console.warn(
+      `[stats] persona ${player.id} (conta ${player.userId}) NAO TEM NENHUM DADO DE BF6: ` +
+        `sem gameModeGroups, sem classes, zero tempo jogado. Quase sempre significa que o ` +
+        `eaName do membro casou com outra conta EA de nome parecido — conferir o EA ID com ele`,
+    );
+    return null;
+  }
+
   const all = player.gameModeGroups.find((group) => group.id === "gm_all");
   if (!all) return null;
 

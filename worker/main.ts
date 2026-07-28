@@ -83,6 +83,18 @@ async function main(): Promise<void> {
     );
   }
 
+  // The one line in this log that asks for a human. Everything else here heals on
+  // the next tick; these never will, because "never read once" is the shape of an
+  // `eaName` bound to the wrong EA account, and more cycles cannot fix a wrong
+  // name. Four members sat invisible inside `noData` for days before this existed.
+  if (report.neverRead.length > 0) {
+    console.warn(
+      `[worker] ${report.neverRead.length} membro(s) NUNCA foram lidos com sucesso: ` +
+        `${report.neverRead.join(", ")} — nao e instabilidade da fonte. Conferir o EA ID ` +
+        "de cada um com o proprio membro e corrigir o eaName no painel",
+    );
+  }
+
   if (report.updated > 0) await purgeVitrineCache();
 }
 

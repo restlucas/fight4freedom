@@ -25,8 +25,10 @@ export type MemberSyncState =
   | "waiting"
   /** Last attempt read their stats. */
   | "ok"
-  /** Last attempt found no BF6 data — usually the id resolved to another account. */
+  /** Last attempt found no BF6 data, but earlier ones did — see `no_data`. */
   | "no_data"
+  /** No attempt has EVER worked. Almost always the wrong EA account. */
+  | "never_read"
   /** No EA identity: the platform id matches no EA account. */
   | "identity_pending";
 
@@ -61,6 +63,8 @@ type SyncInput = {
   statsStatus: StatsSyncStatus | null;
   /** Whether the member has ever had stats recorded. */
   hasStats: boolean;
+  /** When a read last WORKED. Null means not once, ever. */
+  statsReadAt: Date | null;
 };
 
 function syncState(m: SyncInput): MemberSyncState {
@@ -76,7 +80,22 @@ function syncState(m: SyncInput): MemberSyncState {
   // the whole batch comes back empty. Calling those 24 "Sem retorno" sent an
   // admin hunting two dozen id problems that did not exist. They read as
   // syncing, with a warning icon carrying the caveat.
-  if (m.statsStatus === "no_data") return m.hasStats ? "ok" : "no_data";
+  if (m.statsStatus === "no_data") {
+    if (m.hasStats) return "ok";
+    // NEVER read successfully, not once. Split out on 2026-07-28 because it is a
+    // different problem with a different fix, and lumping the two hid it: four
+    // members had been failing every cycle since they were registered, wearing the
+    // same badge as members whose batch merely 504'd that round. Investigating
+    // them found the cause — `eaName` bound to a coincidentally-named EA account
+    // with no BF6 data — and one was fixed by correcting the name alone
+    // (`Bravo_six762` → `F4F WISLAN`, an account with 836 matches).
+    //
+    // `statsReadAt` is the honest test for "has this ever worked", and unlike
+    // `hasStats` it does not need the member to have played: a successful read of
+    // an idle member moves it and writes no snapshot.
+    if (m.statsReadAt === null) return "never_read";
+    return "no_data";
+  }
   if (m.statsStatus === "identity_pending" || !m.eaPersonaId) return "identity_pending";
   return "waiting";
 }

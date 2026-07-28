@@ -102,6 +102,32 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   gametools esperando a EA. O que muda é o **custo** da falha, e era o custo que o teto de 60 s da
   Vercel tornava impagável (ver Deploy > Agendamento).
 
+  **"Nunca lido" separado de "sem retorno" (28/07).** Um membro que **nunca** foi lido com sucesso,
+  nem uma vez (`statsReadAt` nulo), não é o mesmo caso de um membro cujo lote falhou nesta rodada. O
+  primeiro não se resolve com mais ciclos; o segundo se resolve sozinho no próximo.
+
+  Os dois usavam o mesmo badge, e isso custou dias. Quatro membros falhavam em todo ciclo desde o
+  cadastro, indistinguíveis de falha transitória, então ninguém investigou. Quando investigamos, a
+  causa era a mesma nos quatro e tinha correção de um minuto: o `eaName` casava com uma conta EA que
+  **existe mas não é da pessoa**, sem nenhum dado de BF6. Um deles foi resolvido só corrigindo o nome
+  (`Bravo_six762` → `F4F WISLAN`, conta com 836 partidas e 315 h).
+
+  Três peças novas, todas derivadas do que já existia no banco, sem mudança de schema:
+
+  - **`isEmptyProfile`** (`gametools.ts`) reconhece a resposta de uma conta sem BF6 nenhum:
+    `gameModeGroups` vazio, `classes` vazio e zero tempo jogado. **Não** é jogador novo — esse vem
+    com a estrutura preenchida de zeros, e tratá-lo como conta errada acusaria o admin de erro a cada
+    membro que entra antes da primeira partida. O log nomeia a persona e diz o que conferir.
+  - **`report.neverRead`** lista os apelidos, e o worker emite um aviso próprio para eles. É a única
+    linha do log que pede um humano: todo o resto se cura no tick seguinte.
+  - **Estado `never_read`** no painel, badge "Conta errada?", primeiro na ordem de urgência da coluna
+    Stats. A cópia diz exatamente o que pedir ao membro: o **EA ID**, o nome que aparece no app da
+    EA, **não** o nick do clã nem a gamertag do console. Foi precisamente essa confusão que produziu
+    os quatro casos.
+
+  Por que `statsReadAt` e não `hasStats`: um membro lido com sucesso que simplesmente não jogou não
+  ganha snapshot, então `hasStats` diria "nunca funcionou" sobre uma coleta que funciona.
+
   **`statsReadAt` (28/07).** Coluna nova, separada de `statsCheckedAt`. Uma responde "quando
   tentamos pela última vez", a outra "que idade tem o dado que temos". Sem as duas, um membro pode
   ser tentado a cada ciclo por horas e ainda carregar número de ontem — se toda tentativa caiu em

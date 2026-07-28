@@ -1,6 +1,13 @@
 "use client";
 
-import { CircleSlash, Loader2, PauseCircle, PlayCircle, TriangleAlert } from "lucide-react";
+import {
+  CircleAlert,
+  CircleSlash,
+  Loader2,
+  PauseCircle,
+  PlayCircle,
+  TriangleAlert,
+} from "lucide-react";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -21,6 +28,9 @@ const SYNC_ICON: Record<MemberSyncState, typeof TriangleAlert | null> = {
   ok: null,
   waiting: Loader2,
   identity_pending: TriangleAlert,
+  // A different icon on purpose: this one is not "watch out", it is "this is
+  // wrong and only a human can fix it".
+  never_read: CircleAlert,
   no_data: TriangleAlert,
   paused: PauseCircle,
   off: CircleSlash,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunk, parsePlayersPayload, pickIdentity, toRawStats } from "./gametools";
+import { chunk, isEmptyProfile, parsePlayersPayload, pickIdentity, toRawStats } from "./gametools";
 import { gametoolsPlayerFixture } from "./gametools.fixture";
 
 describe("parsePlayersPayload", () => {
@@ -151,6 +151,59 @@ describe("toRawStats", () => {
       dividedKills: { human: 12_320 },
     })[0];
     expect(toRawStats(impossible)).toBeNull();
+  });
+});
+
+describe("isEmptyProfile / account with no BF6 at all", () => {
+  const player = parsePlayersPayload(gametoolsPlayerFixture)[0];
+
+  it("flags a response with no game modes, no classes and no time played", () => {
+    // The exact shape returned for the four members who had never once been read
+    // (verified against the live API on 2026-07-28): the EA account exists, so it
+    // comes back in the response, but there is no Battlefield 6 record on it. The
+    // cause was the same for all four — `eaName` matched an account that is not
+    // theirs — and one was fixed by correcting the name alone.
+    const vazio = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      gameModeGroups: [],
+      classes: [],
+      secondsPlayed: 0,
+      dividedKills: null,
+    })[0];
+
+    expect(isEmptyProfile(vazio)).toBe(true);
+    expect(toRawStats(vazio)).toBeNull();
+  });
+
+  it("does NOT flag a genuinely fresh player, who still has the structure", () => {
+    // The distinction the predicate lives or dies on. A real player with zero
+    // kills gets `gameModeGroups` and the `classes[]` rows, filled with zeros —
+    // calling that "wrong account" would accuse an admin of a mistake every time
+    // a new member joins before their first match.
+    const novato = parsePlayersPayload({
+      ...gametoolsPlayerFixture,
+      secondsPlayed: 0,
+      gameModeGroups: [
+        {
+          ...gametoolsPlayerFixture.gameModeGroups.find((g: { id: string }) => g.id === "gm_all")!,
+          kills: 0,
+          deaths: 0,
+          matches: 0,
+          secondsPlayed: 0,
+          killDeath: 0,
+          kpm: 0,
+          winPercent: 0,
+          wins: 0,
+          losses: 0,
+        },
+      ],
+    })[0];
+
+    expect(isEmptyProfile(novato)).toBe(false);
+  });
+
+  it("does not flag the real fixture", () => {
+    expect(isEmptyProfile(player)).toBe(false);
   });
 });
 
