@@ -62,9 +62,14 @@ export type CollectReport = {
   noData: number;
   identityPending: number;
   /**
-   * Members the run did not reach before its time budget ran out. Not an error:
-   * they keep their place at the front of the queue for the next cycle, because
-   * the order is oldest-snapshot-first.
+   * Members the run never asked about, because the budget ran out first. Not an
+   * error: they are left unstamped, so their older `statsCheckedAt` puts them at
+   * the front of the next cycle's queue (the order is least-recently-TRIED first —
+   * see the sort, and never by snapshot date).
+   *
+   * Expected to be 0 on the worker profile: the first real cycle swept 75 members
+   * in 164,9 s against an 8-minute budget. A non-zero value there means the source
+   * degraded, and the worker logs a warning for exactly that.
    */
   deferred: number;
   /** Rounds that actually ran, 1..rounds.length. One means nobody needed a retry. */

@@ -110,26 +110,15 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   A linha "Última coleta de dados" no painel passou a ler `statsReadAt`; construída sobre
   `statsCheckedAt` ela anunciaria "há 1 min" no meio de um apagão completo.
 
-  **Continuação encadeada (2026-07-27) — A SAIR na virada para o worker.** Ela existe só para
-  contornar o teto de 60 s da Vercel, que o worker do Railway não tem. O código segue no ar enquanto
-  o `pg_cron` for o agendador; a remoção é o último passo da virada, depois de o worker ter rodado um
-  ciclo real (ver Deploy > Agendamento). Registro do que era e por quê:
+  **Continuação encadeada (2026-07-27) — REMOVIDA em 2026-07-28.** Existia só para contornar o teto
+  de 60 s da Vercel: uma execução que parava no orçamento com fila pendente disparava uma sucessora
+  de si mesma via `after()`, até quatro vezes, porque uma função de 60 s não varria o roster. A
+  profundidade viajava em `?chain=N`, e o `MAX_CHAIN_DEPTH` era o único freio de um endpoint que
+  chamava a si mesmo.
 
-  Uma execução que para no orçamento com fila pendente
-  **dispara a sucessora** em vez de deixar o resto do ciclo ocioso. Medido no primeiro ciclo real:
-  37 de 76 membros em 41,9 s, e depois 9 minutos parado. Sem continuação, a varredura levava 20 a
-  30 min contra um teto de frescor de ~10 min na fonte — o roster ficava duas a três vezes mais
-  velho do que precisava.
-
-  Como funciona: `after()` do Next dispara a sucessora **depois** da resposta já ter saído, porque
-  esperar por ela manteria a execução atual viva e estouraria justamente o orçamento que a
-  continuação existe para contornar. A profundidade viaja em `?chain=N` e a origem é lida do próprio
-  request, então preview e domínio custom funcionam sem URL fixa.
-
-  **Duas condições de parada, e a segunda é a que importa:** para quando `deferred` chega a zero, e
-  para no `MAX_CHAIN_DEPTH` (4) mesmo que a primeira esteja errada. Rota que chama a si mesma é o
-  único ponto do projeto sem freio externo, então o teto é o que separa cadeia de laço infinito.
-  `route.test.ts` trava as duas.
+  Funcionava, e o worker tornou o mecanismo inteiro desnecessário: o primeiro ciclo real na Railway
+  varreu **75 membros em 164,9 s com `deferred: 0`**, dentro de um orçamento de 8 min. Rota que se
+  invoca não vale ser mantida para um botão manual, então saiu junto com o `pg_cron`.
 
   A cadência de 10 min passa a 20 min quando o desenvolvimento terminar (ver a seção no fim deste
   documento).
@@ -163,12 +152,18 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ---
 
-## Status (atualizado em 2026-07-27)
+## Status (atualizado em 2026-07-28)
 
-**Fases 0 a 3.6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, o `pg_cron` dispara a
-coleta a cada 10 min, e o **roster real de 98 membros está no banco** (Fase 3.6). O ranking começa a
-contar do zero: não há histórico, e o primeiro board com pontuação aparece quando os membros
-acumularem dois snapshots no mesmo mês.
+**Fases 0 a 3.6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
+**worker do Railway** a cada 10 min (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
+membros está no banco** (Fase 3.6). O ranking começa a contar do zero: não há histórico, e o
+primeiro board com pontuação aparece quando os membros acumularem dois snapshots no mesmo mês.
+
+**Primeiro ciclo real no Railway (28/07), e é o número que fecha a Fase 3:** 75 elegíveis varridos
+em 164,9 s, `deferred: 0`, 2 rodadas, 4 lotes com 504 e **11 membros resgatados pela segunda
+rodada** — 11 que numa passada só teriam ficado sem leitura. A taxa de falha da fonte segue em 16%
+(4 de 25 lotes), coerente com os 14% medidos: o que mudou foi o custo dela, não a taxa. Sobrou 66%
+do orçamento de 8 min.
 
 O que resta antes da Fase 4:
 
@@ -975,21 +970,31 @@ Verificação local antes de subir, contra o banco real:
 pnpm worker:local
 ```
 
-#### Desligar o agendador antigo (pg_cron)
+#### Agendador antigo (pg_cron) — desligado em 2026-07-28
 
-Enquanto a virada não acontecer, o `pg_cron + pg_net` do Supabase continua chamando
-`/api/stats/collect`. **Ordem da virada:** worker rodando um ciclo real no Railway → conferir o
-relatório → `cron.unschedule` → só então remover a continuação encadeada da rota.
+A extensão `pg_cron` foi desabilitada no Supabase, o que também apaga a definição do job, então ele
+não volta sozinho. A virada seguiu a ordem: worker rodando um ciclo real → conferir o relatório →
+desligar o `pg_cron` → remover a continuação encadeada da rota.
 
-```sql
-select * from cron.job;
-select cron.unschedule('collect-bf6-stats');
-```
+Se algum dia precisar reativar (a configuração está no `<details>` abaixo), vale lembrar do detalhe
+que atrapalhava o diagnóstico: o `pg_net` tem timeout de 30 s e a rota podia levar até 60, então o
+`net._http_response` marcava `timed_out = true` em ciclos que na verdade funcionaram — o `after()`
+seguia rodando no servidor depois de o cliente desistir.
 
-Um detalhe que atrapalha o diagnóstico enquanto os dois coexistem: o `pg_net` tem timeout de 30 s e a
-rota pode levar até 60, então o `net._http_response` marca `timed_out = true` em ciclos que na
-verdade funcionaram — o `after()` segue rodando no servidor depois de o cliente desistir. Sair do
-`pg_net` elimina essa confusão junto.
+#### Como ler o log do worker
+
+Painel da Railway: **serviço → Deployments → o mais recente → Deploy Logs**, filtrando por
+`[worker]`. Pelo terminal, `railway logs` depois de `railway login` e `railway link`.
+
+O ciclo saudável abre com `[worker] ciclo iniciado` e fecha com `[worker] ciclo concluido em Xs`,
+com os contadores do relatório. Avisos `[stats] lote gametools falhou ... 504` **são esperados** — é
+a taxa de 14% da fonte, e a linha `resgatado(s)` no fim é a prova de que as rodadas recuperaram. O
+que não é esperado é `adiados` diferente de zero (fonte degradada, o worker avisa) ou um segundo
+`ciclo iniciado` no mesmo log (reinício de verdade). A Railway às vezes embaralha a ordem das linhas,
+inclusive o `Starting Container`, e isso não indica nada.
+
+Um aviso do painel de que o serviço "exited" é o comportamento correto: o worker sai com
+`process.exit(0)` de propósito.
 
 <details>
 <summary>Configuração do pg_cron (histórico, até o desligamento)</summary>
