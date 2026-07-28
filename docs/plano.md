@@ -71,16 +71,36 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
   chega** — quem uma execução não alcança é exatamente quem a próxima começa atendendo.
 
-  **Retentativa dentro da execução (28/07).** Um lote que volta **inteiramente vazio** é tentado
-  mais uma vez, na hora, se ainda houver orçamento. O vazio total é a assinatura de requisição
-  morta: o 504 derruba os 3 juntos, enquanto uma resposta boa omite só quem a fonte realmente não
-  tem. Por isso o gatilho é "o lote todo sumiu" e não "alguém sumiu" — retentar um jogador
-  genuinamente sem dados gastaria uma ida e volta por ciclo para ouvir a mesma coisa.
+  **Retentativa por RODADAS (28/07).** Cada rodada é uma passada completa sobre quem ainda está sem
+  leitura, então quem falhou só é perguntado de novo depois de o resto do roster ser varrido. Três
+  consequências, e a primeira é a que importa:
 
-  A retentativa é **dentro da execução, e só uma**, de propósito. A alternativa óbvia — segurar
-  quem falhou no início da fila até dar certo — é exatamente a fome que quebrou a varredura no dia
-  28: quem falha sempre bloquearia todo mundo atrás. Um retry limitado não tem como matar ninguém
-  de fome. `retriedBatches` e `recoveredByRetry` vão no relatório para a decisão ser medível.
+  1. **Passa tempo entre as tentativas.** O 504 é o gateway deles desistindo da EA em 15,2 s.
+     Perguntar de novo dois segundos depois faz a mesma pergunta ao mesmo caminho frio; minutos
+     depois é outra pergunta.
+  2. Todo mundo recebe a primeira tentativa o quanto antes, em vez de a fila travar atrás de um
+     lote que gasta 15,2 s duas vezes seguidas.
+  3. As rodadas finais são minúsculas, então podem gastar **um jogador por requisição**, o que isola
+     quem está realmente estourando em vez de deixá-lo derrubar dois membros sadios.
+
+  O perfil do worker é `[3, 3, 1]`: contra os 14% de falha por lote medidos, três passadas deixam
+  ~0,3% de lotes sem leitura por ciclo (0,14³), contra 14% de uma passada só.
+
+  **O que é retentável não mudou, e é carga estrutural:** só a resposta **inteiramente vazia**. O
+  vazio total é a assinatura de requisição morta (o 504 derruba os 3 juntos), enquanto uma resposta
+  boa omite apenas quem a fonte realmente não tem — retentar um jogador genuinamente sem dados
+  gastaria uma ida e volta por ciclo para ouvir a mesma coisa. Esse é resolvido na hora, como
+  `no_data`, e nunca entra na fila de retentativa.
+
+  **O status só é escrito no fim.** Um membro cuja primeira requisição morreu e cuja segunda
+  funcionou tem de aparecer uma vez, como sucesso. Gravar `no_data` por lote (a forma antiga)
+  registraria a falha primeiro e deixaria o painel acusando sync quebrado de quem está bem.
+
+  `roundsRun`, `retriedBatches` e `recoveredByRetry` vão no relatório para a decisão ser medível.
+
+  Nada disso reduz a taxa de falha — 14% das requisições continuam morrendo, porque a causa é o
+  gametools esperando a EA. O que muda é o **custo** da falha, e era o custo que o teto de 60 s da
+  Vercel tornava impagável (ver Deploy > Agendamento).
 
   **`statsReadAt` (28/07).** Coluna nova, separada de `statsCheckedAt`. Uma responde "quando
   tentamos pela última vez", a outra "que idade tem o dado que temos". Sem as duas, um membro pode
@@ -90,7 +110,12 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   A linha "Última coleta de dados" no painel passou a ler `statsReadAt`; construída sobre
   `statsCheckedAt` ela anunciaria "há 1 min" no meio de um apagão completo.
 
-  **Continuação encadeada (2026-07-27).** Uma execução que para no orçamento com fila pendente
+  **Continuação encadeada (2026-07-27) — A SAIR na virada para o worker.** Ela existe só para
+  contornar o teto de 60 s da Vercel, que o worker do Railway não tem. O código segue no ar enquanto
+  o `pg_cron` for o agendador; a remoção é o último passo da virada, depois de o worker ter rodado um
+  ciclo real (ver Deploy > Agendamento). Registro do que era e por quê:
+
+  Uma execução que para no orçamento com fila pendente
   **dispara a sucessora** em vez de deixar o resto do ciclo ocioso. Medido no primeiro ciclo real:
   37 de 76 membros em 41,9 s, e depois 9 minutos parado. Sem continuação, a varredura levava 20 a
   30 min contra um teto de frescor de ~10 min na fonte — o roster ficava duas a três vezes mais
@@ -875,8 +900,9 @@ Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só
 
 ## Deploy
 
-- **App:** Vercel. **DB/Auth/Storage:** Supabase. **Coleta de stats:** dentro do próprio app
-  (`/api/stats/collect`) — nenhuma infra nova.
+- **App:** Vercel. **DB/Auth/Storage:** Supabase. **Coleta de stats:** worker no **Railway**
+  (`worker/main.ts`), no mesmo repositório, com comando de start próprio. A rota
+  `/api/stats/collect` continua existindo como o botão "coletar agora" do painel.
 - CI do starter já roda lint → type-check → test → build + E2E; manter e rodar antes de commitar.
 
 ### Convite de admin (bootstrap)
@@ -894,10 +920,73 @@ Sem argumento ele pega o membro com cargo `admin`; passe o nick para escolher ou
 
 ### Agendamento da coleta (a cada 10 min)
 
+**Decisão (2026-07-28): worker no Railway.** O agendador em si nunca foi o problema — o teto de 60 s
+da função da Vercel era. Uma requisição que dá 504 gasta sempre 15,2 s, então dentro de 60 s não
+cabia retentativa: começar uma perto do prazo matava a função no meio da escrita, e função morta
+nunca chega no código que dispara a sucessora, o que parava a cadeia inteira. O teto não tornava as
+falhas mais raras, tornava-as **irrecuperáveis**.
+
+Alternativa considerada e descartada: subir o plano da Vercel (US$ 20/mês) elevaria o teto com uma
+configuração em vez de um serviço novo. O Railway já está contratado a US$ 5, então a conta resolveu
+sozinha.
+
+Por que **cron job** e não processo sempre ligado: a agenda fica no Railway, não num `setInterval`.
+Sem timer para manter vivo, sem processo longo para vazar, e um crash é uma execução que a plataforma
+marca como falha em vez de uma parada silenciosa. O `worker/main.ts` roda um ciclo e sai com
+`process.exit`, e o `db.$disconnect()` é obrigatório: o pool do Prisma seguraria o processo aberto, e
+cron job que não termina bloqueia a própria execução seguinte.
+
+**O que configurar no Railway:**
+
+| Item                  | Valor                                                            |
+| --------------------- | ---------------------------------------------------------------- |
+| Serviço               | novo, no **mesmo repositório** (não repo separado)                |
+| Start command         | `pnpm worker`                                                    |
+| Cron schedule         | `*/10 * * * *`                                                   |
+| `DATABASE_URL`        | mesma string da Vercel, pelo **pooler** do Supabase (porta 6543) |
+| `CRON_SECRET`         | o mesmo valor da Vercel — é o que autentica a purga de cache     |
+| `NEXT_PUBLIC_APP_URL` | URL de produção do site. **Obrigatória aqui**, ver abaixo        |
+
+Duas armadilhas de configuração, ambas de falha silenciosa:
+
+- **`NEXT_PUBLIC_APP_URL`.** No app ela tem fallback para `localhost` (o request carrega o host
+  real). No worker não há request, e com o fallback ele faria POST de purga para uma máquina
+  inexistente: a vitrine serviria número velho pelo TTL inteiro e nada falharia. Por isso
+  `serverEnv.siteUrl` é obrigatória, separada de `publicEnv.appUrl`.
+- **`NODE_ENV=production` no serviço.** Faz o `pnpm install` pular devDependencies, e aí o
+  `postinstall` (`prisma generate`) não roda e o worker quebra no import do client. O `tsx` foi
+  movido para `dependencies` porque virou dependência de runtime; o `prisma` segue em dev, então
+  **não** definir `NODE_ENV=production` (ou usar `NPM_CONFIG_PRODUCTION=false`).
+
+Verificação local antes de subir, contra o banco real:
+
+```bash
+pnpm worker:local
+```
+
+#### Desligar o agendador antigo (pg_cron)
+
+Enquanto a virada não acontecer, o `pg_cron + pg_net` do Supabase continua chamando
+`/api/stats/collect`. **Ordem da virada:** worker rodando um ciclo real no Railway → conferir o
+relatório → `cron.unschedule` → só então remover a continuação encadeada da rota.
+
+```sql
+select * from cron.job;
+select cron.unschedule('collect-bf6-stats');
+```
+
+Um detalhe que atrapalha o diagnóstico enquanto os dois coexistem: o `pg_net` tem timeout de 30 s e a
+rota pode levar até 60, então o `net._http_response` marca `timed_out = true` em ciclos que na
+verdade funcionaram — o `after()` segue rodando no servidor depois de o cliente desistir. Sair do
+`pg_net` elimina essa confusão junto.
+
+<details>
+<summary>Configuração do pg_cron (histórico, até o desligamento)</summary>
+
 A rota é agnóstica de agendador: qualquer coisa que faça um GET/POST com
-`Authorization: Bearer $CRON_SECRET` serve. Decisão: **Supabase pg_cron + pg_net** — já pagamos
-pelo Supabase, é preciso no horário e gratuito, enquanto o Vercel Cron no plano Hobby só permite
-cadência diária e o cron do GitHub Actions é impreciso e consome minutos do repo privado.
+`Authorization: Bearer $CRON_SECRET` serve. A decisão anterior foi **Supabase pg_cron + pg_net** — já
+pagávamos pelo Supabase, é preciso no horário e gratuito, enquanto o Vercel Cron no plano Hobby só
+permite cadência diária e o cron do GitHub Actions é impreciso e consome minutos do repo privado.
 
 Uma vez, no SQL Editor do Supabase (extensões `pg_cron` e `pg_net` em Database > Extensions):
 
@@ -933,6 +1022,8 @@ limit 10;
 
 `status_code` nulo com `timed_out = true` é ciclo perdido. Com `200`, o `content` traz o relatório
 por membro, que é a forma mais rápida de ver quem está em `identity-pending`.
+
+</details>
 
 **Nota de segurança:** o `CRON_SECRET` fica em texto puro no `command` do job, legível por
 qualquer um com acesso ao SQL Editor do projeto. É aceitável (só admins têm), mas se o segredo

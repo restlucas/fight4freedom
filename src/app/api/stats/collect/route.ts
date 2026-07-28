@@ -11,10 +11,9 @@
 // See MAX_CHAIN_DEPTH for why that is bounded and why the bound is the important
 // part.
 
-import { timingSafeEqual } from "node:crypto";
-
 import { after, NextResponse } from "next/server";
 
+import { isCronAuthorized } from "@/lib/auth/cron";
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { serverEnv } from "@/lib/env";
 import { collectStats } from "@/lib/stats/collect";
@@ -23,19 +22,6 @@ export const dynamic = "force-dynamic";
 // Worst case: identity backlog + 5 cold batches. Comfortably under a minute in
 // practice; the cap stops a hung upstream from holding the function forever.
 export const maxDuration = 60;
-
-function isAuthorized(request: Request): boolean {
-  let secret: string;
-  try {
-    secret = serverEnv.cronSecret;
-  } catch {
-    // Env not configured: fail closed, never open.
-    return false;
-  }
-  const received = Buffer.from(request.headers.get("authorization") ?? "");
-  const expected = Buffer.from(`Bearer ${secret}`);
-  return received.length === expected.length && timingSafeEqual(received, expected);
-}
 
 /**
  * How many times a run may hand off to a successor within one scheduler tick.
@@ -91,7 +77,7 @@ function triggerSuccessor(origin: string, nextDepth: number): void {
 }
 
 async function handleCollect(request: Request): Promise<NextResponse> {
-  if (!isAuthorized(request)) {
+  if (!isCronAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

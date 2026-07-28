@@ -15,7 +15,7 @@ const db = {
 };
 vi.mock("@/lib/db", () => ({ db }));
 
-const { collectStats } = await import("./collect");
+const { collectStats, WORKER_BUDGET_MS, WORKER_ROUNDS } = await import("./collect");
 
 /**
  * A member row shaped like the collector's select. `checkedAt` is when the
@@ -112,11 +112,7 @@ describe("collectStats batching", () => {
 
     await collectStats(provider);
 
-    expect(provider.batches.map((b) => b.length)).toEqual([
-      STATS_BATCH_SIZE,
-      STATS_BATCH_SIZE,
-      1,
-    ]);
+    expect(provider.batches.map((b) => b.length)).toEqual([STATS_BATCH_SIZE, STATS_BATCH_SIZE, 1]);
   });
 
   it("persists each batch as it arrives, not once at the end", async () => {
@@ -352,9 +348,7 @@ describe("collectStats sync status", () => {
     // in a failed batch — without readAt, nothing in the database says so.
     db.member.findMany.mockResolvedValue([member("Ana", null, 1), member("Beto", null, 2)]);
     const provider = fakeProvider();
-    provider.fetchStats = vi.fn(async (players) =>
-      new Map([[players[0].personaId, rawStats(10)]]),
-    );
+    provider.fetchStats = vi.fn(async (players) => new Map([[players[0].personaId, rawStats(10)]]));
 
     await collectStats(provider);
 
@@ -401,8 +395,9 @@ describe("collectStats batch retry", () => {
       Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
     );
     const provider = fakeProvider();
-    provider.fetchStats = vi.fn(async (players: PlayerIdentity[]) =>
-      new Map(players.slice(1).map((p, i) => [p.personaId, rawStats(100 + i)])),
+    provider.fetchStats = vi.fn(
+      async (players: PlayerIdentity[]) =>
+        new Map(players.slice(1).map((p, i) => [p.personaId, rawStats(100 + i)])),
     );
 
     const report = await collectStats(provider);
@@ -427,6 +422,101 @@ describe("collectStats batch retry", () => {
     expect(provider.fetchStats).toHaveBeenCalledTimes(2);
     expect(report.recoveredByRetry).toBe(0);
     expect(report.noData).toBe(STATS_BATCH_SIZE);
+  });
+
+  it("retries in ROUNDS, and the last one asks a single player per request", async () => {
+    // The reason the worker profile ends in a 1: by the third pass the pool is
+    // tiny, so it can afford to isolate whoever is actually timing out instead of
+    // letting them take two healthy members down with them for a third time.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    let round = 0;
+    provider.fetchStats = vi.fn(async (players: PlayerIdentity[]) => {
+      provider.batches.push(players);
+      round += 1;
+      // Both grouped passes die; only the one-at-a-time pass gets through.
+      if (round <= 2) return new Map<string, RawStats>();
+      return new Map(players.map((p, i) => [p.personaId, rawStats(100 + i)]));
+    });
+
+    const report = await collectStats(provider, {
+      budgetMs: WORKER_BUDGET_MS,
+      rounds: WORKER_ROUNDS,
+    });
+
+    expect(provider.batches.map((b) => b.length)).toEqual([
+      STATS_BATCH_SIZE, // round 1
+      STATS_BATCH_SIZE, // round 2
+      1, // round 3, one request per member
+      1,
+      1,
+    ]);
+    expect(report.roundsRun).toBe(3);
+    expect(report.noData).toBe(0);
+    expect(report.updated).toBe(STATS_BATCH_SIZE);
+  });
+
+  it("never reports a member a later round rescued as no-data", async () => {
+    // The whole point of deferring the status write: a member whose first request
+    // died and whose second worked must appear once, as a success. Stamping
+    // `no_data` per batch (the old shape) would have written the failure first and
+    // left the panel showing a broken sync for a member who is fine.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    let call = 0;
+    provider.fetchStats = vi.fn(async (players: PlayerIdentity[]) => {
+      call += 1;
+      if (call === 1) return new Map<string, RawStats>();
+      return new Map(players.map((p, i) => [p.personaId, rawStats(100 + i)]));
+    });
+
+    const report = await collectStats(provider);
+
+    expect(report.members.map((m) => m.outcome)).not.toContain("no-data");
+    const statuses = db.member.updateMany.mock.calls
+      .map(([a]) => a?.data?.statsStatus)
+      .filter(Boolean);
+    expect(statuses).not.toContain("no_data");
+  });
+
+  it("reports a single round when the first pass reads everyone", async () => {
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE * 2 }, (_, i) => member(`M${i}`, null, i)),
+    );
+
+    const report = await collectStats(fakeProvider());
+
+    expect(report.roundsRun).toBe(1);
+    expect(report.retriedBatches).toBe(0);
+  });
+
+  it("counts a member a RETRY round could not reach as no-data, not deferred", async () => {
+    // The distinction the queue depends on. `deferred` means "never asked about",
+    // and those members are left unstamped so their older `statsCheckedAt` floats
+    // them to the front next cycle. A member already asked once, whose request
+    // died, is a reading we owe — recording that as `deferred` would claim we
+    // never tried and would hide a real failure from the panel.
+    const total = STATS_BATCH_SIZE * 2;
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: total }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => {
+      clock += 20_000; // two batches fit the 45 s budget, the third does not
+      return new Map<string, RawStats>();
+    });
+
+    const report = await collectStats(provider);
+
+    // Both batches of round 1, then one batch of round 2 before the clock is up.
+    expect(provider.fetchStats).toHaveBeenCalledTimes(3);
+    expect(report.roundsRun).toBe(2);
+    expect(report.deferred).toBe(0);
+    expect(report.noData).toBe(total);
   });
 
   it("skips the retry when the budget is already spent", async () => {

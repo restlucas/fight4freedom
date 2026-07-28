@@ -57,6 +57,19 @@ export const serverEnv = {
   get cronSecret(): string {
     return required("CRON_SECRET", process.env.CRON_SECRET);
   },
+  /**
+   * Absolute origin of the site, REQUIRED — unlike `publicEnv.appUrl`, which
+   * falls back to localhost.
+   *
+   * That fallback is right inside the app (a request carries the real host, see
+   * src/lib/app-url.ts) and wrong outside it. The Railway worker has no request
+   * to derive it from and must call the site to purge the stats cache; with the
+   * fallback it would quietly POST to a machine that does not exist and the
+   * vitrine would serve stale numbers for the whole TTL, with nothing failing.
+   */
+  get siteUrl(): string {
+    return required("NEXT_PUBLIC_APP_URL", process.env.NEXT_PUBLIC_APP_URL);
+  },
   /** Whether medal artwork can be uploaded. The panel degrades without it. */
   get storageConfigured(): boolean {
     return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL);

@@ -1,4 +1,10 @@
-// The scheduled collection run. Called by /api/stats/collect every 10 minutes.
+// The scheduled collection run.
+//
+// TWO CALLERS, and the difference between them is only how much clock they hand
+// over. The Railway worker (worker/main.ts) runs the real cycle every 10 minutes
+// with minutes to spend; /api/stats/collect is the panel's "collect now" button,
+// capped by the function's 60 s. Everything else about the run is identical, which
+// is why the profile is an argument (see CollectOptions) and not a second code path.
 //
 // Lifecycle (decided with the clan owner, 2026-07-26): a freshly registered
 // member is NOT collected. They enter the next run only after claiming their
@@ -12,21 +18,13 @@
 // The run is deliberately boring and idempotent:
 //   1. resolve missing EA identities (a few per run, so a big backlog cannot
 //      blow the request budget — the rest heal on the next runs);
-//   2. fetch stats in batches of STATS_BATCH_SIZE, PERSISTING EACH BATCH;
+//   2. fetch stats in ROUNDS, PERSISTING EACH BATCH (see the rounds loop);
 //   3. write a snapshot only for members whose counters moved (nobody played →
 //      no rows). A lost run is not an incident; the next one catches up.
 //
-// TIME BUDGET, and why every line of it matters
-//
-// The route allows 60 s (`maxDuration`). Inside that, measured 2026-07-27:
-//   - one identity lookup costs ~1 s, and up to 10 run per cycle → up to ~10 s;
-//   - one batch of 5 players costs ~4.5 s → ~7 batches, ~35 members, in what is
-//     left of RUN_BUDGET_MS.
-//
-// So a roster of ~100 takes two or three cycles to sweep, not one. That is why the
-// queue is ordered by staleness and why each batch is written as it arrives: the
-// members a run cannot reach are the ones the next run starts with, and nothing
-// already downloaded is thrown away when the clock runs out.
+// The queue is ordered by staleness and every batch is written as it arrives, so a
+// run that stops early keeps everything it downloaded and the next run starts with
+// exactly the members this one could not reach.
 
 import type { Prisma, StatsSyncStatus } from "@prisma/client";
 
@@ -34,7 +32,7 @@ import { db } from "@/lib/db";
 
 import { chunk, gametoolsProvider, STATS_BATCH_SIZE } from "./gametools";
 import { eaLookupName } from "./identity";
-import type { StatsProvider } from "./provider";
+import type { RawStats, StatsProvider } from "./provider";
 import { hasNewActivity } from "./snapshots";
 
 /**
@@ -69,27 +67,61 @@ export type CollectReport = {
    * the order is oldest-snapshot-first.
    */
   deferred: number;
-  /** Batches that came back completely empty and were tried a second time. */
+  /** Rounds that actually ran, 1..rounds.length. One means nobody needed a retry. */
+  roundsRun: number;
+  /** Requests issued by the retry rounds — everything after the first pass. */
   retriedBatches: number;
-  /** Members the retry rescued. The retry's whole justification, measurable. */
+  /** Members a retry round rescued. The retry's whole justification, measurable. */
   recoveredByRetry: number;
   members: { id: string; nickname: string; outcome: MemberOutcome }[];
 };
 
+/** How much clock and how many passes a run gets. See the two presets below. */
+export type CollectOptions = {
+  /** Wall-clock budget. No new request starts once it is spent. */
+  budgetMs?: number;
+  /**
+   * Batch size of each pass over the members still without data, so the LENGTH of
+   * this array is the attempt count. See the rounds loop for why passes beat
+   * retrying a batch on the spot, and why the last one is one player per request.
+   */
+  rounds?: number[];
+};
+
 /**
- * Wall-clock budget for one run, against the route's `maxDuration = 60`.
+ * ROUTE PROFILE — the panel's "collect now" button, bounded by `maxDuration = 60`.
  *
- * The arithmetic that forces this: ~98 eligible members at 5 per request is ~20
- * requests, and a request costs ~4.5 s, so a full sweep wants ~80 s. The function
- * would be killed at 60 s. Stopping at 45 s leaves room to finish the batch in
- * flight, write it, and return a report instead of dying mid-call.
+ * 45 s, not 60: a request that 504s always takes ~15,2 s (the source's gateway
+ * clock), so a run allowed to start one at 59 s would be killed mid-write instead
+ * of returning a report. Two passes are declared, and on a full roster the second
+ * simply never starts — the budget is gone. That is deliberate: on a small manual
+ * run there IS room for it, and the loop only spends what it has.
  *
- * Everyone is still attempted every cycle (clan decision, 2026-07-27: stats stay
- * fresh). What changes is that a sweep may span two cycles, and because the queue
- * is ordered by staleness, the members a run could not reach are exactly the ones
- * the next run starts with.
+ * A roster of ~99 does not fit here at all, and no longer needs to. Whatever this
+ * profile cannot reach is not lost, it is just left for the worker's next cycle.
  */
-const RUN_BUDGET_MS = 45_000;
+export const ROUTE_BUDGET_MS = 45_000;
+export const ROUTE_ROUNDS = [STATS_BATCH_SIZE, STATS_BATCH_SIZE];
+
+/**
+ * WORKER PROFILE — the real cycle, on Railway, with no function limit.
+ *
+ * 8 minutes against a 10-minute schedule. The ceiling is not there to save time,
+ * it is there so a hung upstream can never leave two runs overlapping: a run that
+ * cannot finish in 8 exits and the next tick starts clean.
+ *
+ * 8 and not 10 because the budget bounds when a request may START, not when it
+ * ends. `startedAt` is taken before identity resolution, so the whole run is
+ * inside it, and the only overrun possible is the request in flight when the clock
+ * expires — capped at BATCH_TIMEOUT_MS (30 s) by the provider. Worst case is
+ * therefore ~8,5 min, comfortably inside the tick.
+ *
+ * The measured sweep is far below it. At 2,22 s per member read (lote 3,
+ * 2026-07-28) a 99-member pass is ~3,7 min, and the retry rounds are tiny by
+ * construction — ~14 members in the second, ~2 in the third.
+ */
+export const WORKER_BUDGET_MS = 8 * 60_000;
+export const WORKER_ROUNDS = [STATS_BATCH_SIZE, STATS_BATCH_SIZE, 1];
 
 /**
  * Records the outcome of an attempt against a set of members.
@@ -117,10 +149,9 @@ async function markStatus(memberIds: string[], status: StatsSyncStatus): Promise
 
 export async function collectStats(
   provider: StatsProvider = gametoolsProvider,
+  { budgetMs = ROUTE_BUDGET_MS, rounds = ROUTE_ROUNDS }: CollectOptions = {},
 ): Promise<CollectReport> {
   const startedAt = Date.now();
-  /** Members the fetch loop has already been through, for the deferred count. */
-  let handled = 0;
 
   const members = await db.member.findMany({
     // The eligibility rule — see the file header.
@@ -176,6 +207,7 @@ export async function collectStats(
     noData: 0,
     identityPending: 0,
     deferred: 0,
+    roundsRun: 0,
     retriedBatches: 0,
     recoveredByRetry: 0,
     members: [],
@@ -185,9 +217,7 @@ export async function collectStats(
   // --- 1. Resolve missing EA identities (bounded per run) -------------------
   // A member with no EA name and no platform id has nothing to search for, so
   // they stay pending until an admin or the member fills it in.
-  const unresolved = members.filter(
-    (m) => eaLookupName(m) && (!m.eaPersonaId || !m.eaNucleusId),
-  );
+  const unresolved = members.filter((m) => eaLookupName(m) && (!m.eaPersonaId || !m.eaNucleusId));
   // `members` is already ordered least-recently-tried first, so this slice is the
   // stalest ones — and because only these get their `statsCheckedAt` moved below,
   // the next run picks up where this one stopped instead of restarting the list.
@@ -270,57 +300,47 @@ export async function collectStats(
   });
   const latestByMember = new Map(latestRows.map((row) => [row.memberId, row]));
 
-  // --- 3. Fetch and PERSIST batch by batch ----------------------------------
+  // --- 3. Fetch in ROUNDS, persisting each batch -----------------------------
   //
-  // The write used to be a single createMany after every batch had been fetched,
-  // which was fine for two members and became all-or-nothing for a hundred: a run
-  // killed at the function's 60 s limit threw away everything it had already
-  // downloaded. Persisting per batch means a run that stops early still keeps
-  // every member it reached.
-  for (const slice of chunk(collectable, STATS_BATCH_SIZE)) {
-    if (Date.now() - startedAt > RUN_BUDGET_MS) {
-      // Out of time. The remaining members are the stalest, so the next cycle
-      // picks them up first — see the sort above.
-      report.deferred = collectable.length - handled;
-      break;
-    }
+  // ROUND-BASED RETRY. Each pass covers everyone still without data, so a member
+  // whose request died is only asked again after the rest of the roster has been
+  // swept. Three things come out of that, and the first is the one that matters:
+  //
+  //  1. TIME PASSES between attempts. A 504 is the source's gateway giving up on
+  //     EA at ~15,2 s. Asking again two seconds later asks the same cold path the
+  //     same question; asking minutes later is a different question.
+  //  2. Everyone gets a first attempt as early as possible, instead of the queue
+  //     stalling behind one batch that spends 15,2 s twice in a row.
+  //  3. The later passes are tiny, so they can afford ONE player per request,
+  //     which isolates whoever is actually timing out instead of letting them
+  //     take two healthy members down with them.
+  //
+  // Against the measured 14 % per-batch failure rate, three passes leave ~0,3 %
+  // of batches unread per cycle (0,14³), against 14 % for a single pass.
+  //
+  // WHAT COUNTS AS RETRYABLE is unchanged, and load-bearing: only a WHOLE empty
+  // response. That emptiness is the signature of a dead request, whereas a
+  // response missing one of three players means that player has no BF6 data —
+  // re-asking them would buy a round trip every cycle to be told the same thing.
+  //
+  // Writes stay per batch, so a run that stops early keeps everything it read.
 
-    const identities = slice.map((m) => ({
-      personaId: m.eaPersonaId!,
-      nucleusId: m.eaNucleusId!,
-    }));
-    let stats = await provider.fetchStats(identities);
-
-    // ONE immediate retry, and only when the ENTIRE batch came back empty.
-    //
-    // That emptiness is the signature of a failed request: a 504 makes the
-    // provider return nothing for the whole batch, while a successful response
-    // omits only the players the source genuinely has no data for. So "all
-    // three missing" means the request died; "one of three missing" means that
-    // one player has no BF6 data, and retrying them would burn a round trip
-    // every cycle to be told the same thing.
-    //
-    // Retrying here rather than by re-queuing is what keeps this safe: the
-    // queue is ordered by `statsCheckedAt`, and holding a failed member at the
-    // front until they succeed is exactly the starvation that broke the sweep
-    // on 2026-07-28. A bounded retry inside the run cannot starve anyone.
-    if (stats.size === 0 && Date.now() - startedAt <= RUN_BUDGET_MS) {
-      report.retriedBatches += 1;
-      stats = await provider.fetchStats(identities);
-      if (stats.size > 0) report.recoveredByRetry += stats.size;
-    }
-
-    handled += slice.length;
-
+  /** Persists one successful batch and returns how many members it read. */
+  const persistBatch = async (
+    slice: typeof collectable,
+    stats: Map<string, RawStats>,
+  ): Promise<number> => {
     const rows: Prisma.StatSnapshotCreateManyInput[] = [];
-    // Outcome per member in this batch, so the panel can tell a working sync
-    // from a broken one. `ok` covers both "counters moved" and "nothing new".
+    // Outcome per member, so the panel can tell a working sync from a broken one.
+    // `ok` covers both "counters moved" and "nothing new".
     const okIds: string[] = [];
     const noDataIds: string[] = [];
 
     for (const member of slice) {
       const raw = stats.get(member.eaPersonaId!);
       if (!raw) {
+        // Absent from a response that DID come back: the source has nothing for
+        // this player. Settled here and now, never queued for a retry round.
         report.noData += 1;
         noDataIds.push(member.id);
         report.members.push({
@@ -381,6 +401,72 @@ export async function collectStats(
       await db.statSnapshot.createMany({ data: rows });
     }
     await Promise.all([markStatus(okIds, "ok"), markStatus(noDataIds, "no_data")]);
+    return okIds.length;
+  };
+
+  /** Members still owed a reading. Shrinks with every round. */
+  let pool = collectable;
+  let outOfTime = false;
+
+  for (let round = 0; round < rounds.length; round += 1) {
+    if (pool.length === 0 || outOfTime) break;
+    report.roundsRun = round + 1;
+
+    /** Whose request died this round — the next round's pool. */
+    const failed: typeof collectable = [];
+    const batches = chunk(pool, rounds[round]);
+
+    for (let i = 0; i < batches.length; i += 1) {
+      if (Date.now() - startedAt > budgetMs) {
+        outOfTime = true;
+        const unreached = batches.slice(i).flat();
+        if (round === 0) {
+          // Never asked about at all. Left UNSTAMPED on purpose: the older
+          // `statsCheckedAt` is exactly what floats them to the front of the
+          // next cycle's queue.
+          report.deferred = unreached.length;
+        } else {
+          // Already asked once and it failed, so they are a reading we owe, not
+          // a member we skipped. They fall through to `no_data` below.
+          failed.push(...unreached);
+        }
+        break;
+      }
+
+      const slice = batches[i];
+      if (round > 0) report.retriedBatches += 1;
+
+      const stats = await provider.fetchStats(
+        slice.map((m) => ({ personaId: m.eaPersonaId!, nucleusId: m.eaNucleusId! })),
+      );
+
+      // The whole response came back empty: the request died, nothing was
+      // learned about anyone in it. Hand them to the next round untouched —
+      // no status write, so a rescued member never shows up as a failure.
+      if (stats.size === 0) {
+        failed.push(...slice);
+        continue;
+      }
+
+      const read = await persistBatch(slice, stats);
+      if (round > 0) report.recoveredByRetry += read;
+    }
+
+    pool = failed;
+  }
+
+  // Out of rounds (or out of clock) with members still unread. Recorded as
+  // `no_data` rather than left silent: `statsCheckedAt` has to move so the queue
+  // rotates, and `statsReadAt` has to stay put so the staleness stays visible.
+  if (pool.length > 0) {
+    report.noData += pool.length;
+    for (const member of pool) {
+      report.members.push({ id: member.id, nickname: member.nickname, outcome: "no-data" });
+    }
+    await markStatus(
+      pool.map((m) => m.id),
+      "no_data",
+    );
   }
 
   return report;
