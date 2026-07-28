@@ -1,4 +1,5 @@
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { render, screen } from "@/test-utils";
@@ -73,6 +74,49 @@ describe("last attempt", () => {
   it("says nothing when there was never an attempt", () => {
     renderCell({ state: "waiting", checkedAt: null });
     expect(screen.queryByText(/^há /)).not.toBeInTheDocument();
+  });
+
+  it("keeps counting while the panel stays open", async () => {
+    // The label used to be computed once at render, so an admin watching the
+    // collector work saw "há 1 min" freeze while the real gap grew to twenty.
+    // A frozen relative timestamp is worse than none: it reads as fresh.
+    vi.useFakeTimers();
+    try {
+      const start = new Date("2026-07-28T12:00:00Z").getTime();
+      vi.setSystemTime(start);
+      renderCell({ state: "ok", checkedAt: new Date(start - 60_000).toISOString() });
+      expect(screen.getByText("há 1 min")).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(10 * 60_000);
+      });
+
+      expect(screen.getByText("há 11 min")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the shared clock once the last cell unmounts", () => {
+    // One module-level timer serves every row. If unmounting the table left it
+    // running, navigating away from the panel would keep a timer alive for the
+    // rest of the session.
+    vi.useFakeTimers();
+    try {
+      const { unmount } = render(
+        <MemberSyncCell
+          memberId="m1"
+          nickname="Panzer"
+          sync={sync({ checkedAt: new Date().toISOString() })}
+          onChanged={vi.fn()}
+        />,
+      );
+      expect(vi.getTimerCount()).toBe(1);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

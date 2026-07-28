@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { toggleMemberStatsAction } from "../lib/actions";
@@ -23,9 +24,18 @@ const SYNC_ICON: Record<MemberSyncState, typeof TriangleAlert | null> = {
   off: CircleSlash,
 };
 
-/** "há 4 min", "há 2 h", "há 3 d" — enough precision to spot a stalled sync. */
-function timeAgo(iso: string): string {
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+/** Placeholder that holds the line's height. Named because a bare non-breaking
+ *  space in the JSX is invisible in a diff and gets "tidied" away. */
+const NBSP = "\u00A0";
+
+/**
+ * "há 4 min", "há 2 h", "há 3 d" — enough precision to spot a stalled sync.
+ *
+ * `now` is passed in rather than read from the clock so the label can tick with
+ * the shared timer (and so this stays a pure function to test).
+ */
+function timeAgo(iso: string, now: number): string {
+  const minutes = Math.round((now - new Date(iso).getTime()) / 60_000);
   if (minutes < 1) return "agora";
   if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.round(minutes / 60);
@@ -42,6 +52,7 @@ interface MemberSyncCellProps {
 
 export function MemberSyncCell({ memberId, nickname, sync, onChanged }: MemberSyncCellProps) {
   const [pending, startTransition] = useTransition();
+  const now = useNow();
   const label = SYNC_LABEL[sync.state];
   const Icon = SYNC_ICON[sync.state];
 
@@ -96,9 +107,15 @@ export function MemberSyncCell({ memberId, nickname, sync, onChanged }: MemberSy
           {label.text}
         </Badge>
         {/* The timestamp is what turns a badge into a diagnosis: "Sincronizando"
-            with a two-day-old check means the collector stopped reaching them. */}
+            with a two-day-old check means the collector stopped reaching them.
+            It ticks with the shared clock, so an admin who leaves the panel open
+            is never reading a frozen "há 1 min". The non-breaking space holds
+            the line's height for the one paint before the clock starts, which
+            keeps ~100 rows from shifting on hydration. */}
         {sync.checkedAt ? (
-          <p className="text-muted-foreground mt-0.5 text-[11px]">{timeAgo(sync.checkedAt)}</p>
+          <p className="text-muted-foreground mt-0.5 text-[11px]">
+            {now === null ? NBSP : timeAgo(sync.checkedAt, now)}
+          </p>
         ) : null}
       </div>
     </div>
