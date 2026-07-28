@@ -48,23 +48,45 @@ function fieldErrorsOf(error: {
  * (src/lib/stats/collect.ts). A name matching several distinct accounts also
  * resolves to null — see pickIdentity in src/lib/stats/gametools.ts.
  */
-async function resolveEaIdentity(name: string | null): Promise<ResolvedIdentity | null> {
+async function resolveEaIdentity(
+  name: string | null,
+  username: string | null,
+): Promise<ResolvedIdentity | null> {
   if (!name) return null;
   try {
-    return await gametoolsProvider.searchPlayer(name);
+    return await gametoolsProvider.searchPlayer(name, username);
   } catch {
     return null;
   }
 }
 
-/** The identity columns to write, or nothing when the lookup did not resolve. */
-function identityData(identity: ResolvedIdentity | null) {
+/**
+ * The identity columns to write, or nothing when the lookup did not resolve.
+ *
+ * `eaUsername` is only filled in when the form left it blank: it is an admin-
+ * editable field now, and a resolution must not silently overwrite a value
+ * somebody typed to tell two same-named accounts apart.
+ */
+function identityData(identity: ResolvedIdentity | null, typedUsername: string | null) {
   if (!identity) return {};
   return {
     eaPersonaId: identity.personaId,
     eaNucleusId: identity.nucleusId,
-    eaUsername: identity.username,
+    ...(typedUsername ? {} : { eaUsername: identity.username }),
   };
+}
+
+/**
+ * The form no longer has its own "Id na plataforma" input (removed on request,
+ * 2026-07-28): the nick doubles as the public platform handle.
+ *
+ * Kept as a written column rather than dropped because it is still rendered on
+ * the vitrine and in the admin table. Note the consequence, flagged for review:
+ * `eaLookupName` falls back to `platformId`, so a member saved with no EA name
+ * would be searched on EA BY THEIR CLAN NICKNAME.
+ */
+function platformIdFrom(nickname: string): string {
+  return nickname;
 }
 
 export async function createMemberAction(
@@ -77,7 +99,7 @@ export async function createMemberAction(
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
     eaName: formData.get("eaName") ?? undefined,
-    platformId: formData.get("platformId") ?? undefined,
+    eaUsername: formData.get("eaUsername") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
   });
@@ -85,11 +107,16 @@ export async function createMemberAction(
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));
   }
 
-  const identity = await resolveEaIdentity(eaLookupName(parsed.data));
+  const platformId = platformIdFrom(parsed.data.nickname);
+  const identity = await resolveEaIdentity(
+    eaLookupName({ ...parsed.data, platformId }),
+    parsed.data.eaUsername,
+  );
   const member = await db.member.create({
     data: {
       ...parsed.data,
-      ...identityData(identity),
+      platformId,
+      ...identityData(identity, parsed.data.eaUsername),
       joinedAt: new Date(),
     },
     select: { id: true },
@@ -112,7 +139,7 @@ export async function updateMemberAction(
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
     eaName: formData.get("eaName") ?? undefined,
-    platformId: formData.get("platformId") ?? undefined,
+    eaUsername: formData.get("eaUsername") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
   });
@@ -126,25 +153,27 @@ export async function updateMemberAction(
   });
   if (!current) return actionError("Membro não encontrado.");
 
+  const platformId = platformIdFrom(parsed.data.nickname);
+
   // Re-resolve the EA identity when the name we look up by changed or was never
   // bound. Renaming the clan nickname does NOT trigger a lookup — it is cosmetic.
   // On failure the old ids are KEPT on purpose: EA ids survive account renames,
   // so a member who renamed keeps collecting; a typo fix gets rebound as soon
   // as the search succeeds (here or in the collector).
   let identity: ResolvedIdentity | null = null;
+  const lookup = eaLookupName({ ...parsed.data, platformId });
   const needsResolution =
-    eaLookupName(current) !== eaLookupName(parsed.data) ||
-    !current.eaPersonaId ||
-    !current.eaNucleusId;
+    eaLookupName(current) !== lookup || !current.eaPersonaId || !current.eaNucleusId;
   if (needsResolution) {
-    identity = await resolveEaIdentity(eaLookupName(parsed.data));
+    identity = await resolveEaIdentity(lookup, parsed.data.eaUsername);
   }
 
   await db.member.update({
     where: { id: id.data.memberId },
     data: {
       ...parsed.data,
-      ...identityData(identity),
+      platformId,
+      ...identityData(identity, parsed.data.eaUsername),
     },
   });
 

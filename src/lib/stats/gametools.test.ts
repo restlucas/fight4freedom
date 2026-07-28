@@ -223,12 +223,13 @@ describe("pickIdentity", () => {
   // Payloads copied from GET /bf6/player/ on 2026-07-28. Kept verbatim because
   // each one is a case the previous "first case-insensitive hit" rule got wrong
   // or got right only by luck.
-  const result = (displayName: string, personaId: string, nucleusId: string, username: string) => ({
-    displayName,
-    personaId,
-    nucleusId,
-    username,
-  });
+  const result = (
+    displayName: string,
+    personaId: string,
+    nucleusId: string,
+    username: string,
+    platform = "ea",
+  ) => ({ displayName, personaId, nucleusId, username, platform });
 
   it("prefers the case-exact name over one that differs only in case", () => {
     // Willam registered "morpheus98". The old rule bound the first result,
@@ -264,17 +265,64 @@ describe("pickIdentity", () => {
     expect(match.status === "resolved" && match.identity.nucleusId).toBe("1011812805326");
   });
 
-  it("refuses to bind when two DIFFERENT accounts answer to the same name", () => {
-    // OJUN10R: identical displayName AND identical username on both, so neither
-    // field separates them. Only the nucleus ids differ, and their stats differ
-    // wildly (6 kills against 10.501) — a coin toss here is a wrong profile.
+  it('falls through to platform "ea" when name AND username both tie', () => {
+    // OJUN10R, the only real two-account case in the roster: identical
+    // displayName and identical username, so steps 1 and 3 cannot separate them.
+    // The `ea` one is the member's — 10.501 kills against 6 on the xboxone one.
     const results = [
-      result("OJUN10R", "1840035192", "1004647435766", "OJUN10R"),
-      result("OJUN10R", "1841695743", "2843176908", "OJUN10R"),
+      result("OJUN10R", "1840035192", "1004647435766", "OJUN10R", "xboxone"),
+      result("OJUN10R", "1841695743", "2843176908", "OJUN10R", "ea"),
     ];
-    const match = pickIdentity(results, "OJUN10R");
+    const match = pickIdentity(results, "OJUN10R", "OJUN10R");
+    expect(match).toEqual({
+      status: "resolved",
+      identity: { personaId: "1841695743", nucleusId: "2843176908", username: "OJUN10R" },
+    });
+  });
+
+  it("settles wesleyreinan on case alone, never reaching the platform step", () => {
+    // Two different people. Neither account has an `ea` persona, so if this
+    // reached step 4 there would be nothing to prefer — but case-exact already
+    // decided, which is why the missing `ea` never matters here.
+    const results = [
+      result("wesleyreinan", "1005113496689", "2806096689", "wesleyreinan", "steam"),
+      result("WesleyReinan", "1340107518", "1000641923179", "WesleyReinan", "xboxone"),
+    ];
+    const match = pickIdentity(results, "wesleyreinan", "wesleyreinan");
+    expect(match.status).toBe("resolved");
+    expect(match.status === "resolved" && match.identity.nucleusId).toBe("2806096689");
+  });
+
+  it("ignores a username tiebreak that would eliminate every candidate", () => {
+    // A mistyped username must not turn a resolvable member into "not found".
+    const results = [
+      result("Lucasa", "1", "aaa", "certo", "xboxone"),
+      result("Lucasa", "2", "bbb", "tambem", "ea"),
+    ];
+    const match = pickIdentity(results, "Lucasa", "digitado-errado");
+    expect(match.status).toBe("resolved");
+    expect(match.status === "resolved" && match.identity.nucleusId).toBe("bbb");
+  });
+
+  it("ignores the platform tiebreak when no candidate lives in ea", () => {
+    // 19 of 76 accounts have no `ea` persona, so preferring `ea` must never
+    // empty the set. Two accounts remain here, so it stays ambiguous.
+    const results = [
+      result("Xis", "1", "aaa", "um", "steam"),
+      result("Xis", "2", "bbb", "dois", "xboxone"),
+    ];
+    const match = pickIdentity(results, "Xis");
     expect(match.status).toBe("ambiguous");
     expect(match.status === "ambiguous" && match.candidates).toHaveLength(2);
+  });
+
+  it("uses the username to separate accounts before platform is consulted", () => {
+    const results = [
+      result("Lucasa", "1", "aaa", "oopa", "ea"),
+      result("Lucasa", "2", "bbb", "Lucasa", "xboxone"),
+    ];
+    const match = pickIdentity(results, "Lucasa", "Lucasa");
+    expect(match.status === "resolved" && match.identity.nucleusId).toBe("bbb");
   });
 
   it("falls back to a case-insensitive match when nothing matches exactly", () => {

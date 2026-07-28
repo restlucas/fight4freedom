@@ -39,6 +39,7 @@ function member(
     platform,
     platformId: null,
     eaName: null,
+    eaUsername: null,
     statsLinked: true,
     sync: {
       state: syncState,

@@ -33,7 +33,14 @@ async function main() {
       // Something to search for: the EA name, or the platform id as fallback.
       AND: [{ OR: [{ eaName: { not: null } }, { platformId: { not: null } }] }],
     },
-    select: { id: true, nickname: true, eaName: true, platformId: true, platform: true },
+    select: {
+      id: true,
+      nickname: true,
+      eaName: true,
+      eaUsername: true,
+      platformId: true,
+      platform: true,
+    },
     orderBy: { nickname: "asc" },
   });
 
@@ -51,7 +58,7 @@ async function main() {
     const at = `[${String(index + 1).padStart(3)}/${pending.length}]`;
     const lookup = eaLookupName(member)!;
     try {
-      const identity = await gametoolsProvider.searchPlayer(lookup);
+      const identity = await gametoolsProvider.searchPlayer(lookup, member.eaUsername);
       if (!identity) {
         failed.push({ nickname: member.nickname, lookup, platform: member.platform });
         console.log(`  ${at} ${member.nickname.padEnd(24)} NAO ENCONTRADO ("${lookup}")`);
@@ -62,7 +69,7 @@ async function main() {
         data: {
           eaPersonaId: identity.personaId,
           eaNucleusId: identity.nucleusId,
-          eaUsername: identity.username,
+          ...(member.eaUsername ? {} : { eaUsername: identity.username }),
         },
       });
       resolved += 1;

@@ -69,11 +69,51 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
           autoComplete="off"
           className="mt-1.5"
         />
-        {/* Display only: the stats binding lives on the EA name below. */}
+        {/* Doubles as the public platform handle: the separate "Id na plataforma"
+            input was removed on request, and `platformId` now takes this value. */}
         <p className="text-muted-foreground mt-1 text-xs">
-          Como o membro aparece no site. Pode ser diferente do nome da EA.
+          Como o membro aparece no site e na plataforma. Pode ser diferente do nome da EA.
         </p>
         <FieldError messages={errors?.nickname} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="eaName">Nome da EA</Label>
+          <Input
+            id="eaName"
+            name="eaName"
+            defaultValue={member?.eaName ?? ""}
+            maxLength={80}
+            autoComplete="off"
+            placeholder="ex.: RRRRRRRREST"
+            className="mt-1.5"
+          />
+          {/* Optional on purpose: a mandatory field is what produced 23 invented
+              ids. Blank is visible in the panel; a wrong value is not. */}
+          <p className="text-muted-foreground mt-1 text-xs">
+            É o que busca os stats. Diferencia maiúsculas. Em branco se não souber.
+          </p>
+          <FieldError messages={errors?.eaName} />
+        </div>
+
+        <div>
+          <Label htmlFor="eaUsername">Usuário da EA</Label>
+          <Input
+            id="eaUsername"
+            name="eaUsername"
+            defaultValue={member?.eaUsername ?? ""}
+            maxLength={80}
+            autoComplete="off"
+            className="mt-1.5"
+          />
+          {/* Not searchable and not unique — see the schema comment. It serves to
+              tell two candidate accounts apart, never to find one. */}
+          <p className="text-muted-foreground mt-1 text-xs">
+            Não busca nada. Serve para distinguir contas de mesmo nome.
+          </p>
+          <FieldError messages={errors?.eaUsername} />
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -95,44 +135,6 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
             ))}
           </select>
           <FieldError messages={errors?.platform} />
-        </div>
-
-        <div>
-          <Label htmlFor="eaName">Nome da EA</Label>
-          <Input
-            id="eaName"
-            name="eaName"
-            defaultValue={member?.eaName ?? ""}
-            maxLength={80}
-            autoComplete="off"
-            placeholder="ex.: RRRRRRRREST"
-            className="mt-1.5"
-          />
-          {/* Optional on purpose: a mandatory field is what produced 23 invented
-              ids. Blank is visible in the panel; a wrong value is not. */}
-          <p className="text-muted-foreground mt-1 text-xs">
-            É o que busca os stats. Diferencia maiúsculas. Em branco se não souber.
-          </p>
-          <FieldError messages={errors?.eaName} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="platformId">Id na plataforma</Label>
-          <Input
-            id="platformId"
-            name="platformId"
-            defaultValue={member?.platformId ?? ""}
-            maxLength={80}
-            autoComplete="off"
-            className="mt-1.5"
-          />
-          {/* No longer the stats key — see the schema comment on platformId. */}
-          <p className="text-muted-foreground mt-1 text-xs">
-            Só para achar o membro na plataforma dele.
-          </p>
-          <FieldError messages={errors?.platformId} />
         </div>
 
         <div>

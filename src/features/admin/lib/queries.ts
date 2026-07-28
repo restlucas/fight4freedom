@@ -109,6 +109,8 @@ export type AdminMember = {
   platformId: string | null;
   /** EA display name the collector looks the member up by. Null = not informed. */
   eaName: string | null;
+  /** EA username of the bound account. Distinguishes same-named accounts only. */
+  eaUsername: string | null;
   /**
    * Whether the EA identity behind the stats collection is bound. False means
    * the EA name was not found yet — the collector retries every run, but a wrong
@@ -139,6 +141,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       platform: true,
       platformId: true,
       eaName: true,
+      eaUsername: true,
       eaPersonaId: true,
       eaNucleusId: true,
       role: true,
@@ -181,6 +184,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       platform: m.platform,
       platformId: m.platformId,
       eaName: m.eaName,
+      eaUsername: m.eaUsername,
       statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
       sync: {
         state: syncState(input),

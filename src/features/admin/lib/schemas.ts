@@ -40,10 +40,12 @@ export const memberFormSchema = z.object({
    */
   eaName: eaLookupField,
   /**
-   * Public id on the platform. Display only since 2026-07-28 — it no longer
-   * drives the stats lookup, so it is optional too.
+   * EA `username` of the account. Optional, and NOT a lookup key: EA's search
+   * does not index it (searching a username returns nothing) and it is not
+   * unique — the two distinct accounts answering to OJUN10R share the username
+   * `OJUN10R`. Its use is telling two candidate accounts apart.
    */
-  platformId: eaLookupField,
+  eaUsername: eaLookupField,
   /** Clan cargo. Display only — never grants access (see lib/auth/session.ts). */
   role: z.enum(MEMBER_ROLES),
   active: z.coerce.boolean(),

@@ -123,10 +123,10 @@ export interface StatsProvider {
    * name stays unbound until someone resolves it. Use `matchPlayer` when the
    * caller can tell those two cases apart.
    */
-  searchPlayer(name: string): Promise<ResolvedIdentity | null>;
+  searchPlayer(name: string, username?: string | null): Promise<ResolvedIdentity | null>;
 
   /** Same lookup, keeping "not found" and "ambiguous" distinguishable. */
-  matchPlayer(name: string): Promise<IdentityMatch>;
+  matchPlayer(name: string, username?: string | null): Promise<IdentityMatch>;
 
   /**
    * Fetches cumulative stats for many players, batched however the source

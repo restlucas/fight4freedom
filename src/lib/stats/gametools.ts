@@ -72,6 +72,10 @@ const searchResponseSchema = z.object({
         // candidates apart, never a lookup key, so a payload without it must
         // still resolve rather than throw away the whole search.
         username: z.string().nullish().default(null),
+        // The namespace the persona lives in ("ea", "steam", "xboxone"). Used
+        // only as the last tiebreak, never as a filter on our own `platform`
+        // column, which disagrees with this value for 40 of 70 resolved members.
+        platform: z.string().nullish().default(null),
       })
       .loose(),
   ),
@@ -354,29 +358,41 @@ export function chunk<T>(items: T[], size: number): T[][] {
  * (0 kills) while the real account had 13.562, and `morpheus98` was bound to a
  * stranger's `Morpheus98` (242 kills) instead of the member's 9.949.
  *
- * Two steps, in this order:
+ * Four steps, each one only narrowing the field:
  *
- * 1. CASE-EXACT FIRST. EA treats case as significant, so `morpheus98`,
- *    `Morpheus98` and `oVaca` are three different accounts. Falling back to
- *    case-insensitive only when nothing matches exactly keeps the old behaviour
- *    for the single-candidate majority while fixing both mis-bindings above.
+ * 1. CASE-EXACT displayName. EA treats case as significant, so `morpheus98`,
+ *    `Morpheus98` and `oVaca` are three different accounts. This step alone
+ *    settles every ambiguous member in the roster but one: `wesleyreinan` and
+ *    `WesleyReinan` are two different people, and only the first is the member.
+ *    Falls back to case-insensitive when nothing matches exactly.
  *
- * 2. THEN GROUP BY nucleusId. What looks like a duplicate usually is not: the
- *    same account shows up once per platform persona, and every persona returns
- *    identical stats (verified on all seven members where this happens). So one
- *    distinct nucleus id means one account, and any of its personas is a correct
- *    answer. More than one means genuinely different people.
+ * 2. GROUP BY nucleusId. What looks like a duplicate usually is not: the same
+ *    account appears once per platform persona, and every persona of an account
+ *    returns identical stats (verified on all seven members where this happens).
+ *    One distinct nucleus id means one account, and any of its personas is a
+ *    correct answer.
  *
- * `username` is deliberately NOT used to disambiguate, though the payload has it
- * and it is tempting: it is not searchable, and it collides exactly where it
- * would be needed — the two distinct OJUN10R accounts share the username
- * `OJUN10R`. Platform is not used either, because our stored platform disagrees
- * with EA's for 40 of 70 resolved members (every PSN member resolves to an `ea`
- * or `steam` persona), so filtering on it would unbind more members than it saves.
+ * 3. CASE-EXACT username, when the caller knows it. Not a lookup key — EA's
+ *    search does not index it — but a legitimate tiebreak between accounts that
+ *    survived step 1.
+ *
+ * 4. PREFER platform "ea". The last word, and the step that settles the only
+ *    real two-account case in the roster: both OJUN10R accounts carry the same
+ *    displayName AND the same username, so 1 and 3 cannot separate them, and the
+ *    `ea` one is the member's (10.501 kills against 6).
+ *
+ * Steps 3 and 4 are applied ONLY when they leave at least one candidate. That
+ * matters: 19 of 76 accounts have no `ea` persona at all, and a mistyped username
+ * would otherwise empty the set and turn a resolvable member into a permanent
+ * "not found" — silent, and indistinguishable from a name that does not exist.
  */
-export function pickIdentity(results: SearchResult[], name: string): IdentityMatch {
+export function pickIdentity(
+  results: SearchResult[],
+  name: string,
+  username?: string | null,
+): IdentityMatch {
   const exact = results.filter((r) => r.displayName === name);
-  const candidates = exact.length
+  let candidates = exact.length
     ? exact
     : results.filter((r) => r.displayName.toLowerCase() === name.toLowerCase());
 
@@ -387,10 +403,20 @@ export function pickIdentity(results: SearchResult[], name: string): IdentityMat
     nucleusId: r.nucleusId,
     username: r.username ?? null,
   });
+  const accounts = (list: SearchResult[]) => new Set(list.map((r) => r.nucleusId));
 
-  const accounts = new Set(candidates.map((r) => r.nucleusId));
-  if (accounts.size === 1) return { status: "resolved", identity: toIdentity(candidates[0]) };
+  /** Applies a tiebreak, ignoring it when it would leave nothing behind. */
+  const narrow = (by: (r: SearchResult) => boolean) => {
+    const kept = candidates.filter(by);
+    if (kept.length > 0) candidates = kept;
+  };
 
+  if (accounts(candidates).size > 1 && username) narrow((r) => r.username === username);
+  if (accounts(candidates).size > 1) narrow((r) => r.platform === "ea");
+
+  if (accounts(candidates).size === 1) {
+    return { status: "resolved", identity: toIdentity(candidates[0]) };
+  }
   return { status: "ambiguous", candidates: candidates.map(toIdentity) };
 }
 
@@ -408,15 +434,15 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Pro
 export class GametoolsProvider implements StatsProvider {
   constructor(private readonly baseUrl: string = BASE_URL) {}
 
-  async matchPlayer(name: string): Promise<IdentityMatch> {
+  async matchPlayer(name: string, username?: string | null): Promise<IdentityMatch> {
     const url = `${this.baseUrl}/bf6/player/?name=${encodeURIComponent(name)}`;
     const payload = await fetchJson(url, {}, SEARCH_TIMEOUT_MS);
     const { results } = searchResponseSchema.parse(payload);
-    return pickIdentity(results, name);
+    return pickIdentity(results, name, username);
   }
 
-  async searchPlayer(name: string): Promise<ResolvedIdentity | null> {
-    const match = await this.matchPlayer(name);
+  async searchPlayer(name: string, username?: string | null): Promise<ResolvedIdentity | null> {
+    const match = await this.matchPlayer(name, username);
     if (match.status === "resolved") return match.identity;
     if (match.status === "ambiguous") {
       // Left unbound on purpose. See pickIdentity: picking one of several

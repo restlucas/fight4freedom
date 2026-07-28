@@ -11,7 +11,7 @@ import {
 const validMember = {
   nickname: "Panzer",
   platform: "xbox",
-  platformId: "Panzer 128",
+  eaName: "Panzer128",
   role: "member",
   active: true,
 };
@@ -65,10 +65,18 @@ describe("memberFormSchema", () => {
     expect(memberFormSchema.parse({ ...validMember, eaName: "Ovaca" }).eaName).toBe("Ovaca");
   });
 
-  it("no longer requires the platform id, which is display only now", () => {
-    expect(memberFormSchema.safeParse({ ...validMember, platformId: undefined }).success).toBe(
-      true,
+  it("does not take a platform id at all: the nick doubles as it", () => {
+    // The separate input was removed 2026-07-28. An extra key must not make the
+    // parse fail, but it must not be carried into the row either.
+    const parsed = memberFormSchema.parse({ ...validMember, platformId: "algo antigo" });
+    expect(parsed).not.toHaveProperty("platformId");
+  });
+
+  it("accepts an EA username and normalises a blank one to null", () => {
+    expect(memberFormSchema.parse({ ...validMember, eaUsername: " sig4rro " }).eaUsername).toBe(
+      "sig4rro",
     );
+    expect(memberFormSchema.parse({ ...validMember, eaUsername: "" }).eaUsername).toBeNull();
   });
 
   it("rejects an EA name longer than 80 characters", () => {

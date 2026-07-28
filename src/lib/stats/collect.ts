@@ -140,6 +140,8 @@ export async function collectStats(
       // nickname is display only and is never used for lookups.
       eaName: true,
       platformId: true,
+      // Not a lookup key — a tiebreak between accounts sharing a display name.
+      eaUsername: true,
       eaPersonaId: true,
       eaNucleusId: true,
       // When we last TRIED this member — the queue order. See the sort below for
@@ -195,14 +197,16 @@ export async function collectStats(
       // Search by EA display name. The match is case-exact and refuses to bind
       // when several distinct accounts answer to it — see pickIdentity in
       // ./gametools.ts for why binding one at random was the bug.
-      const identity = await provider.searchPlayer(eaLookupName(member)!);
+      const identity = await provider.searchPlayer(eaLookupName(member)!, member.eaUsername);
       if (!identity) continue;
       await db.member.update({
         where: { id: member.id },
         data: {
           eaPersonaId: identity.personaId,
           eaNucleusId: identity.nucleusId,
-          eaUsername: identity.username,
+          // Only filled in when nobody typed one: an admin-entered username is
+          // the tiebreak, so a resolution must not overwrite it.
+          ...(member.eaUsername ? {} : { eaUsername: identity.username }),
         },
       });
       member.eaPersonaId = identity.personaId;
