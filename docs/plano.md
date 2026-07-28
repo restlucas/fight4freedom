@@ -146,8 +146,8 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   varreu **75 membros em 164,9 s com `deferred: 0`**, dentro de um orçamento de 8 min. Rota que se
   invoca não vale ser mantida para um botão manual, então saiu junto com o `pg_cron`.
 
-  A cadência de 10 min passa a 20 min quando o desenvolvimento terminar (ver a seção no fim deste
-  documento).
+  **A cadência passou de 10 para 20 min em 2026-07-28**, aplicada no schedule do serviço da
+  Railway (ver Deploy > Agendamento).
 
 - **Ciclo de vida do membro na coleta (2026-07-26):**
   1. Admin cadastra nick + plataforma + **id da plataforma (obrigatório)** → **ainda não entra
@@ -172,16 +172,16 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 - **Terceiro comunitário, sem SLA nem rate limit publicado.** Mitigações: uma leva de lotes por
   ciclo, nunca chamar a API no runtime das páginas (o banco é a fonte do site), falha silenciosa
   com retry no ciclo seguinte, e a interface `StatsProvider` para trocar de fonte sem reescrever.
-- **Frescor depende da EA.** O gametools proxia a EA com cache de borda de ~10 min — igual à
-  cadência da coleta. O atraso da própria EA após uma partida ainda não foi medido (teste com o
-  clã pendente, `docs/api-gametools.md` §8).
+- **Frescor depende da EA.** O gametools proxia a EA com cache de borda de ~10 min, metade da
+  cadência de 20 min — é por isso que ciclos mais curtos não compravam frescor. O atraso da própria
+  EA após uma partida ainda não foi medido (teste com o clã pendente, `docs/api-gametools.md` §8).
 
 ---
 
 ## Status (atualizado em 2026-07-28)
 
-**Fases 0 a 3.6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
-**worker do Railway** a cada 10 min (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
+**Fases 0 a 3.7 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
+**worker do Railway a cada 20 min** (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
 membros está no banco** (Fase 3.6). O ranking começa a contar do zero: não há histórico, e o
 primeiro board com pontuação aparece quando os membros acumularem dois snapshots no mesmo mês.
 
@@ -191,25 +191,30 @@ rodada** — 11 que numa passada só teriam ficado sem leitura. A taxa de falha 
 (4 de 25 lotes), coerente com os 14% medidos: o que mudou foi o custo dela, não a taxa. Sobrou 66%
 do orçamento de 8 min.
 
-O que resta antes da Fase 4:
+**O código da coleta está fechado.** O que resta é operacional, e o dono do projeto decidiu em
+28/07 **tratar esses itens conforme o desenvolvimento avança**, sem bloquear a Fase 4:
 
-- **Corrigir ~28 `platformId` pelo painel.** Estado em 27/07, com 99 elegíveis: **71 já têm
-  snapshot**, e os outros 28 se dividem em dois problemas com a mesma causa.
+- **Corrigir os `platformId` pelo painel.** Dois problemas com a mesma causa, ambos com estado
+  visível na coluna Stats do painel — o número exato é o que o painel mostrar, não o que está
+  escrito aqui.
 
   **23 sem identidade EA.** A fila foi drenada com `pnpm db:resolve-identities` (roda local, e por
-  isso ignora o cap de 10 por ciclo da função): 74 de 97 em 229 s. Reexecutar recupera falhas
+  isso ignora o cap por ciclo do coletor): 74 de 97 em 229 s. Reexecutar recupera falhas
   transitórias — a primeira passada deixou 30 pendentes, a segunda 23. Esses não existem na EA com o
   id que veio do export (12 `ea`, 8 `psn`, 3 `xbox`).
 
-  **5 com identidade mas sem nenhum dado de BF6.** `dusales`, `exposiitto`, `F4F Richard`, `Ovaca` e
-  `Wislan Andrade`. Consultados um a um contra a API: **sem `gm_all`, sem `classes`, `human = 0`**.
-  Não é falha do coletor — o `toRawStats` devolve `null` corretamente e o membro vira `noData`. O
-  sinal provável é pior que id errado: a busca casou com **outra conta EA de mesmo nome de exibição**,
-  então estamos apontando para a pessoa errada. Vale conferir o id com cada um desses cinco.
+  **4 com identidade mas sem nenhum dado de BF6** (estado `never_read`, badge "Conta errada?").
+  Consultados um a um contra a API: **sem `gm_all`, sem `classes`, `human = 0`**. Não é falha do
+  coletor — o `toRawStats` devolve `null` corretamente. A busca casou com **outra conta EA de mesmo
+  nome de exibição**, então apontamos para a pessoa errada. **Um resolvido:** `Bravo_six762` →
+  `F4F WISLAN` (conta `xboxone`), corrigido no painel e já lido com sucesso. **Três pendentes**
+  (`exposiitto`, `dusales`, `F4F Richard`): precisam do EA ID pedido ao próprio membro, porque o nome
+  exibido no tracker.gg funcionou em 1 de 4 casos e não serve de fonte (`api-gametools.md` §11).
 
-  **Custo de deixar assim:** os 23 consomem as 10 buscas de identidade de todo ciclo (~10 s do
-  orçamento de 45 s) em tentativas que sempre falham, e esse tempo sai do fetch de quem tem
-  identidade válida.
+  **Custo de deixar assim, recalculado em 28/07:** era ~10 s do orçamento de 45 s da função, e essa
+  aritmética morreu com a Vercel. No worker, 23 buscas que sempre falham custam ~55 s de um
+  orçamento de 480 s cuja varredura leva ~165 s. Continua sendo desperdício, deixou de ser
+  concorrência com o fetch — ver o cap por perfil em Deploy > Agendamento.
 
 - **Teste de fidelidade da §8** com um membro (até ele, não divulgar as seções de stats).
 - **Emitir convites** para os membros ganharem login, perfil e avatar do Discord. O import cobre
@@ -317,9 +322,15 @@ Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melh
       **Ao depurar coleta, olhar `net._http_response`, não `cron.job_run_details`.**
 - [x] **Guarda contra payload parcialmente zerado (2026-07-27):** ver a seção de armadilhas da
       camada de stats abaixo.
-- [ ] Cadastrar o roster real no painel e rodar o teste de fidelidade da §8 com o clã.
+- [x] Roster real no banco: 98 membros importados em 27/07 (Fase 3.6), não pelo painel mas pelo
+      `pnpm db:import-roster`.
+- [x] **Coleta fora da Vercel (28/07):** worker no Railway a cada 20 min, cadeia removida da rota,
+      `pg_cron` desligado. É o que fechou a fase — 75 elegíveis em 164,9 s, `deferred: 0`.
+- [ ] Teste de fidelidade da §8 com o clã (não bloqueia a Fase 4; bloqueia divulgar as seções de
+      stats).
 
-**Próximo passo:** roster real + teste de fidelidade. Depois disso, Fase 4.
+**Próximo passo:** Fase 4. O teste de fidelidade e a correção dos ids seguem em paralelo, conforme
+o desenvolvimento avança.
 
 ---
 
@@ -410,7 +421,8 @@ Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26)
   pulado e tentado no ciclo seguinte.
   Testado contra `gametools.fixture.ts`, um payload real trimado — o parser não depende da rede.
 - `collect.ts`: o ciclo de coleta — elegíveis (`active` + `discordId`), resolve identidades
-  faltantes (máx. 10 buscas por ciclo, o resto cura nos próximos), busca em lote, compara com o
+  faltantes (cap por perfil: **10 na rota, 25 no worker**, mais uma guarda de relógio; o resto cura
+  nos próximos ciclos), busca em lote, compara com o
   último snapshot (`hasNewActivity`) e grava `statSnapshot` `source: api` **só de quem jogou**.
   Retorna um relatório por membro (updated/unchanged/no-data/identity-pending).
 - `snapshots.ts`: funções **puras** e testáveis — `computeKd`, `computeWinRate`,
@@ -498,19 +510,21 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
   com `requireAdmin()` + `revalidatePath`. UI otimista com `sonner` (padrão do Routina).
 - **Removido do escopo:** edição manual de stats e upload de melhores jogadas (ver Backlog).
 
-### Fase 3 — Coleta de stats via API gametools — a cada 10 min, todos os elegíveis
+### Fase 3 — Coleta de stats via API gametools — todos os elegíveis a cada ciclo
 
 _(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/api-gametools.md`.)_
 
-- **Sem worker, sem Docker, sem Railway.** A coleta é uma Route Handler no próprio app
-  (`/api/stats/collect`) disparada por um agendador externo (ver Deploy > Agendamento). O que o
-  plano antigo chamava de "Fase 3" encolheu para: rota + provider + cron.
+- ~~**Sem worker, sem Docker, sem Railway.** A coleta é uma Route Handler no próprio app
+  (`/api/stats/collect`) disparada por um agendador externo.~~ **Superado em 2026-07-28:** a coleta
+  virou um cron job no Railway (`worker/main.ts`, a cada 20 min) e a rota ficou como gatilho manual.
+  O motivo está em Deploy > Agendamento; o teto de 60 s da função foi o que derrubou o desenho.
 - **Fluxo do ciclo** (`src/lib/stats/collect.ts`):
   1. Elegíveis: `active = true` **e** `discordId` preenchido (= aceitou o convite e entrou com
      Discord — regra do ciclo de vida nas Decisões).
-  2. Identidades EA faltantes são resolvidas pelo `platformId` (`GET /bf6/player/`), no máximo 10
-     por ciclo — um lote grande de membros novos se resolve em poucos ciclos sem estourar a
-     duração da função. Membro sem `platformId` (linha antiga) não tem o que buscar e fica
+  2. Identidades EA faltantes são resolvidas pelo `platformId` (`GET /bf6/player/`), no máximo
+     **25 por ciclo no worker** (10 na rota manual, mais a guarda de relógio — ver Deploy >
+     Agendamento) — um lote grande de membros novos se resolve em poucos ciclos sem tomar o
+     orçamento da varredura. Membro sem `platformId` (linha antiga) não tem o que buscar e fica
      pendente até um admin preencher.
   3. Stats em **lotes sequenciais de 3** (`POST /bf6/multiple/`, um request em voo por vez) — o
      tamanho é medido, ver "Cadência e lote da coleta" nas Decisões. Ids em vez de nomes: mais
@@ -589,6 +603,10 @@ Corrigido com os valores reais, e agora há teste afirmando cada um.
 nenhuma das cinco entradas de `classes[]` tem qualquer campo com "head". O `headShots` = 1.973 do
 top-level, que eu havia suspeitado ser o bucket de classes, **não é** — o bucket de classes não
 tem headshots. Não existe alternativa a escolher.
+
+**Consequência que só apareceu em 28/07:** de onde o número vem está encerrado, **como ele é
+exibido** não. Headshot conta bots e `kills` não, então a mesma tela pode mostrar mais headshots do
+que kills (`Wislan Andrade`: 7.179 e 7.720). Correção no Backlog técnico, item 1.
 
 **Constantes de teste atualizadas (2026-07-27).** O `points.test.ts` usava os totais de carreira
 pré-mudança (kills 17.587, assists 6.080, revives 3.451), que descreviam dados que a coleta já não
@@ -923,7 +941,8 @@ Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só
 
 - **App:** Vercel. **DB/Auth/Storage:** Supabase. **Coleta de stats:** worker no **Railway**
   (`worker/main.ts`), no mesmo repositório, com comando de start próprio. A rota
-  `/api/stats/collect` continua existindo como o botão "coletar agora" do painel.
+  `/api/stats/collect` continua existindo como **gatilho manual via `curl`** — não há botão
+  "coletar agora" no painel (confirmado por busca em 28/07; se um dia existir, ele chama essa rota).
 - CI do starter já roda lint → type-check → test → build + E2E; manter e rodar antes de commitar.
 
 ### Convite de admin (bootstrap)
@@ -939,7 +958,7 @@ pnpm invite:admin
 Sem argumento ele pega o membro com cargo `admin`; passe o nick para escolher outro
 (`pnpm invite:admin Vortex`). O link novo invalida o anterior não usado, como no painel.
 
-### Agendamento da coleta (a cada 10 min)
+### Agendamento da coleta (a cada 20 min)
 
 **Decisão (2026-07-28): worker no Railway.** O agendador em si nunca foi o problema — o teto de 60 s
 da função da Vercel era. Uma requisição que dá 504 gasta sempre 15,2 s, então dentro de 60 s não
@@ -963,7 +982,7 @@ cron job que não termina bloqueia a própria execução seguinte.
 | --------------------- | ---------------------------------------------------------------- |
 | Serviço               | novo, no **mesmo repositório** (não repo separado)                |
 | Start command         | `pnpm worker`                                                    |
-| Cron schedule         | `*/10 * * * *`                                                   |
+| Cron schedule         | `*/20 * * * *` (era `*/10`, mudado em 28/07 — ver Cadência)       |
 | `DATABASE_URL`        | **exatamente** a mesma string da Vercel, sem trocar a porta      |
 | `CRON_SECRET`         | o mesmo valor da Vercel — é o que autentica a purga de cache     |
 | `NEXT_PUBLIC_APP_URL` | URL de produção do site. **Obrigatória aqui**, ver abaixo        |
@@ -996,6 +1015,41 @@ Verificação local antes de subir, contra o banco real:
 pnpm worker:local
 ```
 
+#### Cadência: 10 → 20 min, aplicada em 2026-07-28
+
+Mudança de uma linha no schedule do serviço da Railway (`*/10` → `*/20`). Nada no código depende da
+cadência; o orçamento de 8 min do worker limita a **execução**, não o intervalo, e continua em 8
+porque a varredura leva ~4 min e subir o teto só compraria travamento mais longo.
+
+Por que sair dos 10 min: uma execução varre o roster inteiro (75 membros em 164,9 s, `deferred: 0`),
+então ciclos de 10 min sobrepunham trabalho sem comprar frescor — o cache de borda do gametools é de
+~10 min de qualquer forma (`docs/api-gametools.md` §10.2) e stats só mudam quando alguém joga.
+
+**Por que 20 e não 30.** A ideia de 30 min foi levantada e descartada em 27/07, quando a repescagem
+de uma requisição falhada dependia do tick seguinte: um membro que dava 504 esperaria meia hora pela
+segunda chance. As **rodadas de retentativa dentro da mesma execução** (`[3, 3, 1]`, ~0,3% de lotes
+sem leitura por ciclo) tiraram a força desse argumento, mas 20 min já cobre a necessidade e não há
+ganho medido em esticar mais.
+
+#### Cap de buscas de identidade por perfil (2026-07-28)
+
+O `MAX_IDENTITY_RESOLUTIONS_PER_RUN = 10` era único e foi calibrado contra os 45 s da função da
+Vercel. Virou `ROUTE_IDENTITY_LIMIT = 10` e `WORKER_IDENTITY_LIMIT = 25`, com uma guarda de relógio
+(`IDENTITY_PHASE_SHARE = 0.25`) por cima.
+
+- **Por que subir no worker:** 10 buscas custam ~24 s (2,4 s cada, medido pelo `db:resolve-identities`:
+  74 de 97 em 229 s) num orçamento de 480 s cuja varredura leva ~165 s. O cap não protegia nada, só
+  fazia membro novo esperar até três ciclos para ser vinculado — **uma hora** na cadência de 20 min.
+  Com 25, o backlog conhecido (23 ids inválidos) cabe num ciclo só.
+- **Por que a guarda de relógio:** cap é contagem, não tempo. O `SEARCH_TIMEOUT_MS` é 10 s, então 25
+  buscas contra uma EA lenta seriam 250 s dos 480 e **a varredura** é o que seria cortada. A guarda
+  para de iniciar buscas depois de 25% do orçamento (120 s no worker, 11,25 s na rota) e emite aviso
+  no log. Em ciclo saudável ela nunca dispara: 25 buscas a 2,4 s são 60 s.
+- **Quem a guarda deixa de fora não é carimbado**, então segue na frente da fila do ciclo seguinte —
+  o mesmo mecanismo que o cap já usava.
+- Ainda **não** existe backoff para nome que sempre falha (está no Backlog). Com orçamento sobrando,
+  pagar ~55 s por ciclo pelos 23 ids inválidos é desperdício tolerável, não concorrência com o fetch.
+
 #### Agendador antigo (pg_cron) — desligado em 2026-07-28
 
 A extensão `pg_cron` foi desabilitada no Supabase, o que também apaga a definição do job, então ele
@@ -1018,6 +1072,14 @@ a taxa de 14% da fonte, e a linha `resgatado(s)` no fim é a prova de que as rod
 que não é esperado é `adiados` diferente de zero (fonte degradada, o worker avisa) ou um segundo
 `ciclo iniciado` no mesmo log (reinício de verdade). A Railway às vezes embaralha a ordem das linhas,
 inclusive o `Starting Container`, e isso não indica nada.
+
+Duas linhas pedem ação humana, e só elas:
+
+- `NUNCA foram lidos com sucesso` — `eaName` apontando para a conta EA errada. Não se cura em ciclo
+  nenhum; é pedir o EA ID ao membro e corrigir no painel.
+- `busca de identidade interrompida em N/M` — a guarda de relógio disparou, ou seja, a EA estava
+  lenta o bastante para consumir 25% do orçamento antes do primeiro stat. Se repetir todo ciclo, a
+  fonte degradou; se aparecer isolada, o próximo ciclo recomeça pelos que sobraram.
 
 Um aviso do painel de que o serviço "exited" é o comportamento correto: o worker sai com
 `process.exit(0)` de propósito.
@@ -1129,63 +1191,64 @@ lembrete no fim.
 
 ---
 
-## Ajustes a fazer quando o desenvolvimento terminar
+## Backlog técnico (pendências pequenas, decidido em 2026-07-28)
 
-Lista curta de coisas que estão de um jeito **porque estamos desenvolvendo**, e que precisam mudar
-antes de considerar o projeto em regime.
+Nada aqui bloqueia a Fase 4. São itens fechados em escopo, com o motivo já escrito, para serem
+pegos um a um. Os ajustes de "modo desenvolvimento" que existiam nesta seção foram **aplicados** e
+migraram para Deploy > Agendamento: a cadência de 20 min e o cap de identidade por perfil.
 
-### Cadência da coleta: 10 min → 20 min, no máximo
+### 1. Headshots: conferir o valor e exibir em percentual
 
-Decidido em 2026-07-27. A ideia de 30 min foi levantada e **descartada no mesmo dia**: a cadeia cobre
-a capacidade, mas não repesca falha de requisição (ver a ressalva abaixo), e a 30 min um membro que
-deu 504 esperaria meia hora pela segunda chance. Vinte minutos é o teto.
+**O problema é real e tem explicação inteira.** Reportado em 28/07: `Wislan Andrade` mostra
+**7.179 kills e 7.720 headshots**, ou seja, mais headshots do que kills. Não é bug de coleta, é
+**mistura de recortes** na mesma tela:
 
-O racional para sair dos 10: com a cadeia, um tick cobre até 5 execuções (~185 membros de
-capacidade), então uma varredura completa cabe num tick e disparar de 10 em 10 min passa a sobrepor
-ciclos sem ganhar frescor — o cache de borda do gametools é de ~10 min de qualquer forma
-(`docs/api-gametools.md` §10.2), e stats só mudam quando alguém joga.
+- `kills` = `dividedKills.human` — **sem bots**, por decisão de produto de 27/07.
+- `headshots` = `gm_all.headshotKills` — **todos os modos, bots incluídos**, porque o bucket de
+  classes não tem nenhum campo de headshot (`api-gametools.md` §10.3, investigado e encerrado).
 
-```sql
-select cron.unschedule('collect-bf6-stats');
-select cron.schedule('collect-bf6-stats', '*/20 * * * *', $$
-  select net.http_post(
-    url                  := 'https://<dominio-do-app>/api/stats/collect',
-    headers              := '{"Authorization": "Bearer <CRON_SECRET>"}'::jsonb,
-    timeout_milliseconds := 60000
-  );
-$$);
-```
+Com o `gm_all.kills` desse mesmo membro em outra ordem de grandeza (a conta tem 65.533 kills totais),
+7.720 headshots é coerente com a fonte e incoerente com a coluna ao lado. Qualquer membro que jogue
+muito contra bots pode passar de 100% se a leitura for "headshots ÷ kills".
 
-**Condição 1 — a cadeia dispara em produção: CONFIRMADO (2026-07-27).** O `after()` do Next depende
-da plataforma manter a função viva depois de a resposta sair, o que funciona no teste e podia não
-funcionar no ambiente real. Verificado pelos **timestamps das gravações**, sem depender do relatório:
-no tick das 22:50 houve escrita aos 24 s, 38 s, 42 s, **80 s e 137 s**. Uma execução com orçamento de
-45 s termina por volta dos 45 s, então as duas últimas só podem ter vindo de invocações posteriores —
-ao menos três execuções num tick. Cobertura foi de 60 para 71 dos 76 membros com identidade.
+**Duas correções, e a segunda depende da primeira:**
 
-Detalhe que parece falha e não é: as execuções gravaram 5, 4, 1, 1, 1, em queda. Depois que um membro
-tem snapshot, releitura com contadores iguais devolve `unchanged` e **não grava**. A queda é o poço de
-nunca-coletados esvaziando.
+1. **Percentual em vez de absoluto** (preferência do dono, 28/07). O denominador tem de ser
+   `extra.allModeKills`, que **já está gravado em todo snapshot** — o mesmo bucket do numerador, então
+   a conta fecha e nunca passa de 100%. Sem migração de dados: hoje `allModeKills` mora no JSON
+   `extra`, e `STAT_TOTALS_SELECT` (`snapshots.ts`) não o seleciona, então é preciso passá-lo às
+   queries ou promovê-lo a coluna própria. A API também pré-calcula `gm_all.headshots` (16,34 no
+   fixture), mas não precisamos dela: é a mesma divisão.
+2. **Decidir o que fazer no ranking.** `POINT_WEIGHTS.headshots = 0.3` pontua um contador de todos os
+   modos enquanto `kills` pontua só humanas, então **farmar bots infla pontos pelo termo de
+   headshot**. Três saídas: tirar headshot da pontuação, reduzir o peso, ou aceitar e documentar.
+   Não há quarta — a fonte não expõe headshot sem bots. Cabe na revisão do `POINT_WEIGHTS` (item 3).
 
-**Condição 2 — `timeout_milliseconds` em 60000: APLICADO (2026-07-27, `jobid 3`).** Com 30 s o
-`pg_net` desistia antes de a função responder e o corpo do relatório **nunca chegava**. A gravação
-não se perdia (persistência é por lote), mas a observabilidade sim: sem o relatório não há como ver
-quem ficou em `identity-pending` nem quantos foram `deferred`. Confirmar a cadeia por timestamp
-funcionou uma vez, mas é perícia, não monitoramento.
+### 2. Backoff para busca de identidade que sempre falha
 
-**Custo conhecido de subir a cadência:** falha de requisição (504, o erro comum dessa API) resulta
-em `noData`, **não** em `deferred`, e por isso **não** é repescada pela cadeia — ela espera o próximo
-tick. A 10 min um membro que falhou volta a ser tentado em 10 min; a 30 min, espera 30. Se as falhas
-se mostrarem frequentes, o caminho é fazer a cadeia repescar `noData` (com cuidado: membro que falha
-sempre consumiria a cadeia inteira todo tick), não voltar a cadência para 10 min.
+Os 23 ids inválidos custam ~55 s por ciclo em buscas que nunca vão achar nada. Com o orçamento atual
+sobrando, é desperdício tolerável — por isso não foi feito junto com o cap. O cuidado do desenho:
+o backoff não pode ser permanente, porque **corrigir o id no painel tem de voltar a tentar na hora**.
 
-### Outras pontas do modo desenvolvimento
+### 3. Revisar `POINT_WEIGHTS`
 
-- **23 membros com `platformId` inválido** consomem 10 buscas de identidade por ciclo (~10 s do
-  orçamento) que sempre falham, e esse tempo sai do fetch de quem tem identidade válida. Corrigir
-  os ids pelo painel resolve; se demorar, vale um backoff para não pagar isso a cada ciclo.
-- **`pnpm db:mock-history` e `pnpm db:clean-examples`** existem para o andaime do desenvolvimento.
-  Com o roster real no banco, `clean-examples` só serve ao `--reset-snapshots`; o `mock-history`
-  não deve mais ser rodado, porque criaria temporadas falsas ao lado das reais.
-- **Pesos do `POINT_WEIGHTS`** foram calibrados com dois membros, ambos Support. Revisar depois de
-  um mês real com o roster completo e classes variadas.
+Calibrado com dois membros, ambos Support. Revisar com um mês real de roster completo e classes
+variadas — a série começou em 27/07, então a partir do fim de agosto. Junta com a decisão de
+headshot do item 1.
+
+### 4. Guarda no `pnpm db:mock-history`
+
+O `db:seed` se recusa a rodar contra banco com membro de Discord vinculado ou snapshot `source: api`
+(override deliberado por `SEED_FORCE=1`). O `mock-history` **não tem guarda nenhuma** e criaria
+temporadas falsas ao lado das reais, sem volta. Copiar a mesma guarda é barato e o dano evitado é
+irreversível. O `db:clean-examples`, com roster real no banco, só serve ao `--reset-snapshots`.
+
+### 5. Botão "coletar agora" no painel (opcional)
+
+A rota `/api/stats/collect` existe com perfil de 45 s e duas passadas, e hoje só é chamada por
+`curl`. Se o botão vier, ele não precisa de nada novo no backend.
+
+### 6. Link de `/melhores-jogadas` no menu
+
+Pendência de produto que já está no Backlog de features acima: decidir se o link sai do menu enquanto
+a página for placeholder.

@@ -1,10 +1,10 @@
 // The scheduled collection run.
 //
 // TWO CALLERS, and the difference between them is only how much clock they hand
-// over. The Railway worker (worker/main.ts) runs the real cycle every 10 minutes
-// with minutes to spend; /api/stats/collect is the panel's "collect now" button,
-// capped by the function's 60 s. Everything else about the run is identical, which
-// is why the profile is an argument (see CollectOptions) and not a second code path.
+// over. The Railway worker (worker/main.ts) runs the real cycle every 20 minutes
+// with minutes to spend; /api/stats/collect is the manual trigger, capped by the
+// function's 60 s. Everything else about the run is identical, which is why the
+// profile is an argument (see CollectOptions) and not a second code path.
 //
 // Lifecycle (decided with the clan owner, 2026-07-26): a freshly registered
 // member is NOT collected. They enter the next run only after claiming their
@@ -16,8 +16,9 @@
 // without ever having logged in. See the column's comment in the schema.
 //
 // The run is deliberately boring and idempotent:
-//   1. resolve missing EA identities (a few per run, so a big backlog cannot
-//      blow the request budget — the rest heal on the next runs);
+//   1. resolve missing EA identities (bounded per profile and by a share of the
+//      clock, so a big backlog cannot blow the sweep's budget — the rest heal on
+//      the next runs);
 //   2. fetch stats in ROUNDS, PERSISTING EACH BATCH (see the rounds loop);
 //   3. write a snapshot only for members whose counters moved (nobody played →
 //      no rows). A lost run is not an incident; the next one catches up.
@@ -36,11 +37,36 @@ import type { RawStats, StatsProvider } from "./provider";
 import { hasNewActivity } from "./snapshots";
 
 /**
- * Upper bound of `searchPlayer` calls per run. Identity resolution is the only
- * per-member sequential work, so this caps worst-case duration when many
- * members are added at once (50 new members → resolved across ~5 runs).
+ * Upper bound of `searchPlayer` calls per run, one value per profile. Identity
+ * resolution is the only per-member SEQUENTIAL work in a run, so this is what
+ * keeps a backlog of unbound members from eating the clock the sweep needs.
+ *
+ * TWO VALUES because the two callers have different clocks, and the single 10 was
+ * calibrated against the one that no longer exists: the 45 s Vercel function. On
+ * the worker, 10 searches (~24 s at the 2,4 s per search measured by
+ * `db:resolve-identities`, 74 of 97 in 229 s) against an 8-minute budget whose
+ * sweep takes ~165 s is not protection, it is a member waiting up to three cycles
+ * to be looked up — an hour at the 20-minute cadence.
+ *
+ * 25 clears the whole known backlog in one cycle (23 members whose exported
+ * platform id does not exist on EA) and still leaves the sweep its measured ~220 s
+ * inside 480. Anyone registered after that waits one cycle instead of three.
  */
-export const MAX_IDENTITY_RESOLUTIONS_PER_RUN = 10;
+export const ROUTE_IDENTITY_LIMIT = 10;
+export const WORKER_IDENTITY_LIMIT = 25;
+
+/**
+ * Share of the budget the identity phase may spend before it stops starting new
+ * searches, whatever the cap above allows.
+ *
+ * The cap is a count, not a time bound, and the two stop being interchangeable
+ * when the source degrades: `SEARCH_TIMEOUT_MS` is 10 s, so 25 searches against a
+ * slow EA is 250 s of a 480 s budget and the SWEEP is what gets cut. Normally this
+ * guard never fires — 25 searches at 2,4 s is 60 s, comfortably inside the 120 s
+ * it allows on the worker — so the cap binds on a healthy run and the clock binds
+ * on a bad one, which is when reading stats matters more than binding a new name.
+ */
+export const IDENTITY_PHASE_SHARE = 0.25;
 
 export type MemberOutcome =
   /** Counters moved since the last snapshot — a new row was written. */
@@ -104,10 +130,16 @@ export type CollectOptions = {
    * retrying a batch on the spot, and why the last one is one player per request.
    */
   rounds?: number[];
+  /**
+   * How many identity searches this run may start. See the two limits above; the
+   * clock guard applies on top of whatever is passed here.
+   */
+  identityLimit?: number;
 };
 
 /**
- * ROUTE PROFILE — the panel's "collect now" button, bounded by `maxDuration = 60`.
+ * ROUTE PROFILE — the manual trigger (curl today, no panel button), bounded by
+ * `maxDuration = 60`.
  *
  * 45 s, not 60: a request that 504s always takes ~15,2 s (the source's gateway
  * clock), so a run allowed to start one at 59 s would be killed mid-write instead
@@ -124,9 +156,13 @@ export const ROUTE_ROUNDS = [STATS_BATCH_SIZE, STATS_BATCH_SIZE];
 /**
  * WORKER PROFILE — the real cycle, on Railway, with no function limit.
  *
- * 8 minutes against a 10-minute schedule. The ceiling is not there to save time,
- * it is there so a hung upstream can never leave two runs overlapping: a run that
- * cannot finish in 8 exits and the next tick starts clean.
+ * 8 minutes against the 20-minute Railway schedule (applied 2026-07-28; the cron
+ * expression is in docs/plano.md, not here, because a slash-star inside a JSDoc
+ * block closes the comment).
+ * The ceiling is not there to save time, it is there so a hung upstream can never
+ * leave two runs overlapping: a run that cannot finish in 8 exits and the next tick
+ * starts clean. It stayed at 8 when the cadence doubled because it bounds the run,
+ * not the gap — the sweep is ~4 min, so raising it would only buy a longer hang.
  *
  * 8 and not 10 because the budget bounds when a request may START, not when it
  * ends. `startedAt` is taken before identity resolution, so the whole run is
@@ -167,7 +203,11 @@ async function markStatus(memberIds: string[], status: StatsSyncStatus): Promise
 
 export async function collectStats(
   provider: StatsProvider = gametoolsProvider,
-  { budgetMs = ROUTE_BUDGET_MS, rounds = ROUTE_ROUNDS }: CollectOptions = {},
+  {
+    budgetMs = ROUTE_BUDGET_MS,
+    rounds = ROUTE_ROUNDS,
+    identityLimit = ROUTE_IDENTITY_LIMIT,
+  }: CollectOptions = {},
 ): Promise<CollectReport> {
   const startedAt = Date.now();
 
@@ -243,8 +283,17 @@ export async function collectStats(
   // `members` is already ordered least-recently-tried first, so this slice is the
   // stalest ones — and because only these get their `statsCheckedAt` moved below,
   // the next run picks up where this one stopped instead of restarting the list.
-  const searched = unresolved.slice(0, MAX_IDENTITY_RESOLUTIONS_PER_RUN);
-  for (const member of searched) {
+  const selected = unresolved.slice(0, identityLimit);
+  /** The ones actually asked about: the clock guard can stop this short. */
+  const searched: typeof selected = [];
+  const identityDeadline = startedAt + budgetMs * IDENTITY_PHASE_SHARE;
+  for (const member of selected) {
+    // The count cap says how many are worth searching; this says when searching
+    // stops being worth it at all. Whoever is left is not stamped, so the older
+    // `statsCheckedAt` puts them at the front of the next cycle — the same
+    // mechanism the cap itself relies on.
+    if (Date.now() > identityDeadline) break;
+    searched.push(member);
     try {
       // Search by EA display name. The match is case-exact and refuses to bind
       // when several distinct accounts answer to it — see pickIdentity in
@@ -272,6 +321,17 @@ export async function collectStats(
     }
   }
 
+  // Worth a line in the log because it means the source was slow enough to eat a
+  // quarter of the budget before a single stat was read, and the sweep is running
+  // on what is left.
+  if (searched.length < selected.length) {
+    console.warn(
+      `[stats] busca de identidade interrompida em ${searched.length}/${selected.length}: ` +
+        `${(IDENTITY_PHASE_SHARE * 100).toFixed(0)}% do orcamento gasto antes do fetch — ` +
+        "os restantes vao na frente da fila no proximo ciclo",
+    );
+  }
+
   const collectable = members.filter((m) => m.eaPersonaId && m.eaNucleusId);
   const pending = members.filter((m) => !m.eaPersonaId || !m.eaNucleusId);
   for (const member of pending) {
@@ -283,7 +343,8 @@ export async function collectStats(
     });
   }
   // ONLY the members this run actually searched are stamped — never the ones the
-  // per-run cap left untouched.
+  // cap or the clock guard left untouched. `searched` is the attempted list for
+  // exactly this reason, not the slice.
   //
   // Stamping all of them is what broke identity resolution completely, and the
   // failure is invisible from the outside: every pending member came out of each

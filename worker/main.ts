@@ -1,5 +1,6 @@
 // The stats collection cycle, as it actually runs in production: a Railway cron
-// job, every 10 minutes.
+// job, every 20 minutes (`*/20 * * * *`, applied 2026-07-28 — see
+// docs/plano.md > Deploy > Agendamento for why 20 and not 10).
 //
 // WHY THIS EXISTS AT ALL. The collector used to be a Vercel Route Handler, capped
 // at 60 s by the plan. A gametools request that 504s always burns ~15,2 s (their
@@ -26,7 +27,12 @@
 
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
-import { collectStats, WORKER_BUDGET_MS, WORKER_ROUNDS } from "@/lib/stats/collect";
+import {
+  collectStats,
+  WORKER_BUDGET_MS,
+  WORKER_IDENTITY_LIMIT,
+  WORKER_ROUNDS,
+} from "@/lib/stats/collect";
 
 /**
  * Asks the site to drop the cached stats pages.
@@ -60,6 +66,7 @@ async function main(): Promise<void> {
   const report = await collectStats(undefined, {
     budgetMs: WORKER_BUDGET_MS,
     rounds: WORKER_ROUNDS,
+    identityLimit: WORKER_IDENTITY_LIMIT,
   });
 
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);

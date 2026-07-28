@@ -15,7 +15,15 @@ const db = {
 };
 vi.mock("@/lib/db", () => ({ db }));
 
-const { collectStats, WORKER_BUDGET_MS, WORKER_ROUNDS } = await import("./collect");
+const {
+  collectStats,
+  IDENTITY_PHASE_SHARE,
+  ROUTE_BUDGET_MS,
+  ROUTE_IDENTITY_LIMIT,
+  WORKER_BUDGET_MS,
+  WORKER_IDENTITY_LIMIT,
+  WORKER_ROUNDS,
+} = await import("./collect");
 
 /**
  * A member row shaped like the collector's select. `checkedAt` is when the
@@ -34,6 +42,27 @@ function member(nickname: string, checkedAt: string | null, index: number) {
     // `neverRead` is built on.
     statsReadAt: new Date("2026-07-28T09:00:00Z"),
   };
+}
+
+/** Members with nothing bound yet, so a run spends itself on identity searches. */
+function pendingMembers(count: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    ...member(`P${String(i).padStart(2, "0")}`, null, i),
+    eaPersonaId: null,
+    eaNucleusId: null,
+  }));
+}
+
+/**
+ * How many searches the clock guard allows at a given cost per search.
+ *
+ * The `+ 1` is the guard's semantics, not a rounding fudge: it checks the clock
+ * BEFORE each search, so the one that starts on the boundary is allowed to run and
+ * overrun it. Bounding the in-flight request instead would mean cancelling a
+ * lookup that is already paid for.
+ */
+function searchesWithin(budgetMs: number, costMs: number) {
+  return Math.floor((budgetMs * IDENTITY_PHASE_SHARE) / costMs) + 1;
 }
 
 function rawStats(kills: number): RawStats {
@@ -364,21 +393,94 @@ describe("collectStats sync status", () => {
     // an identical checked-at, the queue sort fell through to its alphabetical
     // tiebreak, and the same first ten names were searched forever while the
     // rest were never looked up once.
-    const pendentes = Array.from({ length: 14 }, (_, i) => ({
-      ...member(`P${String(i).padStart(2, "0")}`, null, i),
-      eaPersonaId: null,
-      eaNucleusId: null,
-    }));
+    const total = ROUTE_IDENTITY_LIMIT + 4;
+    const pendentes = pendingMembers(total);
     db.member.findMany.mockResolvedValue(pendentes);
 
     const report = await collectStats(fakeProvider());
 
-    expect(report.identityPending).toBe(14);
+    expect(report.identityPending).toBe(total);
     const stamped = statusWrites().find((w) => w.status === "identity_pending");
-    // Exactly the ten the run searched, so the other four keep the older
+    // Exactly the ones the run searched, so the remainder keep the older
     // timestamp that puts them first next time.
-    expect(stamped?.ids).toHaveLength(10);
-    expect(stamped?.ids).not.toContain("id-P13");
+    expect(stamped?.ids).toHaveLength(ROUTE_IDENTITY_LIMIT);
+    expect(stamped?.ids).not.toContain(`id-P${String(total - 1).padStart(2, "0")}`);
+  });
+
+  it("searches more identities on the worker profile than on the route", async () => {
+    // The single cap of 10 was calibrated against the 45 s Vercel function. Left
+    // on the worker it made a newly registered member wait up to three cycles to
+    // be looked up, which at the 20-minute cadence is an hour.
+    db.member.findMany.mockResolvedValue(pendingMembers(WORKER_IDENTITY_LIMIT + 3));
+    const provider = fakeProvider();
+
+    await collectStats(provider, {
+      budgetMs: WORKER_BUDGET_MS,
+      rounds: WORKER_ROUNDS,
+      identityLimit: WORKER_IDENTITY_LIMIT,
+    });
+
+    expect(provider.searchPlayer).toHaveBeenCalledTimes(WORKER_IDENTITY_LIMIT);
+  });
+
+  it("stops searching identities once the phase's share of the budget is gone", async () => {
+    // The cap is a count, not a time bound. SEARCH_TIMEOUT_MS is 10 s, so a
+    // degraded source turns 25 searches into 250 s of a 480 s budget and the
+    // SWEEP is what gets cut — the one part of the run that produces stats.
+    db.member.findMany.mockResolvedValue(pendingMembers(WORKER_IDENTITY_LIMIT));
+    const provider = fakeProvider();
+    // Worst case per search: the provider's own timeout.
+    provider.searchPlayer = vi.fn(async () => {
+      clock += 10_000;
+      return null;
+    });
+
+    await collectStats(provider, {
+      budgetMs: WORKER_BUDGET_MS,
+      rounds: WORKER_ROUNDS,
+      identityLimit: WORKER_IDENTITY_LIMIT,
+    });
+
+    const allowed = searchesWithin(WORKER_BUDGET_MS, 10_000);
+    expect(allowed).toBeLessThan(WORKER_IDENTITY_LIMIT);
+    expect(provider.searchPlayer).toHaveBeenCalledTimes(allowed);
+    // And the ones it never reached stay unstamped, so they lead the next queue.
+    const stamped = statusWrites().find((w) => w.status === "identity_pending");
+    expect(stamped?.ids).toHaveLength(allowed);
+  });
+
+  it("leaves the clock guard dormant on a healthy run", async () => {
+    // 25 searches at the measured 2,4 s is 60 s, well inside the 120 s the share
+    // allows on the worker: the cap binds when the source is fine, the clock only
+    // when it is not.
+    db.member.findMany.mockResolvedValue(pendingMembers(WORKER_IDENTITY_LIMIT));
+    const provider = fakeProvider();
+    provider.searchPlayer = vi.fn(async () => {
+      clock += 2_400;
+      return null;
+    });
+
+    await collectStats(provider, {
+      budgetMs: WORKER_BUDGET_MS,
+      rounds: WORKER_ROUNDS,
+      identityLimit: WORKER_IDENTITY_LIMIT,
+    });
+
+    expect(provider.searchPlayer).toHaveBeenCalledTimes(WORKER_IDENTITY_LIMIT);
+  });
+
+  it("applies the share to the route budget too, not just the worker's", async () => {
+    db.member.findMany.mockResolvedValue(pendingMembers(ROUTE_IDENTITY_LIMIT));
+    const provider = fakeProvider();
+    provider.searchPlayer = vi.fn(async () => {
+      clock += 10_000;
+      return null;
+    });
+
+    await collectStats(provider);
+
+    // 45 s * 0,25 = 11,25 s, so the third search never starts.
+    expect(provider.searchPlayer).toHaveBeenCalledTimes(searchesWithin(ROUTE_BUDGET_MS, 10_000));
   });
 
   it("always moves the checked-at timestamp, including on failure", async () => {

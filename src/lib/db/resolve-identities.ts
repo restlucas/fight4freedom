@@ -2,11 +2,11 @@
 //
 //   pnpm db:resolve-identities
 //
-// The collector resolves identities too, but caps itself at
-// MAX_IDENTITY_RESOLUTIONS_PER_RUN because it runs inside a serverless function
-// with a 60 s budget, and a lookup measured ~1 s each. That cap is right for the
-// steady state — a couple of new members trickling in — and wrong for a bulk
-// import: 98 members would take ten cycles, about 100 minutes of waiting.
+// The collector resolves identities too, but caps itself per run
+// (ROUTE_IDENTITY_LIMIT / WORKER_IDENTITY_LIMIT) so a backlog cannot eat the clock
+// its sweep needs. Those caps are right for the steady state — a couple of new
+// members trickling in — and wrong for a bulk import: at 25 per cycle on the
+// 20-minute cadence, 98 members take four cycles, over an hour of waiting.
 //
 // This script has no such budget, so it walks the whole backlog at once. Same
 // politeness as the collector: one request in flight at a time, never parallel,

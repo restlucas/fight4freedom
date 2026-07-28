@@ -475,6 +475,21 @@ levantou essa suspeita e ela está descartada. Pelos `weaponGroups[]` ele parece
 arma, mas isso não foi confirmado e não importa: como o bucket de classes não tem headshots, não há
 alternativa a escolher.
 
+#### O efeito colateral: headshots pode passar as kills (2026-07-28)
+
+Como `kills` exclui bots e `headshots` não, os dois números **não são comparáveis**, e em quem joga
+muito contra bots a diferença fica visível na cara: `Wislan Andrade` foi lido com **7.179 kills e
+7.720 headshots**. Coerente com a fonte, incoerente com a coluna ao lado.
+
+Não é corrigível na coleta — a fonte não tem headshot sem bot. É corrigível na **exibição**, e o
+denominador certo é o do mesmo bucket: `extra.allModeKills`, já gravado em todo snapshot. Uma taxa
+`headshotKills ÷ gm_all.kills` nunca passa de 100% e é a mesma conta que a API pré-calcula em
+`gm_all.headshots` (16,34 no fixture).
+
+Consequência para o ranking, que é a parte menos óbvia: `POINT_WEIGHTS.headshots` pontua um contador
+com bots enquanto `kills` pontua sem, então **bot farming infla pontos pelo termo de headshot**.
+Decisão pendente em `plano.md` > Backlog técnico, item 1.
+
 <details>
 <summary>Decisão anterior (2026-07-26), mantida como histórico</summary>
 
