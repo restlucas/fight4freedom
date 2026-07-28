@@ -100,23 +100,30 @@ afterEach(() => {
 
 describe("collectStats batching", () => {
   it(`splits the roster into batches of ${STATS_BATCH_SIZE}`, async () => {
-    // 12 members -> 3 batches of 5, 5, 2. Ten per request returned 504 from the
-    // API, so the size is a measured ceiling, not a preference.
+    // Derived from the constant rather than hard-coded: the size is a measured
+    // figure that moves when the API's behaviour does (5 -> 3 on 2026-07-28),
+    // and a literal here would fail the tuning instead of checking the split.
+    const total = STATS_BATCH_SIZE * 2 + 1; // two full batches and a remainder
     db.member.findMany.mockResolvedValue(
-      Array.from({ length: 12 }, (_, i) => member(`M${i}`, null, i)),
+      Array.from({ length: total }, (_, i) => member(`M${i}`, null, i)),
     );
     const provider = fakeProvider();
 
     await collectStats(provider);
 
-    expect(provider.batches.map((b) => b.length)).toEqual([5, 5, 2]);
+    expect(provider.batches.map((b) => b.length)).toEqual([
+      STATS_BATCH_SIZE,
+      STATS_BATCH_SIZE,
+      1,
+    ]);
   });
 
   it("persists each batch as it arrives, not once at the end", async () => {
     // The old shape accumulated every row and wrote once, so a run killed at the
     // function's time limit threw away everything it had already downloaded.
+    const total = STATS_BATCH_SIZE * 3;
     db.member.findMany.mockResolvedValue(
-      Array.from({ length: 12 }, (_, i) => member(`M${i}`, null, i)),
+      Array.from({ length: total }, (_, i) => member(`M${i}`, null, i)),
     );
 
     await collectStats(fakeProvider());
@@ -208,21 +215,25 @@ describe("collectStats queue order", () => {
 
 describe("collectStats time budget", () => {
   it("stops before the function limit and reports what it deferred", async () => {
-    // 40 members = 8 batches. At 8 s a batch the 45 s budget runs out partway
-    // through, and the run must return a report instead of being killed mid-call.
+    // A roster far bigger than one run can hold. At 8 s a batch the 45 s budget
+    // runs out partway through, and the run must return a report instead of
+    // being killed mid-call.
+    const total = STATS_BATCH_SIZE * 10;
     db.member.findMany.mockResolvedValue(
-      Array.from({ length: 40 }, (_, i) => member(`M${String(i).padStart(2, "0")}`, null, i)),
+      Array.from({ length: total }, (_, i) => member(`M${String(i).padStart(2, "0")}`, null, i)),
     );
     const provider = fakeProvider({ costMs: 8_000 });
 
     const report = await collectStats(provider);
 
-    // Six batches fit in 45 s; the seventh check finds the budget spent.
-    expect(provider.batches.length).toBe(6);
-    expect(report.deferred).toBe(40 - 6 * 5);
+    // Six batches fit: after five the clock reads 40 s, still inside the budget,
+    // so a sixth starts and lands on 48 s. The seventh check finds it spent.
+    const ran = 6;
+    expect(provider.batches.length).toBe(ran);
+    expect(report.deferred).toBe(total - ran * STATS_BATCH_SIZE);
     // Everything it did fetch was written — the whole point of per-batch writes.
-    expect(db.statSnapshot.createMany).toHaveBeenCalledTimes(6);
-    expect(report.updated).toBe(30);
+    expect(db.statSnapshot.createMany).toHaveBeenCalledTimes(ran);
+    expect(report.updated).toBe(ran * STATS_BATCH_SIZE);
   });
 
   it("reports zero deferred when the whole roster fits", async () => {

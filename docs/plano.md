@@ -42,18 +42,32 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   Verificado contra a API: kills 12.320, deaths 4.126, assists 4.365, revives 3.062 — os quatro
   iguais ao tracker.gg. Racional completo em `docs/api-gametools.md` §3 e §10.3.
 
-- **Cadência e lote da coleta (revisado em 2026-07-27):** **todos os membros elegíveis a cada
+- **Cadência e lote da coleta (revisado em 2026-07-28):** **todos os membros elegíveis a cada
   ciclo** — o clã quer todas as informações frescas, e isso não muda. O que mudou é o tamanho do
-  lote: **5 jogadores por requisição**, não 10.
+  lote: **3 jogadores por requisição** (era 10, depois 5).
 
-  Não é escolha de educação com a API, é **teto medido**. Contra a API real em 27/07: lote de 1
-  responde em 2,7 s, de 3 em 2,4 s, de 5 em 4,5 s, e lotes de **10, 25, 50 e 76 devolvem 504 em
-  exatamente 15,2 s**. O 504 bate sempre nos mesmos 15,2 s independente do tamanho, ou seja, é
-  timeout de gateway do lado deles, e o trabalho a montante cresce com o número de jogadores.
-  Aumentar o lote não acelera, faz falhar. O payload reforça: ~700 KB por jogador, então 10
-  jogadores voltaram como 8,2 MB.
+  Não é escolha de educação com a API, é **teto medido**. Contra a API real em 27/07: lotes de
+  **10, 25, 50 e 76 devolvem 504 em exatamente 15,2 s**. O 504 bate sempre nos mesmos 15,2 s
+  independente do tamanho, ou seja, é timeout de gateway do lado deles. O payload reforça: ~700 KB
+  por jogador, então 10 jogadores voltaram como 8,2 MB.
 
-  Consequência: com ~100 membros, uma varredura completa leva **duas ou três execuções**, não uma.
+  **De 5 para 3 (28/07).** A primeira medição só comparou 10 contra 5 e parou no primeiro número
+  que funcionava. Medindo o mesmo roster nos três tamanhos, em sequência:
+
+  | Lote | Lotes com 504 | Sucesso     | **Segundos por membro LIDO** |
+  | ---- | ------------- | ----------- | ---------------------------- |
+  | 5    | 50%           | 3,5-10,4 s  | 4,02 s                       |
+  | 3    | 14%           | 2,0-11,1 s  | **2,22 s**                   |
+  | 1    | 10%           | ~3,5 s méd. | 5,17 s                       |
+
+  A última coluna é a que decide, e ela **não é monotônica**: um jogador por requisição tem a
+  melhor taxa de sucesso e a pior vazão, porque a ida e volta se dilui num membro só.
+
+  O que torna a falha cara não é a taxa, é o **custo fixo**: um lote que falha gasta 15,2 s do
+  orçamento de 45 s e não traz ninguém. Com lote 5 isso consumia metade das tentativas. Em termos
+  de execução: lote 5 lê ~11 membros por execução, lote 3 lê ~20. Contra ~77 elegíveis, é a
+  diferença entre **precisar de dois ciclos de cron e terminar dentro de um**.
+
   Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
   chega** — quem uma execução não alcança é exatamente quem a próxima começa atendendo.
 
@@ -327,7 +341,8 @@ Isola a origem para permitir troca sem tocar no app (implementada em 2026-07-26)
   top-level (bucket de classes), o resto do grupo `gm_all`, `bestClass` derivado de `classes[]`, e
   os totais não exibidos guardados no `extra`. **Sem `dividedKills.human`, o membro é tratado como
   sem dados** — cair para `gm_all.kills` colocaria bots numa coluna que promete não tê-los. Lotes
-  sequenciais de 10 via `POST /bf6/multiple/`; lote com erro é pulado e tentado no ciclo seguinte.
+  sequenciais de `STATS_BATCH_SIZE` (hoje **3**, medido) via `POST /bf6/multiple/`; lote com erro é
+  pulado e tentado no ciclo seguinte.
   Testado contra `gametools.fixture.ts`, um payload real trimado — o parser não depende da rede.
 - `collect.ts`: o ciclo de coleta — elegíveis (`active` + `discordId`), resolve identidades
   faltantes (máx. 10 buscas por ciclo, o resto cura nos próximos), busca em lote, compara com o
@@ -432,8 +447,9 @@ _(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/
      por ciclo — um lote grande de membros novos se resolve em poucos ciclos sem estourar a
      duração da função. Membro sem `platformId` (linha antiga) não tem o que buscar e fica
      pendente até um admin preencher.
-  3. Stats em **lotes sequenciais de 10** (`POST /bf6/multiple/`, um request em voo por vez) —
-     ~50 membros = 5 requests. Ids em vez de nomes: mais rápido e imune a troca de nick.
+  3. Stats em **lotes sequenciais de 3** (`POST /bf6/multiple/`, um request em voo por vez) — o
+     tamanho é medido, ver "Cadência e lote da coleta" nas Decisões. Ids em vez de nomes: mais
+     rápido e imune a troca de nick.
   4. **Só grava quem jogou**: snapshot novo apenas se kills/deaths/wins/losses/tempo mudaram
      desde o último (`hasNewActivity`). Pior caso teórico com 50 membros × 144 ciclos/dia é alto,
      mas o filtro corta para ~o número de sessões reais de jogo; revisitar se a tabela crescer.

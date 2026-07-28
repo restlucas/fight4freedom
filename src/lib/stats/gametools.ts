@@ -22,23 +22,32 @@ import type { PlayerIdentity, RawStats, StatsProvider } from "./provider";
 const BASE_URL = "https://api.gametools.network";
 
 /**
- * Players per request. Five, measured against the live API on 2026-07-27 — not a
- * politeness figure, a hard ceiling:
+ * Players per request. Three — and the number that decided it is not the failure
+ * RATE, it is the cost of a failure.
  *
- *   1 player  -> 200 in 2.7 s
- *   3 players -> 200 in 2.4 s
- *   5 players -> 200 in 4.5 s
- *   10, 25, 50, 76 -> **504 in 15.2 s**
+ * A 504 always lands at ~15.2 s, whatever the batch size: that is their gateway's
+ * clock, not work being done. A success is much cheaper. So a failed batch burns
+ * a third of the 45 s run budget and brings back nobody, which makes the failure
+ * rate expensive out of proportion to how it reads as a percentage.
  *
- * The 504 lands at 15.2 s regardless of batch size, so their gateway cuts off
- * there, and upstream work grows with the player count. Ten players need 12-15 s
- * cold and usually lose the race; five need ~4.5 s with room to spare. Raising
- * this does not make collection faster, it makes it fail.
+ * Measured against the live API on 2026-07-28, same roster, back to back:
  *
- * The payload matters too: roughly 700 KB per player, so ten players came back as
- * 8.2 MB. Another reason the batch stays small.
+ *   size 5 -> 50% of batches 504 | success 3.5-10.4 s | 4.02 s per member READ
+ *   size 3 -> 14% of batches 504 | success 2.0-11.1 s | 2.22 s per member READ
+ *   size 1 -> 10% of requests 504 |                    | 5.17 s per member READ
+ *
+ * The last column is the one that matters, and it is not monotonic: one player
+ * per request has the best success rate and the WORST throughput, because a
+ * ~3.5 s round trip amortises over a single member instead of three.
+ *
+ * In run terms (45 s budget, batches sequential): size 5 reads ~11 members per
+ * execution, size 3 reads ~20. Against a ~77-member roster that is the
+ * difference between needing two cron ticks and finishing inside one.
+ *
+ * The earlier ceiling still holds — 10, 25, 50 and 76 per request all 504 — and
+ * the payload is ~700 KB per player, so this cannot grow much regardless.
  */
-export const STATS_BATCH_SIZE = 5;
+export const STATS_BATCH_SIZE = 3;
 
 const SEARCH_TIMEOUT_MS = 10_000;
 // A cold-cache batch was measured at ~2-6 s for 2 players; give 10 players room.
