@@ -21,10 +21,7 @@ export default async function AdminMedalsPage() {
         </p>
       </header>
 
-      <MedalsManager
-        medals={medals}
-        storageEnabled={serverEnv.storageConfigured}
-      />
+      <MedalsManager medals={medals} storageEnabled={serverEnv.storageConfigured} />
     </div>
   );
 }

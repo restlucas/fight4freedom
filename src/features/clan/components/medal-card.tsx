@@ -88,9 +88,7 @@ export function MedalCard({ medal, className }: MedalCardProps) {
           {/* min-h matches the avatar size so both states sit on the same line. */}
           <div className="flex min-h-7 items-center gap-3">
             {medal.holders.length === 0 ? (
-              <p className="text-muted-foreground text-xs">
-                Ninguém conquistou ainda.
-              </p>
+              <p className="text-muted-foreground text-xs">Ninguém conquistou ainda.</p>
             ) : (
               <>
                 <div className="flex">

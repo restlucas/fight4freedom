@@ -2,11 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { Separator } from "@/components/ui/separator";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { AdminSidebar } from "@/features/admin/components/admin-sidebar";
 import { getSessionProfile } from "@/lib/auth/session";
@@ -23,11 +19,7 @@ export const dynamic = "force-dynamic";
  * navigation. The guard here is what closes the whole subtree — the middleware
  * only redirects anonymous visitors, it does not know who is an admin.
  */
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const profile = await getSessionProfile();
 
   if (!profile) redirect("/entrar?erro=restrito&next=/admin");
@@ -52,9 +44,7 @@ export default async function AdminLayout({
         </header>
         {/* Scrolls only when a page genuinely needs more room (the overview on a
             short window); the table pages fit and scroll their own body. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">
-          {children}
-        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 md:p-6">{children}</div>
       </SidebarInset>
       <Toaster position="top-right" />
     </SidebarProvider>

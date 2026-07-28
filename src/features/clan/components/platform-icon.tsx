@@ -6,11 +6,7 @@ import { FaPlaystation, FaXbox } from "react-icons/fa6";
 import { SiEa } from "react-icons/si";
 
 import type { Platform } from "@prisma/client";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { PLATFORM_LABEL } from "../lib/format";
@@ -33,11 +29,7 @@ interface PlatformIconProps {
   className?: string;
 }
 
-export function PlatformIcon({
-  platform,
-  platformId,
-  className,
-}: PlatformIconProps) {
+export function PlatformIcon({ platform, platformId, className }: PlatformIconProps) {
   const { Icon, className: accent } = PLATFORM_MARK[platform];
   const label = PLATFORM_LABEL[platform];
 
@@ -45,9 +37,12 @@ export function PlatformIcon({
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   async function copy() {
     if (!platformId || !navigator.clipboard) return;

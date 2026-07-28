@@ -42,11 +42,7 @@
   /* Scrollbars (see the base layer). Semi-transparent so the pill sits on any
      surface — page, card, table body — without a hard edge. */
   --scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
-  --scrollbar-thumb-hover: color-mix(
-    in oklab,
-    var(--muted-foreground) 65%,
-    transparent
-  );
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--muted-foreground) 65%, transparent);
 }
 
 .dark {
@@ -81,11 +77,7 @@
   /* A touch stronger than light: a light-grey pill at 40% nearly disappears over
      the #242B2F surfaces. */
   --scrollbar-thumb: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
-  --scrollbar-thumb-hover: color-mix(
-    in oklab,
-    var(--muted-foreground) 70%,
-    transparent
-  );
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
 }
 
 @theme inline {

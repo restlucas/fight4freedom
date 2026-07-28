@@ -32,10 +32,10 @@ interface InviteDialogProps {
 export function InviteDialog({ member }: InviteDialogProps) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [state, action, pending] = useActionState<
-    ActionResult<{ url: string }> | null,
-    FormData
-  >(createInviteAction, null);
+  const [state, action, pending] = useActionState<ActionResult<{ url: string }> | null, FormData>(
+    createInviteAction,
+    null,
+  );
 
   useEffect(() => {
     if (state && !state.ok) toast.error(state.error);
@@ -67,9 +67,8 @@ export function InviteDialog({ member }: InviteDialogProps) {
         <DialogHeader>
           <DialogTitle>Convite para {member.nickname}</DialogTitle>
           <DialogDescription>
-            Gere o link e envie na DM do Discord. Ele vale por 7 dias, é de uso
-            único e quem abrir o link vira este membro — trate como senha e não
-            poste em canal público.
+            Gere o link e envie na DM do Discord. Ele vale por 7 dias, é de uso único e quem abrir o
+            link vira este membro — trate como senha e não poste em canal público.
           </DialogDescription>
         </DialogHeader>
 
@@ -78,16 +77,11 @@ export function InviteDialog({ member }: InviteDialogProps) {
             <div className="flex gap-2">
               <Input readOnly value={url} className="font-mono text-xs" />
               <Button type="button" variant="secondary" onClick={copy}>
-                {copied ? (
-                  <Check className="size-4" />
-                ) : (
-                  <Copy className="size-4" />
-                )}
+                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">
-              Guarde agora: o link não pode ser recuperado depois, apenas
-              regerado.
+              Guarde agora: o link não pode ser recuperado depois, apenas regerado.
             </p>
           </div>
         ) : (
@@ -95,9 +89,7 @@ export function InviteDialog({ member }: InviteDialogProps) {
             <input type="hidden" name="memberId" value={member.id} />
 
             <div>
-              <Label htmlFor={`discordUsername-${member.id}`}>
-                Username do Discord
-              </Label>
+              <Label htmlFor={`discordUsername-${member.id}`}>Username do Discord</Label>
               <Input
                 id={`discordUsername-${member.id}`}
                 name="discordUsername"
@@ -112,11 +104,7 @@ export function InviteDialog({ member }: InviteDialogProps) {
             </div>
 
             <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="grantsAdmin"
-                className="accent-primary mt-0.5 size-4"
-              />
+              <input type="checkbox" name="grantsAdmin" className="accent-primary mt-0.5 size-4" />
               <span>
                 Conceder acesso administrativo
                 <span className="text-muted-foreground block text-xs">

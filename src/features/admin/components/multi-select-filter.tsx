@@ -43,9 +43,7 @@ export function MultiSelectFilter<T extends string>({
 
   function toggle(value: T) {
     onChange(
-      selected.includes(value)
-        ? selected.filter((item) => item !== value)
-        : [...selected, value],
+      selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value],
     );
   }
 

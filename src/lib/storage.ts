@@ -20,10 +20,7 @@ export function storageKey(name: string): string {
  * `isValid`. The guard matters: the value comes from a previous version of the app
  * (or from a user editing devtools), so it is untrusted input.
  */
-export function readStoredJson<T>(
-  name: string,
-  isValid: (value: unknown) => value is T,
-): T | null {
+export function readStoredJson<T>(name: string, isValid: (value: unknown) => value is T): T | null {
   if (typeof window === "undefined") return null;
 
   try {

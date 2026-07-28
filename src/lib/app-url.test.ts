@@ -38,9 +38,7 @@ describe("getRequestOrigin", () => {
       "x-forwarded-host": "fight4freedom-git-abc123.vercel.app",
       "x-forwarded-proto": "https",
     });
-    expect(await getRequestOrigin()).toBe(
-      "https://fight4freedom-git-abc123.vercel.app",
-    );
+    expect(await getRequestOrigin()).toBe("https://fight4freedom-git-abc123.vercel.app");
   });
 
   it("assumes https when the proto header is missing", async () => {

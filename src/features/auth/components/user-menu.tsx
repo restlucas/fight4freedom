@@ -33,10 +33,7 @@ export function UserMenu({ profile }: UserMenuProps) {
           aria-label="Abrir menu da conta"
         >
           <Avatar className="border-primary/40 size-8 border">
-            <AvatarImage
-              src={profile.member?.avatarUrl ?? "/member-default.png"}
-              alt=""
-            />
+            <AvatarImage src={profile.member?.avatarUrl ?? "/member-default.png"} alt="" />
             <AvatarFallback className="font-heading text-xs">
               {memberInitials(nickname)}
             </AvatarFallback>
@@ -45,9 +42,7 @@ export function UserMenu({ profile }: UserMenuProps) {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel className="font-heading truncate">
-          {nickname}
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="font-heading truncate">{nickname}</DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         {profile.memberId ? (

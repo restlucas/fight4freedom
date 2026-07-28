@@ -22,9 +22,8 @@ export default async function MedalhasPage() {
       <header className="mb-8 space-y-1">
         <h1 className="font-heading text-3xl font-bold">Medalhas</h1>
         <p className="text-muted-foreground">
-          {medals.length} {medals.length === 1 ? "medalha" : "medalhas"} no
-          quadro · {awarded} {awarded === 1 ? "conquista" : "conquistas"} pelo
-          esquadrão.
+          {medals.length} {medals.length === 1 ? "medalha" : "medalhas"} no quadro · {awarded}{" "}
+          {awarded === 1 ? "conquista" : "conquistas"} pelo esquadrão.
         </p>
       </header>
 

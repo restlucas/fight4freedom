@@ -27,11 +27,7 @@ export type PageInfo = {
  * list under the user's feet: page 5 of 5 becomes page 5 of 1 and would render an
  * empty table if the page number were taken at face value.
  */
-export function paginate(
-  total: number,
-  page: number,
-  pageSize: number,
-): PageInfo {
+export function paginate(total: number, page: number, pageSize: number): PageInfo {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const current = Math.min(Math.max(1, Math.trunc(page) || 1), pageCount);
   const start = (current - 1) * pageSize;

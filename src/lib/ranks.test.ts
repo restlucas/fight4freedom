@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  FIRST_RANK,
-  insigniaPath,
-  rankForPoints,
-  rankProgress,
-  RANKS,
-  TOP_RANK,
-} from "./ranks";
+import { FIRST_RANK, insigniaPath, rankForPoints, rankProgress, RANKS, TOP_RANK } from "./ranks";
 
 describe("RANKS", () => {
   it("has 16 ranks, levels in order", () => {

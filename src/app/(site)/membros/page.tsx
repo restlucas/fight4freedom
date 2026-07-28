@@ -25,14 +25,7 @@ export default async function MembersPage() {
       {/* w-screen, not inset-0: 100vw includes the scrollbar, so this background
           keeps its size when a dialog locks body scroll and the bar disappears. */}
       <div aria-hidden className="fixed inset-y-0 left-0 -z-10 w-screen">
-        <Image
-          src="/background.avif"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover"
-        />
+        <Image src="/background.avif" alt="" fill priority sizes="100vw" className="object-cover" />
         {/* Shadow overlay: flat scrim plus a fade into the page background, so
             the translucent cards and filters keep their contrast. */}
         <div className="bg-background/75 absolute inset-0" />
@@ -43,8 +36,7 @@ export default async function MembersPage() {
         <header className="mb-8 space-y-1">
           <h1 className="text-3xl font-bold drop-shadow-sm">Membros</h1>
           <p className="text-muted-foreground">
-            {members.length} {members.length === 1 ? "soldado" : "soldados"} no
-            esquadrão.
+            {members.length} {members.length === 1 ? "soldado" : "soldados"} no esquadrão.
           </p>
         </header>
 

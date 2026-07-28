@@ -36,15 +36,10 @@ function formatJoinedDate(iso: string): string {
 
 export default async function MemberProfilePage({ params }: Params) {
   const { id } = await params;
-  const [member, leaders] = await Promise.all([
-    getMemberProfile(id),
-    getStatLeaders(),
-  ]);
+  const [member, leaders] = await Promise.all([getMemberProfile(id), getStatLeaders()]);
   if (!member) notFound();
 
-  const leadsIn: StatKey[] = STAT_KEYS.filter((key) =>
-    leaders[key].includes(member.id),
-  );
+  const leadsIn: StatKey[] = STAT_KEYS.filter((key) => leaders[key].includes(member.id));
 
   return (
     <>
@@ -77,11 +72,7 @@ export default async function MemberProfilePage({ params }: Params) {
             empty band. */}
         <header className="relative overflow-hidden rounded-xl border">
           <Image
-            src={
-              member.bestClass
-                ? `/images/classes/${member.bestClass}.avif`
-                : "/background.avif"
-            }
+            src={member.bestClass ? `/images/classes/${member.bestClass}.avif` : "/background.avif"}
             alt=""
             fill
             priority
@@ -103,10 +94,7 @@ export default async function MemberProfilePage({ params }: Params) {
                 {member.nickname}
               </h1>
               <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                <PlatformIcon
-                  platform={member.platform}
-                  platformId={member.platformId}
-                />
+                <PlatformIcon platform={member.platform} platformId={member.platformId} />
                 {member.joinedAt ? (
                   <span className="text-muted-foreground text-sm">
                     Entrou em {formatJoinedDate(member.joinedAt)}
@@ -151,11 +139,7 @@ export default async function MemberProfilePage({ params }: Params) {
         {/* Stats */}
         <section className="mt-10">
           <h2 className="font-heading mb-4 text-xl font-semibold">Estatísticas</h2>
-          <PlayerStats
-            stats={member.totals}
-            bestClass={member.bestClass}
-            leadsIn={leadsIn}
-          />
+          <PlayerStats stats={member.totals} bestClass={member.bestClass} leadsIn={leadsIn} />
         </section>
 
         {/* Medals */}

@@ -24,16 +24,13 @@ import { publicEnv } from "@/lib/env";
  */
 export async function getRequestOrigin(): Promise<string> {
   const headerList = await headers();
-  const host =
-    headerList.get("x-forwarded-host") ?? headerList.get("host") ?? null;
+  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? null;
 
   if (!host) return publicEnv.appUrl;
 
   const proto =
     headerList.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") || host.startsWith("127.0.0.1")
-      ? "http"
-      : "https");
+    (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
 
   return `${proto}://${host}`;
 }

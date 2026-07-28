@@ -2,11 +2,7 @@
 
 import Image from "next/image";
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { insigniaPath, type Rank } from "@/lib/ranks";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +60,13 @@ export function RankInsignia({
 
   if (silent) {
     return (
-      <span className={cn("relative inline-flex w-auto shrink-0 items-center justify-center", box, className)}>
+      <span
+        className={cn(
+          "relative inline-flex w-auto shrink-0 items-center justify-center",
+          box,
+          className,
+        )}
+      >
         {artwork}
       </span>
     );
@@ -78,7 +80,11 @@ export function RankInsignia({
         <span
           role="img"
           aria-label={`Patente: ${label}`}
-          className={cn("relative inline-flex w-auto shrink-0 items-center justify-center", box, className)}
+          className={cn(
+            "relative inline-flex w-auto shrink-0 items-center justify-center",
+            box,
+            className,
+          )}
         >
           {artwork}
         </span>

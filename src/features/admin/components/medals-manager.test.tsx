@@ -19,11 +19,7 @@ import type { AdminMedal } from "@/features/admin/lib/queries";
 
 import { MedalsManager } from "./medals-manager";
 
-function medal(
-  name: string,
-  tier: AdminMedal["tier"],
-  holders: number,
-): AdminMedal {
+function medal(name: string, tier: AdminMedal["tier"], holders: number): AdminMedal {
   return {
     id: `${name}-id`,
     name,
@@ -76,9 +72,7 @@ describe("MedalsManager", () => {
 
     await user.type(screen.getByLabelText("Buscar medalha"), "zzz");
 
-    expect(
-      screen.getByText("Nenhuma medalha encontrada com esses filtros."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Nenhuma medalha encontrada com esses filtros.")).toBeInTheDocument();
   });
 
   it("filters by rarity, accumulating the checked options", async () => {
@@ -86,9 +80,7 @@ describe("MedalsManager", () => {
     renderManager();
 
     await user.click(screen.getByRole("button", { name: /Raridade/ }));
-    await user.click(
-      screen.getByRole("menuitemcheckbox", { name: "Lendária" }),
-    );
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Lendária" }));
     expect(rowNames()).toEqual(["Lenda do clã"]);
 
     // The menu stays open, so a second rarity is one click away.
@@ -141,9 +133,7 @@ describe("MedalsManager", () => {
     await user.click(screen.getByLabelText("Resultados por página"));
     await user.click(screen.getByRole("option", { name: "10" }));
 
-    expect(window.localStorage.getItem("@fight4freedom/admin/medals-page-size")).toBe(
-      "10",
-    );
+    expect(window.localStorage.getItem("@fight4freedom/admin/medals-page-size")).toBe("10");
     expect(screen.getByText("1–4 de 4 medalhas")).toBeInTheDocument();
   });
 

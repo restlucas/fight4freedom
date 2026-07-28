@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  readStoredJson,
-  storageKey,
-  STORAGE_PREFIX,
-  writeStoredJson,
-} from "./storage";
+import { readStoredJson, storageKey, STORAGE_PREFIX, writeStoredJson } from "./storage";
 
 const isNumber = (value: unknown): value is number => typeof value === "number";
 

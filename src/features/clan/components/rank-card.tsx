@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { rankProgress } from "@/lib/ranks";
 import { cn } from "@/lib/utils";
 
@@ -30,8 +26,7 @@ interface RankCardProps {
  * bottom. The numbers live in the hover card, not on the face.
  */
 export function RankCard({ points, className }: RankCardProps) {
-  const { rank, next, pointsIntoRank, rankSpan, pointsToNext, fraction } =
-    rankProgress(points);
+  const { rank, next, pointsIntoRank, rankSpan, pointsToNext, fraction } = rankProgress(points);
 
   return (
     <HoverCard openDelay={150}>
@@ -50,11 +45,7 @@ export function RankCard({ points, className }: RankCardProps) {
             aria-valuemin={0}
             aria-valuemax={rankSpan || 1}
             aria-valuenow={rankSpan ? pointsIntoRank : 1}
-            aria-label={
-              next
-                ? `Progresso para ${next.name}`
-                : "Patente máxima do clã alcançada"
-            }
+            aria-label={next ? `Progresso para ${next.name}` : "Patente máxima do clã alcançada"}
           >
             <div
               className="bg-primary h-full rounded-full transition-[width] duration-500"
@@ -91,10 +82,7 @@ export function RankCard({ points, className }: RankCardProps) {
         <p className="text-muted-foreground mt-0.5">
           {next ? (
             <>
-              Faltam{" "}
-              <span className="font-mono tabular-nums">
-                {formatPoints(pointsToNext)}
-              </span>{" "}
+              Faltam <span className="font-mono tabular-nums">{formatPoints(pointsToNext)}</span>{" "}
               pts para {next.name}
             </>
           ) : (

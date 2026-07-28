@@ -43,11 +43,7 @@ interface DotsLoaderProps extends VariantProps<typeof dotsLoader> {
  */
 export function DotsLoader({ size, label = "Carregando", className }: DotsLoaderProps) {
   return (
-    <span
-      role="status"
-      aria-label={label}
-      className={cn(dotsLoader({ size }), className)}
-    >
+    <span role="status" aria-label={label} className={cn(dotsLoader({ size }), className)}>
       {[0, 1, 2].map((index) => (
         <span
           key={index}

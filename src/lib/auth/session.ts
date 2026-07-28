@@ -35,34 +35,32 @@ export type SessionProfile = {
  * The signed-in profile, or null. Memoised per request: the header, the page and
  * any guard can all call it without repeating the round trips.
  */
-export const getSessionProfile = cache(
-  async (): Promise<SessionProfile | null> => {
-    // Auth not wired up yet (or a CI build with no secrets): the public vitrine
-    // still works, nobody is signed in.
-    if (!publicEnv.supabaseConfigured) return null;
+export const getSessionProfile = cache(async (): Promise<SessionProfile | null> => {
+  // Auth not wired up yet (or a CI build with no secrets): the public vitrine
+  // still works, nobody is signed in.
+  if (!publicEnv.supabaseConfigured) return null;
 
-    const supabase = await createSupabaseServerClient();
-    // getUser() revalidates the token with Supabase; getSession() would trust
-    // whatever is in the cookie.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return null;
+  const supabase = await createSupabaseServerClient();
+  // getUser() revalidates the token with Supabase; getSession() would trust
+  // whatever is in the cookie.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
 
-    const profile = await db.profile.findUnique({
-      where: { id: user.id },
-      select: {
-        id: true,
-        isAdmin: true,
-        memberId: true,
-        member: { select: { id: true, nickname: true, avatarUrl: true } },
-      },
-    });
-    // An auth user with no profile is signed in but not part of the clan: it has
-    // no permissions at all (see the callback's decision tree).
-    return profile ?? null;
-  },
-);
+  const profile = await db.profile.findUnique({
+    where: { id: user.id },
+    select: {
+      id: true,
+      isAdmin: true,
+      memberId: true,
+      member: { select: { id: true, nickname: true, avatarUrl: true } },
+    },
+  });
+  // An auth user with no profile is signed in but not part of the clan: it has
+  // no permissions at all (see the callback's decision tree).
+  return profile ?? null;
+});
 
 export class UnauthorizedError extends Error {
   constructor(message = "Não autenticado") {

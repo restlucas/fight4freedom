@@ -15,11 +15,7 @@
 
 import { NextResponse } from "next/server";
 
-import {
-  INVITE_COOKIE,
-  hashInviteToken,
-  inviteState,
-} from "@/lib/auth/invite";
+import { INVITE_COOKIE, hashInviteToken, inviteState } from "@/lib/auth/invite";
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { db } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -43,9 +39,7 @@ export async function GET(request: Request) {
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(
-    code,
-  );
+  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) {
     return NextResponse.redirect(new URL("/entrar?erro=falha", url.origin));
   }
@@ -61,9 +55,7 @@ export async function GET(request: Request) {
   const identity = user.identities?.find((i) => i.provider === "discord");
   const discordId = identity?.id ?? null;
   const discordAvatar =
-    typeof user.user_metadata?.avatar_url === "string"
-      ? user.user_metadata.avatar_url
-      : null;
+    typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null;
 
   const inviteToken = request.headers
     .get("cookie")
@@ -83,16 +75,12 @@ export async function GET(request: Request) {
   if (!outcome) {
     // Denied: no profile exists, so the session is worthless — drop it.
     await supabase.auth.signOut();
-    const response = NextResponse.redirect(
-      new URL("/entrar?erro=sem_convite", url.origin),
-    );
+    const response = NextResponse.redirect(new URL("/entrar?erro=sem_convite", url.origin));
     response.cookies.delete(INVITE_COOKIE);
     return response;
   }
 
-  const response = NextResponse.redirect(
-    new URL(outcome.redirectTo, url.origin),
-  );
+  const response = NextResponse.redirect(new URL(outcome.redirectTo, url.origin));
   if (outcome.clearInviteCookie) response.cookies.delete(INVITE_COOKIE);
   return response;
 }
@@ -219,9 +207,7 @@ async function claimInvite(params: {
           // Captured from the verified identity, which is the whole point of the
           // invite flow.
           ...(discordId ? { discordId } : {}),
-          ...(invite.member.avatarUrl || !discordAvatar
-            ? {}
-            : { avatarUrl: discordAvatar }),
+          ...(invite.member.avatarUrl || !discordAvatar ? {} : { avatarUrl: discordAvatar }),
         },
       });
 

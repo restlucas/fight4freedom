@@ -56,9 +56,9 @@ describe("inviteState", () => {
   const now = new Date("2026-07-05T12:00:00Z");
 
   it("accepts an unused invite inside its window", () => {
-    expect(
-      inviteState({ expiresAt: new Date("2026-07-08T00:00:00Z"), usedAt: null }, now),
-    ).toBe("valid");
+    expect(inviteState({ expiresAt: new Date("2026-07-08T00:00:00Z"), usedAt: null }, now)).toBe(
+      "valid",
+    );
   });
 
   it("rejects a missing invite", () => {
@@ -78,9 +78,9 @@ describe("inviteState", () => {
   });
 
   it("rejects an expired one", () => {
-    expect(
-      inviteState({ expiresAt: new Date("2026-07-04T00:00:00Z"), usedAt: null }, now),
-    ).toBe("expired");
+    expect(inviteState({ expiresAt: new Date("2026-07-04T00:00:00Z"), usedAt: null }, now)).toBe(
+      "expired",
+    );
   });
 
   it("treats the exact expiry instant as expired", () => {

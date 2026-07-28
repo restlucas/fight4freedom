@@ -2,11 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
-import {
-  storedSnapshot,
-  subscribeStored,
-  writeStoredJson,
-} from "@/lib/storage";
+import { storedSnapshot, subscribeStored, writeStoredJson } from "@/lib/storage";
 
 /**
  * State backed by localStorage under the app's `@fight4freedom/` namespace.

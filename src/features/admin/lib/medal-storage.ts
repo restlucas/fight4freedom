@@ -18,9 +18,7 @@ export const MEDAL_BUCKET = "F4F-Medals";
 /** Emblems are circular and render at 64px at most; 512 covers retina with room. */
 const MAX_DIMENSION = 512;
 
-export type UploadResult =
-  | { ok: true; url: string; path: string }
-  | { ok: false; error: string };
+export type UploadResult = { ok: true; url: string; path: string } | { ok: false; error: string };
 
 /**
  * Validates, re-encodes to WebP and stores the artwork.

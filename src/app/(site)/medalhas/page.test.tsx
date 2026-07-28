@@ -33,9 +33,7 @@ describe("MedalhasPage", () => {
   it("renders a card per medal with its criteria and holders", async () => {
     render(await MedalhasPage());
 
-    expect(
-      screen.getByRole("heading", { level: 1, name: /medalhas/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /medalhas/i })).toBeInTheDocument();
     expect(screen.getByText("Clutch King")).toBeInTheDocument();
     expect(screen.getByText("Anchor")).toBeInTheDocument();
     expect(screen.getByText(/vencer um 1vx/i)).toBeInTheDocument();

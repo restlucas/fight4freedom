@@ -9,9 +9,12 @@ const DAY = 24 * HOUR;
 
 describe("countdownParts", () => {
   it("splits a duration into whole units", () => {
-    expect(countdownParts(2 * DAY + 3 * HOUR + 4 * MINUTE + 5 * SECOND)).toEqual(
-      { days: 2, hours: 3, minutes: 4, seconds: 5 },
-    );
+    expect(countdownParts(2 * DAY + 3 * HOUR + 4 * MINUTE + 5 * SECOND)).toEqual({
+      days: 2,
+      hours: 3,
+      minutes: 4,
+      seconds: 5,
+    });
   });
 
   it("clamps negative durations to zero", () => {
@@ -30,9 +33,7 @@ describe("formatCountdown", () => {
   });
 
   it("adds minutes in the last 7 days", () => {
-    expect(formatCountdown(6 * DAY + 4 * HOUR + 33 * MINUTE + 9 * SECOND)).toBe(
-      "6d 04h 33m",
-    );
+    expect(formatCountdown(6 * DAY + 4 * HOUR + 33 * MINUTE + 9 * SECOND)).toBe("6d 04h 33m");
   });
 
   it("keeps minutes hidden exactly at 7 days", () => {
@@ -40,9 +41,7 @@ describe("formatCountdown", () => {
   });
 
   it("adds seconds in the last 24 hours and drops the zero days", () => {
-    expect(formatCountdown(4 * HOUR + 33 * MINUTE + 12 * SECOND)).toBe(
-      "04h 33m 12s",
-    );
+    expect(formatCountdown(4 * HOUR + 33 * MINUTE + 12 * SECOND)).toBe("04h 33m 12s");
   });
 
   it("adds minutes but not seconds exactly at 1 day", () => {

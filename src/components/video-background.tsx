@@ -20,11 +20,7 @@ interface VideoBackgroundProps {
  * and the video is kept out of the initial critical path. It fades in once it
  * can actually play, so there is no black flash over the poster.
  */
-export function VideoBackground({
-  src,
-  poster,
-  className,
-}: VideoBackgroundProps) {
+export function VideoBackground({ src, poster, className }: VideoBackgroundProps) {
   const [allowMotion, setAllowMotion] = useState(false);
   const [ready, setReady] = useState(false);
 

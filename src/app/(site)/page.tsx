@@ -14,10 +14,7 @@ import { FORM_URL } from "@/lib/site-config";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const [stats, medals] = await Promise.all([
-    getClanStats(),
-    getMedalsCatalog(),
-  ]);
+  const [stats, medals] = await Promise.all([getClanStats(), getMedalsCatalog()]);
 
   return (
     <>
@@ -35,7 +32,7 @@ export default async function Home() {
             is plain background with nothing painted over it. */}
         <div
           aria-hidden
-          className="absolute inset-0 [-webkit-mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)] [mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)]"
+          className="absolute inset-0 [mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)] [-webkit-mask-image:linear-gradient(to_bottom,black,black_55%,transparent_92%)]"
         >
           <Image
             src="/background.avif"
@@ -45,10 +42,7 @@ export default async function Home() {
             sizes="100vw"
             className="object-cover"
           />
-          <VideoBackground
-            src="/bf6-season-4-ingame.webm"
-            poster="/background.avif"
-          />
+          <VideoBackground src="/bf6-season-4-ingame.webm" poster="/background.avif" />
           {/* Flat scrim for text contrast, INSIDE the mask so it fades out with
               the footage. Left outside, it also tinted the empty bottom of the
               section and the rounding of that blend against the plain page
@@ -61,9 +55,9 @@ export default async function Home() {
             BEM-VINDO AO <span className="text-primary">F4F</span>
           </p>
           <p className="mt-6 max-w-2xl text-lg text-pretty sm:text-xl">
-            Somos uma comunidade de jogadores dedicados que buscam excelência no
-            campo de batalha. Valorizamos trabalho em equipe, comunicação
-            estratégica e evolução constante — mas, acima de tudo, diversão.
+            Somos uma comunidade de jogadores dedicados que buscam excelência no campo de batalha.
+            Valorizamos trabalho em equipe, comunicação estratégica e evolução constante — mas,
+            acima de tudo, diversão.
           </p>
           <Button asChild size="lg" className="mt-8">
             <a href={FORM_URL} target="_blank" rel="noreferrer">
@@ -85,10 +79,9 @@ export default async function Home() {
               className="mx-auto h-40 w-auto drop-shadow-lg sm:h-52"
             />
             <p className="mt-6 text-lg leading-relaxed">
-              O clã <strong>[F4F] Fight 4 Freedom</strong> nasceu para construir
-              uma comunidade sólida e acolhedora para todos os jogadores
-              apaixonados por Battlefield — e, quem sabe, por outros jogos no
-              futuro.
+              O clã <strong>[F4F] Fight 4 Freedom</strong> nasceu para construir uma comunidade
+              sólida e acolhedora para todos os jogadores apaixonados por Battlefield — e, quem
+              sabe, por outros jogos no futuro.
             </p>
           </div>
 
@@ -128,8 +121,8 @@ export default async function Home() {
               SISTEMA DE <span className="text-primary">MEDALHAS</span>
             </h2>
             <p className="mt-4 text-lg leading-relaxed">
-              Reconhecemos o esforço de cada soldado com medalhas curadas pela
-              equipe, organizadas por tiers de prestígio.
+              Reconhecemos o esforço de cada soldado com medalhas curadas pela equipe, organizadas
+              por tiers de prestígio.
             </p>
           </div>
 
@@ -151,8 +144,8 @@ export default async function Home() {
               JUNTE-SE A <span className="text-primary">NÓS</span>
             </h2>
             <p className="mt-4 text-lg leading-relaxed">
-              Estamos sempre recrutando para fortalecer a comunidade. Fale com a
-              gente pelos canais oficiais e comece sua jornada conosco.
+              Estamos sempre recrutando para fortalecer a comunidade. Fale com a gente pelos canais
+              oficiais e comece sua jornada conosco.
             </p>
           </div>
           <JoinChannels />
@@ -228,9 +221,7 @@ function StatCounter({
   return (
     <div className="text-center">
       <div className="mb-2 flex items-center justify-center">{icon}</div>
-      <div className="font-heading text-3xl font-bold tabular-nums md:text-4xl">
-        {value}
-      </div>
+      <div className="font-heading text-3xl font-bold tabular-nums md:text-4xl">{value}</div>
       <div className="text-muted-foreground mt-1 text-sm">{label}</div>
     </div>
   );

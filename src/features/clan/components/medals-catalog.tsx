@@ -43,8 +43,7 @@ export function MedalsCatalog({ medals }: MedalsCatalogProps) {
         </div>
         {query.trim() ? (
           <p className="text-muted-foreground text-sm" role="status">
-            {filtered.length} de {medals.length}{" "}
-            {medals.length === 1 ? "medalha" : "medalhas"}
+            {filtered.length} de {medals.length} {medals.length === 1 ? "medalha" : "medalhas"}
           </p>
         ) : null}
       </div>

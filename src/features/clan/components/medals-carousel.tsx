@@ -43,15 +43,11 @@ export function MedalsCarousel({ medals }: MedalsCarouselProps) {
                 size="lg"
               />
               <div className="space-y-2">
-                <h3 className="font-heading line-clamp-1 text-lg font-semibold">
-                  {medal.name}
-                </h3>
+                <h3 className="font-heading line-clamp-1 text-lg font-semibold">{medal.name}</h3>
                 <MedalTierChip tier={medal.tier} />
               </div>
               {medal.criteria ? (
-                <p className="text-muted-foreground line-clamp-2 text-sm">
-                  {medal.criteria}
-                </p>
+                <p className="text-muted-foreground line-clamp-2 text-sm">{medal.criteria}</p>
               ) : null}
               <p className="text-muted-foreground mt-auto text-xs">
                 {medal.holders.length === 0

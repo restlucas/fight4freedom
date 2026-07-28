@@ -40,8 +40,7 @@ export default async function EntrarPage({ searchParams }: Props) {
       <div className="bg-card rounded-xl border p-8 text-center">
         <h1 className="font-heading text-2xl font-bold">Entrar</h1>
         <p className="text-muted-foreground mt-3 text-sm">
-          O acesso é exclusivo para membros do clã, com a conta do Discord já
-          vinculada.
+          O acesso é exclusivo para membros do clã, com a conta do Discord já vinculada.
         </p>
 
         {message ? (

@@ -17,11 +17,7 @@ export default async function SiteLayout({
 
   return (
     <>
-      <SiteHeader
-        account={
-          profile ? <UserMenu profile={profile} /> : <DiscordLoginButton />
-        }
-      />
+      <SiteHeader account={profile ? <UserMenu profile={profile} /> : <DiscordLoginButton />} />
       <div className="flex-1">{children}</div>
       <SiteFooter />
     </>

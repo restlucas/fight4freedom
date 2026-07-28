@@ -54,9 +54,7 @@ import MemberProfilePage from "./page";
 describe("MemberProfilePage", () => {
   it("renders the member name, stats and medals", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
-    expect(
-      screen.getByRole("heading", { name: "RRRRRRRREST", level: 1 }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "RRRRRRRREST", level: 1 })).toBeInTheDocument();
     expect(screen.getByText("Estatísticas")).toBeInTheDocument();
     expect(screen.getByText("Sharpshooter")).toBeInTheDocument();
     // Best class shows in the header badge and in the stats grid.
@@ -78,9 +76,7 @@ describe("MemberProfilePage", () => {
 
   it("falls back to the default artwork when there is no best class", async () => {
     const { getMemberProfile } = await import("@/features/clan/lib/queries");
-    const base = await (
-      getMemberProfile as unknown as () => Promise<Record<string, unknown>>
-    )();
+    const base = await (getMemberProfile as unknown as () => Promise<Record<string, unknown>>)();
     vi.mocked(
       getMemberProfile as unknown as (id: string) => Promise<unknown>,
     ).mockResolvedValueOnce({ ...base, bestClass: null });
@@ -94,16 +90,12 @@ describe("MemberProfilePage", () => {
 
   it("shows the platform icon with the platform id", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
-    expect(
-      screen.getByLabelText(/Plataforma: EA · RRRRRRRREST/),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/Plataforma: EA · RRRRRRRREST/)).toBeInTheDocument();
   });
 
   it("crowns the stats the member leads in the clan", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
     expect(screen.getByLabelText("Líder do clã em Kills")).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Líder do clã em Partidas"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Líder do clã em Partidas")).not.toBeInTheDocument();
   });
 });

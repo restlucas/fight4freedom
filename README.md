@@ -32,16 +32,16 @@ pnpm dev
 
 ## Scripts
 
-| Comando             | O que faz                                    |
-| ------------------- | -------------------------------------------- |
-| `pnpm dev`          | Servidor de desenvolvimento                  |
-| `pnpm build`        | Build de produção                            |
-| `pnpm start`        | Roda o build de produção                     |
-| `pnpm lint`         | ESLint                                       |
-| `pnpm type-check`   | `tsc --noEmit`                               |
-| `pnpm format`       | Formata com Prettier                         |
-| `pnpm test`         | Testes unitários (Vitest)                    |
-| `pnpm test:e2e`     | Testes E2E (Playwright)                      |
+| Comando           | O que faz                   |
+| ----------------- | --------------------------- |
+| `pnpm dev`        | Servidor de desenvolvimento |
+| `pnpm build`      | Build de produção           |
+| `pnpm start`      | Roda o build de produção    |
+| `pnpm lint`       | ESLint                      |
+| `pnpm type-check` | `tsc --noEmit`              |
+| `pnpm format`     | Formata com Prettier        |
+| `pnpm test`       | Testes unitários (Vitest)   |
+| `pnpm test:e2e`   | Testes E2E (Playwright)     |
 
 ## Estrutura
 

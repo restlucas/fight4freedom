@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  detectImageKind,
-  MAX_IMAGE_BYTES,
-  validateImageBytes,
-} from "./images";
+import { detectImageKind, MAX_IMAGE_BYTES, validateImageBytes } from "./images";
 
 function bytes(...values: (number | string)[]): Uint8Array {
   const flat: number[] = [];

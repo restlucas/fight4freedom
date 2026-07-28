@@ -8,12 +8,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { FORM_URL, NAV_ITEMS } from "@/lib/site-config";
 
@@ -36,8 +31,7 @@ export function SiteHeader({ account }: SiteHeaderProps) {
     setOpen(false);
   }
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
   return (
     <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b backdrop-blur">
@@ -78,11 +72,7 @@ export function SiteHeader({ account }: SiteHeaderProps) {
             </a>
           </Button>
 
-          <Separator
-            orientation="vertical"
-            className="hidden !h-6 md:block"
-            decorative
-          />
+          <Separator orientation="vertical" className="hidden !h-6 md:block" decorative />
           <div className="hidden md:block">{account}</div>
 
           <Sheet open={open} onOpenChange={setOpen}>
@@ -108,9 +98,7 @@ export function SiteHeader({ account }: SiteHeaderProps) {
                     onClick={() => setOpen(false)}
                     className={cn(
                       "hover:text-primary font-heading px-3 py-3 text-base font-semibold tracking-wide uppercase transition-colors",
-                      isActive(item.href)
-                        ? "text-primary"
-                        : "text-muted-foreground",
+                      isActive(item.href) ? "text-primary" : "text-muted-foreground",
                     )}
                   >
                     {item.label}

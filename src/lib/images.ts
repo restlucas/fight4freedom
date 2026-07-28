@@ -46,9 +46,7 @@ export function detectImageKind(bytes: Uint8Array): ImageKind | null {
   return null;
 }
 
-export type ImageValidation =
-  | { ok: true; kind: ImageKind }
-  | { ok: false; error: string };
+export type ImageValidation = { ok: true; kind: ImageKind } | { ok: false; error: string };
 
 export function validateImageBytes(bytes: Uint8Array): ImageValidation {
   if (bytes.byteLength === 0) {

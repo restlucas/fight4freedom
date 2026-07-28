@@ -15,18 +15,11 @@ interface DiscordLoginButtonProps {
  * nothing (Discord is what authenticates) and would let anyone probe who is on
  * the roster. The callback decides who gets in, using the identity Discord signs.
  */
-export function DiscordLoginButton({
-  next = "/",
-  className,
-}: DiscordLoginButtonProps) {
+export function DiscordLoginButton({ next = "/", className }: DiscordLoginButtonProps) {
   return (
     <form action={startDiscordLogin}>
       <input type="hidden" name="next" value={next} />
-      <Button
-        type="submit"
-        variant="secondary"
-        className={cn("gap-2", className)}
-      >
+      <Button type="submit" variant="secondary" className={cn("gap-2", className)}>
         <DiscordLogoIcon size={18} weight="fill" className="text-indigo-400" />
         Entrar com Discord
       </Button>

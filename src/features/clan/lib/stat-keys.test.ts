@@ -10,7 +10,14 @@ function member(id: string, partial: Partial<StatTotals>) {
 
 describe("statValue", () => {
   it("derives each sortable stat", () => {
-    const totals = { ...emptyTotals(), kills: 200, deaths: 100, wins: 12, losses: 8, timePlayedMinutes: 120 };
+    const totals = {
+      ...emptyTotals(),
+      kills: 200,
+      deaths: 100,
+      wins: 12,
+      losses: 8,
+      timePlayedMinutes: 120,
+    };
     expect(statValue(totals, "kd")).toBe(2);
     expect(statValue(totals, "kills")).toBe(200);
     expect(statValue(totals, "matches")).toBe(20);

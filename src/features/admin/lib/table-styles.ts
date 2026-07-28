@@ -32,8 +32,7 @@ export const TABLE_FRAME =
  * Applied to <TableHeader>. Sticky lives on the `th` cells, not on `thead`:
  * `position: sticky` on `thead` is still unreliable across browsers.
  */
-export const STICKY_HEAD =
-  "[&_th]:bg-background [&_th]:sticky [&_th]:top-0 [&_th]:z-10";
+export const STICKY_HEAD = "[&_th]:bg-background [&_th]:sticky [&_th]:top-0 [&_th]:z-10";
 
 /** Table element: scrolls sideways on phones only, fixed columns from `md` up. */
 export const RESPONSIVE_TABLE = "min-w-2xl md:min-w-0 md:table-fixed";

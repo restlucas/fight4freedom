@@ -302,9 +302,7 @@ describe("MembersTable — relógio da coleta", () => {
     try {
       const start = new Date("2026-07-28T12:00:00Z");
       vi.setSystemTime(start);
-      render(
-        <MembersTable members={[read("Panzer", "2026-07-28T11:59:00.000Z")]} medals={[]} />,
-      );
+      render(<MembersTable members={[read("Panzer", "2026-07-28T11:59:00.000Z")]} medals={[]} />);
       expect(screen.getByText(/há 1 min/)).toBeInTheDocument();
 
       await act(async () => {

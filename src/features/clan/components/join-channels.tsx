@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  DiscordLogoIcon,
-  HardDrivesIcon,
-  WhatsappLogoIcon,
-} from "@phosphor-icons/react";
+import { DiscordLogoIcon, HardDrivesIcon, WhatsappLogoIcon } from "@phosphor-icons/react";
 import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
@@ -25,9 +21,7 @@ export function JoinChannels() {
             <WhatsappLogoIcon size={30} weight="fill" className="text-green-500" />
           </span>
           <h3 className="font-heading text-xl font-semibold">WhatsApp</h3>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Fale direto com nossos recrutadores.
-          </p>
+          <p className="text-muted-foreground mt-1 text-sm">Fale direto com nossos recrutadores.</p>
         </Link>
       </Card>
 
@@ -53,9 +47,7 @@ export function JoinChannels() {
           <HardDrivesIcon size={30} weight="fill" className="text-primary" />
         </span>
         <h3 className="font-heading text-xl font-semibold">Servidor BF6</h3>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Nosso servidor oficial no jogo.
-        </p>
+        <p className="text-muted-foreground mt-1 text-sm">Nosso servidor oficial no jogo.</p>
         <Badge variant="outline" className="mt-3 font-mono text-xs">
           [F4F] Fight 4 Freedom
         </Badge>

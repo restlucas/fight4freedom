@@ -41,9 +41,7 @@ export function MembersList({ members, leaders }: MembersListProps) {
 
   const visible = useMemo(() => {
     const q = normalizeSearch(query);
-    const filtered = q
-      ? members.filter((m) => normalizeSearch(m.nickname).includes(q))
-      : members;
+    const filtered = q ? members.filter((m) => normalizeSearch(m.nickname).includes(q)) : members;
     return sortByStat(filtered, sortKey, direction);
   }, [members, query, sortKey, direction]);
 

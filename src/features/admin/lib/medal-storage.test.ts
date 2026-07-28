@@ -10,9 +10,7 @@ describe("storagePathFromUrl", () => {
   });
 
   it("decodes escaped characters", () => {
-    expect(storagePathFromUrl(`${base}/medalha%20nova.webp`)).toBe(
-      "medalha nova.webp",
-    );
+    expect(storagePathFromUrl(`${base}/medalha%20nova.webp`)).toBe("medalha nova.webp");
   });
 
   it("returns null for a URL outside our bucket, so we never delete someone else's file", () => {

@@ -38,19 +38,13 @@ import Home from "./page";
 describe("Home", () => {
   it("renders the hero and the join CTA", async () => {
     render(await Home());
-    expect(
-      screen.getByRole("heading", { name: /fight 4 freedom/i, level: 1 }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /quero ser membro/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /fight 4 freedom/i, level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /quero ser membro/i })).toBeInTheDocument();
   });
 
   it("shows the medals and stats sections", async () => {
     render(await Home());
-    expect(
-      screen.getByRole("heading", { name: /sistema de medalhas/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /sistema de medalhas/i })).toBeInTheDocument();
     expect(screen.getByText(/membros ativos/i)).toBeInTheDocument();
   });
 
@@ -61,11 +55,7 @@ describe("Home", () => {
     // The old hardcoded tier cards are gone.
     expect(screen.queryByText("Bronze")).not.toBeInTheDocument();
     expect(screen.queryByText("Prata")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /previous slide/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /next slide/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /previous slide/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /next slide/i })).toBeInTheDocument();
   });
 });

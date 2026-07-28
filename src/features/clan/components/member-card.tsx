@@ -1,11 +1,4 @@
-import {
-  Clock,
-  Crosshair,
-  Crown,
-  Gamepad2,
-  Swords,
-  type LucideIcon,
-} from "lucide-react";
+import { Clock, Crosshair, Crown, Gamepad2, Swords, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,20 +7,9 @@ import { rankForPoints } from "@/lib/ranks";
 import { cn } from "@/lib/utils";
 import { computeKd, totalMatches } from "@/lib/stats/snapshots";
 
-import {
-  formatHours,
-  formatKd,
-  formatNumber,
-  formatPoints,
-  memberInitials,
-} from "../lib/format";
+import { formatHours, formatKd, formatNumber, formatPoints, memberInitials } from "../lib/format";
 import type { MemberOverview } from "../lib/queries";
-import {
-  isStatLeader,
-  STAT_KEY_LABEL,
-  type StatKey,
-  type StatLeaders,
-} from "../lib/stat-keys";
+import { isStatLeader, STAT_KEY_LABEL, type StatKey, type StatLeaders } from "../lib/stat-keys";
 import { MedalGroup } from "./medal-group";
 import { PlatformIcon } from "./platform-icon";
 import { RankInsignia } from "./rank-insignia";
@@ -86,10 +68,7 @@ export function MemberCard({ member, leaders, className }: MemberCardProps) {
             <p className="font-heading truncate text-lg leading-none font-semibold">
               {member.nickname}
             </p>
-            <PlatformIcon
-              platform={member.platform}
-              platformId={member.platformId}
-            />
+            <PlatformIcon platform={member.platform} platformId={member.platformId} />
           </div>
           <div className="ml-auto flex items-center gap-4 self-start">
             <MedalGroup medals={member.medals} total={member.medalCount} />

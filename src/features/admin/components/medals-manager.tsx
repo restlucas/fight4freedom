@@ -1,14 +1,7 @@
 "use client";
 
 import type { MedalTier } from "@prisma/client";
-import {
-  ArrowDown,
-  ArrowDownUp,
-  ArrowUp,
-  Pencil,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowDownUp, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -41,16 +34,9 @@ import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
 import { deleteMedalAction } from "@/features/admin/lib/medal-actions";
 import type { AdminMedal } from "@/features/admin/lib/queries";
 import { MEDAL_TIERS } from "@/features/admin/lib/schemas";
-import {
-  RESPONSIVE_TABLE,
-  STICKY_HEAD,
-  TABLE_FRAME,
-} from "@/features/admin/lib/table-styles";
+import { RESPONSIVE_TABLE, STICKY_HEAD, TABLE_FRAME } from "@/features/admin/lib/table-styles";
 import { MedalForm } from "./medal-form";
-import {
-  MultiSelectFilter,
-  type FilterOption,
-} from "./multi-select-filter";
+import { MultiSelectFilter, type FilterOption } from "./multi-select-filter";
 import { TablePagination } from "./table-pagination";
 
 interface MedalsManagerProps {
@@ -58,9 +44,10 @@ interface MedalsManagerProps {
   storageEnabled: boolean;
 }
 
-const TIER_OPTIONS: readonly FilterOption<MedalTier>[] = MEDAL_TIERS.map(
-  (tier) => ({ value: tier, label: TIER_LABEL[tier] }),
-);
+const TIER_OPTIONS: readonly FilterOption<MedalTier>[] = MEDAL_TIERS.map((tier) => ({
+  value: tier,
+  label: TIER_LABEL[tier],
+}));
 
 /** Off keeps the catalog order (rarest tier first), which is the default view. */
 type AwardsSort = "off" | "desc" | "asc";
@@ -77,13 +64,7 @@ const NEXT_SORT: Record<AwardsSort, AwardsSort> = {
   asc: "off",
 };
 
-function DeleteDialog({
-  medal,
-  onDone,
-}: {
-  medal: AdminMedal;
-  onDone: () => void;
-}) {
+function DeleteDialog({ medal, onDone }: { medal: AdminMedal; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -127,11 +108,7 @@ function DeleteDialog({
         <form action={submit}>
           <input type="hidden" name="medalId" value={medal.id} />
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
             <Button type="submit" variant="destructive" disabled={pending}>
@@ -224,8 +201,7 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
             <DialogHeader>
               <DialogTitle>Nova medalha</DialogTitle>
               <DialogDescription>
-                Ela aparece no catálogo imediatamente. A concessão a membros é
-                feita depois.
+                Ela aparece no catálogo imediatamente. A concessão a membros é feita depois.
               </DialogDescription>
             </DialogHeader>
             <MedalForm storageEnabled={storageEnabled} onDone={done} />
@@ -238,20 +214,12 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
           <TableHeader className={STICKY_HEAD}>
             <TableRow>
               <TableHead className="md:w-[34%]">Medalha</TableHead>
-              <TableHead className="hidden md:table-cell md:w-[34%]">
-                Como conquistar
-              </TableHead>
+              <TableHead className="hidden md:table-cell md:w-[34%]">Como conquistar</TableHead>
               <TableHead
                 className="md:w-[16%]"
                 // Real table semantics, so screen readers announce the order
                 // instead of relying on the icon.
-                aria-sort={
-                  sort === "desc"
-                    ? "descending"
-                    : sort === "asc"
-                      ? "ascending"
-                      : "none"
-                }
+                aria-sort={sort === "desc" ? "descending" : sort === "asc" ? "ascending" : "none"}
               >
                 {/* The sort lives on the column it sorts, so "who earned the most"
                     is one click away from where the numbers are. */}
@@ -278,10 +246,7 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={4}
-                  className="text-muted-foreground h-24 text-center"
-                >
+                <TableCell colSpan={4} className="text-muted-foreground h-24 text-center">
                   {medals.length === 0
                     ? "Nenhuma medalha cadastrada."
                     : "Nenhuma medalha encontrada com esses filtros."}
@@ -300,9 +265,7 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
                         size="xs"
                       />
                       <div className="min-w-0">
-                        <p className="font-heading truncate font-semibold">
-                          {medal.name}
-                        </p>
+                        <p className="font-heading truncate font-semibold">{medal.name}</p>
                         <MedalTierChip tier={medal.tier} />
                       </div>
                     </div>
@@ -315,9 +278,7 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
                   </TableCell>
 
                   <TableCell>
-                    <span className="font-mono text-sm tabular-nums">
-                      {medal.holders}
-                    </span>
+                    <span className="font-mono text-sm tabular-nums">{medal.holders}</span>
                   </TableCell>
 
                   <TableCell>
@@ -350,23 +311,14 @@ export function MedalsManager({ medals, storageEnabled }: MedalsManagerProps) {
         itemLabel="medalhas"
       />
 
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(next) => !next && setEditing(null)}
-      >
+      <Dialog open={editing !== null} onOpenChange={(next) => !next && setEditing(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar {editing?.name}</DialogTitle>
-            <DialogDescription>
-              Alterações aparecem no catálogo imediatamente.
-            </DialogDescription>
+            <DialogDescription>Alterações aparecem no catálogo imediatamente.</DialogDescription>
           </DialogHeader>
           {editing ? (
-            <MedalForm
-              medal={editing}
-              storageEnabled={storageEnabled}
-              onDone={done}
-            />
+            <MedalForm medal={editing} storageEnabled={storageEnabled} onDone={done} />
           ) : null}
         </DialogContent>
       </Dialog>

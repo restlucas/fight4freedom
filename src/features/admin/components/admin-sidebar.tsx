@@ -52,9 +52,7 @@ export function AdminSidebar({ nickname, avatarUrl }: AdminSidebarProps) {
             <span className="font-heading truncate text-sm font-bold tracking-wide uppercase">
               Painel F4F
             </span>
-            <span className="text-muted-foreground truncate text-xs">
-              {nickname}
-            </span>
+            <span className="text-muted-foreground truncate text-xs">{nickname}</span>
           </div>
         </div>
       </SidebarHeader>
@@ -66,11 +64,7 @@ export function AdminSidebar({ nickname, avatarUrl }: AdminSidebarProps) {
             <SidebarMenu>
               {NAV.map(({ href, label, icon: Icon }) => (
                 <SidebarMenuItem key={href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(href)}
-                    tooltip={label}
-                  >
+                  <SidebarMenuButton asChild isActive={isActive(href)} tooltip={label}>
                     <Link href={href}>
                       <Icon />
                       <span>{label}</span>

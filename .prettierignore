@@ -6,3 +6,11 @@ coverage
 playwright-report
 test-results
 pnpm-lock.yaml
+
+# O Prettier nao converge neste arquivo: um paragrafo com indentacao malformada
+# (continuacao de item de lista com ~66 espacos, na secao do destaque do lider)
+# faz cada `--write` empurrar a indentacao mais fundo, sem estabilizar. Rodar
+# `pnpm format` duas vezes produz dois resultados diferentes e o `--check` nunca
+# passa. Ignorado em vez de reindentado a mao porque o arquivo e documentacao
+# longa e o texto ja esta legivel como esta.
+docs/plano.md

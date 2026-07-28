@@ -1,11 +1,6 @@
 // Display helpers for the clan vitrine (pt-BR labels and number formatting).
 
-import type {
-  MedalTier,
-  MemberRole,
-  Platform,
-  PlayerClass,
-} from "@prisma/client";
+import type { MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   ea: "EA",

@@ -17,11 +17,7 @@ describe("DotsLoader", () => {
     ) as HTMLElement[];
 
     expect(dots).toHaveLength(3);
-    expect(dots.map((dot) => dot.style.animationDelay)).toEqual([
-      "0s",
-      "0.3s",
-      "0.6s",
-    ]);
+    expect(dots.map((dot) => dot.style.animationDelay)).toEqual(["0s", "0.3s", "0.6s"]);
   });
 
   it("scales the dots with the size variant", () => {

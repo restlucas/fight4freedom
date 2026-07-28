@@ -4,11 +4,7 @@ import type { Metadata } from "next";
 
 import { Button } from "@/components/ui/button";
 import { startInviteLogin } from "@/features/auth/lib/actions";
-import {
-  hashInviteToken,
-  INVITE_STATE_MESSAGE,
-  inviteState,
-} from "@/lib/auth/invite";
+import { hashInviteToken, INVITE_STATE_MESSAGE, inviteState } from "@/lib/auth/invite";
 import { db } from "@/lib/db";
 
 export const metadata: Metadata = {
@@ -47,15 +43,11 @@ export default async function InvitePage({ params }: Params) {
       <div className="bg-card rounded-xl border p-8 text-center">
         {claimable && invite ? (
           <>
-            <h1 className="font-heading text-2xl font-bold">
-              Bem-vindo ao Fight 4 Freedom
-            </h1>
+            <h1 className="font-heading text-2xl font-bold">Bem-vindo ao Fight 4 Freedom</h1>
             <p className="text-muted-foreground mt-3">
               Você foi convidado como{" "}
-              <strong className="text-foreground">
-                {invite.member.nickname}
-              </strong>
-              . Entre com o Discord para confirmar e vincular sua conta.
+              <strong className="text-foreground">{invite.member.nickname}</strong>. Entre com o
+              Discord para confirmar e vincular sua conta.
             </p>
 
             {invite.grantsAdmin ? (

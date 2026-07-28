@@ -28,10 +28,7 @@ import { MedalTierChip } from "@/features/clan/components/medal-tier-chip";
 import { TIER_LABEL } from "@/features/clan/lib/format";
 import { cn } from "@/lib/utils";
 
-import {
-  awardMedalAction,
-  revokeMedalAction,
-} from "@/features/admin/lib/award-actions";
+import { awardMedalAction, revokeMedalAction } from "@/features/admin/lib/award-actions";
 import type { AdminMedal, AdminMember } from "@/features/admin/lib/queries";
 
 interface MemberMedalsDialogProps {
@@ -56,11 +53,7 @@ function formatAwardedDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function MemberMedalsDialog({
-  member,
-  medals,
-  onChanged,
-}: MemberMedalsDialogProps) {
+export function MemberMedalsDialog({ member, medals, onChanged }: MemberMedalsDialogProps) {
   const [open, setOpen] = useState(false);
   const [awardPending, startAward] = useTransition();
   // Revoking tracks WHICH medal is going, not just "something is going": the
@@ -147,8 +140,7 @@ export function MemberMedalsDialog({
         <DialogHeader>
           <DialogTitle>Medalhas de {member.nickname}</DialogTitle>
           <DialogDescription>
-            Conceder ou remover aparece no catálogo e no perfil do membro
-            imediatamente.
+            Conceder ou remover aparece no catálogo e no perfil do membro imediatamente.
           </DialogDescription>
         </DialogHeader>
 
@@ -172,10 +164,7 @@ export function MemberMedalsDialog({
                   return (
                     <li
                       key={award.medalId}
-                      className={cn(
-                        "flex items-center gap-3 p-3",
-                        revoking && "opacity-60",
-                      )}
+                      className={cn("flex items-center gap-3 p-3", revoking && "opacity-60")}
                     >
                       <MedalEmblem
                         name={award.medal.name}
@@ -246,12 +235,7 @@ export function MemberMedalsDialog({
 
               <div>
                 <Label htmlFor={`medalId-${member.id}`}>Medalha</Label>
-                <select
-                  id={`medalId-${member.id}`}
-                  name="medalId"
-                  className={selectClass}
-                  required
-                >
+                <select id={`medalId-${member.id}`} name="medalId" className={selectClass} required>
                   {available.map((medal) => (
                     <option key={medal.id} value={medal.id}>
                       {medal.name} · {TIER_LABEL[medal.tier]}

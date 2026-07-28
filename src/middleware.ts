@@ -27,31 +27,25 @@ export async function middleware(request: NextRequest) {
   // Auth not configured (or a build with no secrets): nobody can be signed in,
   // so treat every visitor as anonymous — /admin still has to be closed.
   if (!publicEnv.supabaseConfigured) {
-    return isAdminPath(request.nextUrl.pathname)
-      ? redirectToLogin(request)
-      : response;
+    return isAdminPath(request.nextUrl.pathname) ? redirectToLogin(request) : response;
   }
 
-  const supabase = createServerClient(
-    publicEnv.supabaseUrl,
-    publicEnv.supabaseAnonKey,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          for (const { name, value } of cookiesToSet) {
-            request.cookies.set(name, value);
-          }
-          response = NextResponse.next({ request });
-          for (const { name, value, options } of cookiesToSet) {
-            response.cookies.set(name, value, options);
-          }
-        },
+  const supabase = createServerClient(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        for (const { name, value } of cookiesToSet) {
+          request.cookies.set(name, value);
+        }
+        response = NextResponse.next({ request });
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options);
+        }
       },
     },
-  );
+  });
 
   // Touching getUser() is what refreshes an expiring token.
   const {

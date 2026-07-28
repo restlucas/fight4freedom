@@ -43,9 +43,7 @@ import MembersPage from "./page";
 describe("MembersPage", () => {
   it("renders the heading and a card per member", async () => {
     render(await MembersPage());
-    expect(
-      screen.getByRole("heading", { name: /membros/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /membros/i })).toBeInTheDocument();
     expect(screen.getByText("RRRRRRRREST")).toBeInTheDocument();
   });
 });

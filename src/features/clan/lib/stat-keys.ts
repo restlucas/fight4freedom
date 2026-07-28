@@ -2,12 +2,7 @@
 // sort controls on /membros, the crowns on the cards and the profile page can
 // never drift apart.
 
-import {
-  computeKd,
-  hoursPlayed,
-  totalMatches,
-  type StatTotals,
-} from "@/lib/stats/snapshots";
+import { computeKd, hoursPlayed, totalMatches, type StatTotals } from "@/lib/stats/snapshots";
 
 export type StatKey = "kd" | "kills" | "matches" | "hours";
 
@@ -46,9 +41,7 @@ export function emptyStatLeaders(): StatLeaders {
  * The top member for each stat. Ties are all crowned, and a stat where every
  * member sits at zero has no leader at all.
  */
-export function findStatLeaders(
-  members: { id: string; totals: StatTotals }[],
-): StatLeaders {
+export function findStatLeaders(members: { id: string; totals: StatTotals }[]): StatLeaders {
   const leaders = emptyStatLeaders();
 
   for (const key of STAT_KEYS) {

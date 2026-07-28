@@ -12,10 +12,7 @@ import { TIER_LABEL } from "@/features/clan/lib/format";
 import { ACCEPTED_IMAGE_ACCEPT, MAX_IMAGE_BYTES } from "@/lib/images";
 import { cn } from "@/lib/utils";
 
-import {
-  createMedalAction,
-  updateMedalAction,
-} from "@/features/admin/lib/medal-actions";
+import { createMedalAction, updateMedalAction } from "@/features/admin/lib/medal-actions";
 import type { AdminMedal } from "@/features/admin/lib/queries";
 import { MEDAL_ICONS, MEDAL_TIERS } from "@/features/admin/lib/schemas";
 
@@ -208,11 +205,7 @@ export function MedalForm({ medal, storageEnabled, onDone }: MedalFormProps) {
 
         {medal?.imageUrl ? (
           <label className="mt-2 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              name="removeImage"
-              className="accent-primary size-4"
-            />
+            <input type="checkbox" name="removeImage" className="accent-primary size-4" />
             Remover a arte atual e voltar ao ícone
           </label>
         ) : null}

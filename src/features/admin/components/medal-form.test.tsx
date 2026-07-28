@@ -26,10 +26,7 @@ function renderForm(props: { storageEnabled: boolean; onDone?: () => void }) {
   return render(
     <Dialog open>
       <DialogContent>
-        <MedalForm
-          storageEnabled={props.storageEnabled}
-          onDone={props.onDone ?? (() => {})}
-        />
+        <MedalForm storageEnabled={props.storageEnabled} onDone={props.onDone ?? (() => {})} />
       </DialogContent>
     </Dialog>,
   );

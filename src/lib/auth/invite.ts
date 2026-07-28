@@ -42,19 +42,15 @@ export type InviteState = "valid" | "used" | "expired" | "unknown";
  * Why an invite cannot be claimed, if it cannot. Kept pure so every rule is
  * covered by tests instead of being buried in the callback.
  */
-export function inviteState(
-  invite: InviteRecord | null,
-  now: Date,
-): InviteState {
+export function inviteState(invite: InviteRecord | null, now: Date): InviteState {
   if (!invite) return "unknown";
   if (invite.usedAt) return "used";
   if (invite.expiresAt.getTime() <= now.getTime()) return "expired";
   return "valid";
 }
 
-export const INVITE_STATE_MESSAGE: Record<Exclude<InviteState, "valid">, string> =
-  {
-    used: "Este convite já foi utilizado.",
-    expired: "Este convite expirou. Peça um novo a um oficial.",
-    unknown: "Convite não encontrado.",
-  };
+export const INVITE_STATE_MESSAGE: Record<Exclude<InviteState, "valid">, string> = {
+  used: "Este convite já foi utilizado.",
+  expired: "Este convite expirou. Peça um novo a um oficial.",
+  unknown: "Convite não encontrado.",
+};
