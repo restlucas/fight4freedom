@@ -9,6 +9,7 @@ vi.mock("@/features/admin/lib/actions", () => ({
   createMemberAction: vi.fn(),
   updateMemberAction: vi.fn(),
   createInviteAction: vi.fn(),
+  toggleMemberStatsAction: vi.fn(),
 }));
 
 vi.mock("@/features/admin/lib/award-actions", () => ({
@@ -16,8 +17,9 @@ vi.mock("@/features/admin/lib/award-actions", () => ({
   revokeMedalAction: vi.fn(),
 }));
 
+const refresh = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh }),
 }));
 
 import type { AdminMember } from "@/features/admin/lib/queries";
@@ -28,6 +30,7 @@ function member(
   nickname: string,
   role: AdminMember["role"],
   platform: AdminMember["platform"],
+  syncState: AdminMember["sync"]["state"] = "ok",
 ): AdminMember {
   return {
     id: `${nickname}-id`,
@@ -35,7 +38,7 @@ function member(
     platform,
     platformId: null,
     statsLinked: true,
-    sync: { state: "ok", checkedAt: null, canPause: true, paused: false },
+    sync: { state: syncState, checkedAt: null, canPause: true, paused: false },
     role,
     active: true,
     avatarUrl: null,
@@ -168,5 +171,61 @@ describe("MembersTable", () => {
     renderTable(many);
     // Falls back to the default of 25 instead of trusting the stored value.
     expect(rowNames()).toHaveLength(25);
+  });
+});
+
+describe("MembersTable — coluna Stats", () => {
+  /** Roster with one member per interesting sync state. */
+  const BY_STATE: AdminMember[] = [
+    member("Zulu", "member", "ea", "ok"),
+    member("Alfa", "member", "ea", "identity_pending"),
+    member("Bravo", "member", "ea", "no_data"),
+    member("Charlie", "member", "ea", "waiting"),
+  ];
+
+  it("filters by sync state", async () => {
+    const user = userEvent.setup();
+    render(<MembersTable members={BY_STATE} medals={[]} />);
+
+    // The filter trigger is exactly "Stats"; the sort button carries the action
+    // in its accessible name, so the two are distinguishable.
+    await user.click(screen.getByRole("button", { name: "Stats" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "ID não encontrado" }));
+
+    expect(rowNames()).toEqual(["Alfa"]);
+  });
+
+  it("sorts by urgency, not alphabetically", async () => {
+    // Alphabetical would bury "ID não encontrado" between "Fora da coleta" and
+    // "Pausado" — the opposite of what this column is opened for.
+    const user = userEvent.setup();
+    render(<MembersTable members={BY_STATE} medals={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /^Stats: /i }));
+
+    expect(rowNames()).toEqual(["Alfa", "Bravo", "Charlie", "Zulu"]);
+  });
+
+  it("reverses to healthy-first on the second click, then clears", async () => {
+    const user = userEvent.setup();
+    render(<MembersTable members={BY_STATE} medals={[]} />);
+
+    const header = () => screen.getByRole("button", { name: /^Stats: /i });
+    await user.click(header());
+    await user.click(header());
+    expect(rowNames()).toEqual(["Zulu", "Charlie", "Bravo", "Alfa"]);
+
+    await user.click(header());
+    // Back to the server order.
+    expect(rowNames()).toEqual(["Zulu", "Alfa", "Bravo", "Charlie"]);
+  });
+
+  it("refreshes the route on demand, because the column does not poll", async () => {
+    const user = userEvent.setup();
+    render(<MembersTable members={BY_STATE} medals={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /atualizar/i }));
+
+    expect(refresh).toHaveBeenCalled();
   });
 });

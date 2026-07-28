@@ -1,9 +1,18 @@
 "use client";
 
 import type { MemberRole, Platform } from "@prisma/client";
-import { Pencil, Plus, ShieldCheck, UserPlus } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowDownUp,
+  ArrowUp,
+  Pencil,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  UserPlus,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -34,9 +43,11 @@ import {
 } from "@/features/clan/lib/format";
 import { usePersistedState } from "@/hooks/use-persisted-state";
 import { isPageSize, paginate, type PageSize } from "@/lib/pagination";
+import { cn } from "@/lib/utils";
 
 import { MemberSyncCell } from "@/features/admin/components/member-sync-cell";
-import type { AdminMedal, AdminMember } from "@/features/admin/lib/queries";
+import { SYNC_LABEL, SYNC_STATES_BY_URGENCY, syncUrgency } from "@/features/admin/lib/member-sync";
+import type { AdminMedal, AdminMember, MemberSyncState } from "@/features/admin/lib/queries";
 import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
 import { RESPONSIVE_TABLE, STICKY_HEAD, TABLE_FRAME } from "@/features/admin/lib/table-styles";
 import { InviteDialog } from "./invite-dialog";
@@ -61,11 +72,34 @@ const PLATFORM_OPTIONS: readonly FilterOption<Platform>[] = PLATFORMS.map((platf
   label: PLATFORM_LABEL[platform],
 }));
 
+/** Listed by urgency, not alphabetically — the filter reads as a triage list. */
+const SYNC_OPTIONS: readonly FilterOption<MemberSyncState>[] = SYNC_STATES_BY_URGENCY.map(
+  (state) => ({ value: state, label: SYNC_LABEL[state].text }),
+);
+
+/** Off keeps the default order (active first, then nickname). */
+type SyncSort = "off" | "urgent" | "healthy";
+
+const SYNC_SORT_LABEL: Record<SyncSort, string> = {
+  off: "Ordenar por status da coleta",
+  urgent: "Quem precisa de atenção primeiro",
+  healthy: "Quem está sincronizando primeiro",
+};
+
+const NEXT_SYNC_SORT: Record<SyncSort, SyncSort> = {
+  off: "urgent",
+  urgent: "healthy",
+  healthy: "off",
+};
+
 export function MembersTable({ members, medals }: MembersTableProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [roles, setRoles] = useState<MemberRole[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
+  const [syncStates, setSyncStates] = useState<MemberSyncState[]>([]);
+  const [syncSort, setSyncSort] = useState<SyncSort>("off");
+  const [refreshing, startRefresh] = useTransition();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePersistedState<PageSize>(
     "admin/members-page-size",
@@ -81,13 +115,29 @@ export function MembersTable({ members, medals }: MembersTableProps) {
       (q === "" || normalizeSearch(member.nickname).includes(q)) &&
       // Empty selection means "no filter", not "match nothing".
       (roles.length === 0 || roles.includes(member.role)) &&
-      (platforms.length === 0 || platforms.includes(member.platform)),
+      (platforms.length === 0 || platforms.includes(member.platform)) &&
+      (syncStates.length === 0 || syncStates.includes(member.sync.state)),
   );
+
+  // Copy before sorting: `filtered` may be the prop array itself when no filter is
+  // active, and sorting in place would mutate what the server handed us.
+  const sorted =
+    syncSort === "off"
+      ? filtered
+      : [...filtered].sort((a, b) => {
+          const delta = syncUrgency(a.sync.state) - syncUrgency(b.sync.state);
+          // Nickname breaks ties so the order is stable between renders instead
+          // of depending on how the rows came out of the database.
+          return (
+            (syncSort === "urgent" ? delta : -delta) ||
+            a.nickname.localeCompare(b.nickname, "pt-BR")
+          );
+        });
 
   // paginate() clamps, so narrowing the filters while on page 4 lands on the last
   // page that still exists instead of showing an empty table.
-  const info = paginate(filtered.length, page, pageSize);
-  const visible = filtered.slice(info.start, info.end);
+  const info = paginate(sorted.length, page, pageSize);
+  const visible = sorted.slice(info.start, info.end);
 
   // The table is server-rendered; refresh after a write so it reflects the change.
   function done() {
@@ -130,6 +180,27 @@ export function MembersTable({ members, medals }: MembersTableProps) {
             selected={platforms}
             onChange={resetTo(setPlatforms)}
           />
+          <MultiSelectFilter
+            label="Stats"
+            options={SYNC_OPTIONS}
+            selected={syncStates}
+            onChange={resetTo(setSyncStates)}
+          />
+          {/* The Stats column is server-rendered and the collector runs on its own
+              schedule, so the page can be minutes behind without anything being
+              wrong. Polling would hammer the database for a panel nobody is
+              staring at; a button costs nothing and is honest about being manual. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => startRefresh(() => router.refresh())}
+            disabled={refreshing}
+            title="Buscar o estado atual da coleta"
+            className="h-8 gap-1.5"
+          >
+            <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+            Atualizar
+          </Button>
         </div>
 
         <Dialog open={creating} onOpenChange={setCreating}>
@@ -161,7 +232,43 @@ export function MembersTable({ members, medals }: MembersTableProps) {
               <TableHead className="md:w-[32%]">Membro</TableHead>
               <TableHead className="hidden lg:table-cell lg:w-[10%]">Cargo</TableHead>
               <TableHead className="md:w-[14%]">Conta</TableHead>
-              <TableHead className="md:w-[18%]">Stats</TableHead>
+              <TableHead
+                className="md:w-[18%]"
+                // Real table semantics, so screen readers announce the order
+                // instead of relying on the icon.
+                aria-sort={
+                  syncSort === "urgent"
+                    ? "ascending"
+                    : syncSort === "healthy"
+                      ? "descending"
+                      : "none"
+                }
+              >
+                {/* Sorting by urgency, never alphabetically: alphabetical would
+                    bury "ID não encontrado" between "Fora da coleta" and
+                    "Pausado", which is the opposite of what an admin opens this
+                    column to find. */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => resetTo(setSyncSort)(NEXT_SYNC_SORT[syncSort])}
+                  title={SYNC_SORT_LABEL[NEXT_SYNC_SORT[syncSort]]}
+                  // The filter trigger in the toolbar is also called "Stats", so
+                  // without this both controls share one accessible name. Keeps
+                  // the visible word first, so the name still contains the label.
+                  aria-label={`Stats: ${SYNC_SORT_LABEL[NEXT_SYNC_SORT[syncSort]].toLowerCase()}`}
+                  className="-ml-2 h-7 gap-1.5 px-2"
+                >
+                  Stats
+                  {syncSort === "urgent" ? (
+                    <ArrowDown className="size-3.5" />
+                  ) : syncSort === "healthy" ? (
+                    <ArrowUp className="size-3.5" />
+                  ) : (
+                    <ArrowDownUp className="size-3.5 opacity-50" />
+                  )}
+                </Button>
+              </TableHead>
               <TableHead className="md:w-[26%]">Ações</TableHead>
             </TableRow>
           </TableHeader>

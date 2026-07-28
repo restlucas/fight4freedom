@@ -736,6 +736,30 @@ aparece quando pausar faz sentido; para quem já está fora da coleta seria um c
 Também separei duas colunas que estavam misturadas: "Conta" exibia o badge de stats dentro dela,
 confundindo login do Discord com coleta. São perguntas diferentes e agora são colunas diferentes.
 
+**Ferramentas de triagem na coluna (2026-07-27).** Com 99 membros e ~28 problemas, o badge sozinho
+não bastava:
+
+- **Filtro por estado**, multi-select como os de cargo e plataforma, com as opções listadas **por
+  urgência** e não em ordem alfabética — o filtro lê como uma lista de triagem.
+- **Ordenação pelo cabeçalho**, ciclando entre desligado, problemas primeiro e sincronizados
+  primeiro. Ordena por **urgência**: alfabética enterraria "ID não encontrado" entre "Fora da
+  coleta" e "Pausado", o oposto do motivo de alguém abrir a coluna.
+- **Botão "Atualizar"** na barra. A coluna é renderizada no servidor e o coletor roda no ritmo dele,
+  então a página fica minutos atrás sem nada estar errado. Preferido a polling: consultar o banco em
+  laço por um painel que ninguém está encarando é desperdício, e o botão é honesto sobre ser manual.
+- **Botão de pausar antes do badge**, em espaço de largura fixa reservado mesmo quando vazio. Largura
+  fixa no badge seria frágil — bastaria reescrever um rótulo para desalinhar de novo. É o mesmo
+  truque que a coluna "Ações" já usava.
+- **Ícone girando no "Aguardando"**, e é honesto: o estado realmente está em movimento, já que a
+  varredura leva dois ou três ciclos e o membro fica ali até chegar a vez dele.
+
+Os rótulos saíram para `lib/member-sync.ts`, compartilhados entre badge, filtro e ordenação. Com três
+consumidores, um rótulo que diverge entre badge e filtro vira um filtro em que ninguém confia.
+
+**Ambiguidade de acessibilidade encontrada pelos testes:** o filtro e a ordenação ficaram ambos com o
+nome acessível "Stats". O botão de ordenar ganhou `aria-label` descrevendo a ação, mantendo a palavra
+visível no começo para o nome acessível continuar contendo o rótulo (WCAG 2.5.3).
+
 **Limitação conhecida do estado `no_data`, medida antes de acreditar no próprio badge.** No primeiro
 ciclo real com carimbo, 15 membros caíram nesse estado enquanto só **5** não têm dado de BF6 de
 verdade. Os outros 10 eram 504 transitórios: o coletor **não distingue** "o lote falhou" de "o
