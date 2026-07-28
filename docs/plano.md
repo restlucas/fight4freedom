@@ -1185,9 +1185,14 @@ lembrete no fim.
 - **Pendência com o clã** (única restante, não bloqueia o deploy): teste de fidelidade/frescor da
   §8 do estudo — conferir com um membro se os números batem com a tela do jogo e medir o atraso
   da EA após uma partida. Até lá, não divulgar as seções de stats.
-- O **id da plataforma** cadastrado precisa ser o id exato da conta (o formulário avisa e exige).
-  Id errado = membro eterno em "Stats pendentes"; corrigir o id rebinda a identidade
-  automaticamente, no salvar ou no ciclo seguinte da coleta.
+- **Quem busca os stats é o `eaName`**, não o `platformId` nem o `nickname` (o input próprio de id
+  saiu do formulário em 28/07; o `platformId` passou a ser derivado do nickname no salvar). Nome
+  errado = membro eterno em "Stats pendentes" ou em "Conta errada?"; corrigir o `eaName` rebinda a
+  identidade automaticamente, no salvar ou no ciclo seguinte da coleta.
+- **Editar direto no banco não é equivalente a salvar pelo painel.** Duas coisas só acontecem na
+  action: o `platformId` ser reescrito a partir do nickname e o cache da vitrine ser purgado. Uma
+  linha corrigida por SQL fica com o handle antigo na tela e ainda espera o TTL de 300 s. Ver o
+  item 7 do Backlog técnico, que nasceu exatamente disso.
 
 ---
 
@@ -1252,3 +1257,37 @@ A rota `/api/stats/collect` existe com perfil de 45 s e duas passadas, e hoje s�
 
 Pendência de produto que já está no Backlog de features acima: decidir se o link sai do menu enquanto
 a página for placeholder.
+
+### 7. Colunas "só exibição" que só o painel escreve
+
+**O caso que revelou (28/07).** O `[F4F] V1PER` foi corrigido direto no banco e a aplicação seguia
+mostrando `MathexsSniper`. A coleta estava certa e nunca esteve errada: o `nucleusId` `2380261145` é
+**uma conta com três personas** — `MathexsSniper` (ea), `[F4F] V1PER` (steam) e `Mathexs4627`
+(xboxone) —, a mesma pessoa, e toda persona da conta devolve os mesmos stats. O que aparecia na tela
+era o **`platformId`**, com o valor antigo.
+
+O problema não é o dado velho, é o **caminho de escrita ser único e implícito**:
+
+- `platformId` é derivado do nickname pelo `platformIdFrom()` **dentro da action**
+  (`admin/lib/actions.ts`). Nenhum outro caminho escreve essa coluna, então qualquer linha tocada por
+  SQL, script ou Studio guarda um handle desatualizado **para sempre**, sem sinal nenhum. Ele é
+  renderizado no tooltip do `PlatformIcon` (card e perfil) e como texto na tabela do painel.
+- A coluna `platform` tem a mesma natureza e já divergiu: a nossa diz `ea` e a persona vinculada é
+  `steam`. Inofensivo hoje, confuso de ler amanhã, e foi o que atrasou a investigação do `dusales`
+  (`api-gametools.md` §11).
+- Junto disso, escrita fora da action **não purga o cache**, então mesmo o dado certo espera o TTL de
+  300 s. Isso é o TTL fazendo o trabalho dele, não um bug — mas explica metade dos "editei e não
+  mudou".
+
+Três saídas possíveis, da mais barata à mais definitiva:
+
+1. **Derivar na leitura em vez de na escrita.** Se `platformId` é sempre o nickname, ele não precisa
+   ser coluna — some a chance de divergir. Custo: decidir o que fazer com as linhas cujo id foi
+   digitado antes de 28/07 e não é igual ao nick.
+2. **Mostrar a persona vinculada em vez do nosso `platformId`.** O `eaUsername` já é gravado na
+   resolução e é o que descreve a conta que a coleta está lendo de fato. Alinha tela e coleta.
+3. **Manter as colunas e documentar que edição fora do painel é incompleta**, que é o mínimo e já
+   está feito em Observações.
+
+Nada disso é urgente: não afeta número nenhum, só a legenda. Vale resolver junto do item 1, porque os
+dois são a mesma classe de defeito — **a tela mostrando um recorte diferente do que a coleta usa**.
