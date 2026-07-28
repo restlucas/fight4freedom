@@ -17,7 +17,13 @@ import { z } from "zod";
 
 import type { PlayerClass } from "@prisma/client";
 
-import type { PlayerIdentity, RawStats, StatsProvider } from "./provider";
+import type {
+  IdentityMatch,
+  PlayerIdentity,
+  RawStats,
+  ResolvedIdentity,
+  StatsProvider,
+} from "./provider";
 
 const BASE_URL = "https://api.gametools.network";
 
@@ -62,10 +68,16 @@ const searchResponseSchema = z.object({
         displayName: z.string(),
         personaId: z.coerce.string(),
         nucleusId: z.coerce.string(),
+        // Defaulted, not required: `username` is a convenience for telling
+        // candidates apart, never a lookup key, so a payload without it must
+        // still resolve rather than throw away the whole search.
+        username: z.string().nullish().default(null),
       })
       .loose(),
   ),
 });
+
+export type SearchResult = z.output<typeof searchResponseSchema>["results"][number];
 
 const gameModeGroupSchema = z
   .object({
@@ -331,6 +343,57 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Chooses which of the search results IS the member. Pure, so the real payloads
+ * that motivated it can be pinned in tests.
+ *
+ * The problem, measured against the live roster on 2026-07-28: `displayName` is
+ * the only searchable field and it is NOT unique. Ten members returned more than
+ * one candidate. The previous rule — first case-insensitive hit — is a coin toss
+ * among them, and it lost twice: `Ovaca` was bound to an emptied `OVaca`
+ * (0 kills) while the real account had 13.562, and `morpheus98` was bound to a
+ * stranger's `Morpheus98` (242 kills) instead of the member's 9.949.
+ *
+ * Two steps, in this order:
+ *
+ * 1. CASE-EXACT FIRST. EA treats case as significant, so `morpheus98`,
+ *    `Morpheus98` and `oVaca` are three different accounts. Falling back to
+ *    case-insensitive only when nothing matches exactly keeps the old behaviour
+ *    for the single-candidate majority while fixing both mis-bindings above.
+ *
+ * 2. THEN GROUP BY nucleusId. What looks like a duplicate usually is not: the
+ *    same account shows up once per platform persona, and every persona returns
+ *    identical stats (verified on all seven members where this happens). So one
+ *    distinct nucleus id means one account, and any of its personas is a correct
+ *    answer. More than one means genuinely different people.
+ *
+ * `username` is deliberately NOT used to disambiguate, though the payload has it
+ * and it is tempting: it is not searchable, and it collides exactly where it
+ * would be needed — the two distinct OJUN10R accounts share the username
+ * `OJUN10R`. Platform is not used either, because our stored platform disagrees
+ * with EA's for 40 of 70 resolved members (every PSN member resolves to an `ea`
+ * or `steam` persona), so filtering on it would unbind more members than it saves.
+ */
+export function pickIdentity(results: SearchResult[], name: string): IdentityMatch {
+  const exact = results.filter((r) => r.displayName === name);
+  const candidates = exact.length
+    ? exact
+    : results.filter((r) => r.displayName.toLowerCase() === name.toLowerCase());
+
+  if (candidates.length === 0) return { status: "not-found" };
+
+  const toIdentity = (r: SearchResult): ResolvedIdentity => ({
+    personaId: r.personaId,
+    nucleusId: r.nucleusId,
+    username: r.username ?? null,
+  });
+
+  const accounts = new Set(candidates.map((r) => r.nucleusId));
+  if (accounts.size === 1) return { status: "resolved", identity: toIdentity(candidates[0]) };
+
+  return { status: "ambiguous", candidates: candidates.map(toIdentity) };
+}
+
 async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
   const response = await fetch(url, {
     ...init,
@@ -345,15 +408,25 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Pro
 export class GametoolsProvider implements StatsProvider {
   constructor(private readonly baseUrl: string = BASE_URL) {}
 
-  async searchPlayer(name: string): Promise<PlayerIdentity | null> {
+  async matchPlayer(name: string): Promise<IdentityMatch> {
     const url = `${this.baseUrl}/bf6/player/?name=${encodeURIComponent(name)}`;
     const payload = await fetchJson(url, {}, SEARCH_TIMEOUT_MS);
     const { results } = searchResponseSchema.parse(payload);
+    return pickIdentity(results, name);
+  }
 
-    // The endpoint is a fuzzy search; only an exact (case-insensitive) match
-    // is safe to bind to a member automatically.
-    const match = results.find((result) => result.displayName.toLowerCase() === name.toLowerCase());
-    return match ? { personaId: match.personaId, nucleusId: match.nucleusId } : null;
+  async searchPlayer(name: string): Promise<ResolvedIdentity | null> {
+    const match = await this.matchPlayer(name);
+    if (match.status === "resolved") return match.identity;
+    if (match.status === "ambiguous") {
+      // Left unbound on purpose. See pickIdentity: picking one of several
+      // accounts at random is what put a stranger's stats on a member's profile.
+      console.warn(
+        `[stats] "${name}" casa com ${match.candidates.length} contas EA distintas; ` +
+          `nao vinculado automaticamente`,
+      );
+    }
+    return null;
   }
 
   async fetchStats(players: PlayerIdentity[]): Promise<Map<string, RawStats>> {

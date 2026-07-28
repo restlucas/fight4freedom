@@ -69,9 +69,9 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
           autoComplete="off"
           className="mt-1.5"
         />
-        {/* Display only: the stats binding lives on the platform id below. */}
+        {/* Display only: the stats binding lives on the EA name below. */}
         <p className="text-muted-foreground mt-1 text-xs">
-          Como o membro aparece no site. Pode ser diferente do id da conta.
+          Como o membro aparece no site. Pode ser diferente do nome da EA.
         </p>
         <FieldError messages={errors?.nickname} />
       </div>
@@ -98,27 +98,43 @@ export function MemberForm({ member, onDone }: MemberFormProps) {
         </div>
 
         <div>
-          <Label htmlFor="platformId">Id na plataforma</Label>
+          <Label htmlFor="eaName">Nome da EA</Label>
           <Input
-            id="platformId"
-            name="platformId"
-            defaultValue={member?.platformId ?? ""}
-            required
+            id="eaName"
+            name="eaName"
+            defaultValue={member?.eaName ?? ""}
             maxLength={80}
             autoComplete="off"
             placeholder="ex.: RRRRRRRREST"
             className="mt-1.5"
           />
-          {/* Mandatory: this exact value is what resolves the EA identity used
-              by the stats collector (src/lib/stats/collect.ts). */}
+          {/* Optional on purpose: a mandatory field is what produced 23 invented
+              ids. Blank is visible in the panel; a wrong value is not. */}
           <p className="text-muted-foreground mt-1 text-xs">
-            Id exato da conta. É o que busca os stats.
+            É o que busca os stats. Diferencia maiúsculas. Em branco se não souber.
           </p>
-          <FieldError messages={errors?.platformId} />
+          <FieldError messages={errors?.eaName} />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="platformId">Id na plataforma</Label>
+          <Input
+            id="platformId"
+            name="platformId"
+            defaultValue={member?.platformId ?? ""}
+            maxLength={80}
+            autoComplete="off"
+            className="mt-1.5"
+          />
+          {/* No longer the stats key — see the schema comment on platformId. */}
+          <p className="text-muted-foreground mt-1 text-xs">
+            Só para achar o membro na plataforma dele.
+          </p>
+          <FieldError messages={errors?.platformId} />
+        </div>
+
         <div>
           <Label htmlFor="role">Cargo no clã</Label>
           <select

@@ -263,6 +263,12 @@ async function main() {
       });
       updated += 1;
     } else {
+      // `eaName` is deliberately NOT written from the list. The export holds the
+      // console gamertag, which for 11 of the 23 unresolved members is not their
+      // EA display name — copying it here would fill the field with a value we
+      // already know does not resolve, and an admin looking at the panel could
+      // not tell it apart from one someone actually confirmed. Blank means
+      // "nobody has told us yet", and eaLookupName still falls back to the id.
       await db.member.create({
         data: {
           nickname: m.nickname,

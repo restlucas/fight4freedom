@@ -15,9 +15,46 @@ import type { PlayerClass } from "@prisma/client";
 export type PlayerIdentity = {
   /** EA persona id (`playerid` on the API). */
   personaId: string;
-  /** EA nucleus id — account-level id the batch endpoint also requires. */
+  /**
+   * EA nucleus id — account-level id the batch endpoint also requires, and the
+   * only value in the payload that identifies the ACCOUNT rather than one of its
+   * platform personas. Measured on the live roster 2026-07-28: seven members have
+   * one nucleus id carrying two persona ids (one per platform), and both personas
+   * return byte-identical stats. Two DIFFERENT nucleus ids mean two different
+   * accounts, and those do disagree — see pickIdentity in ./gametools.ts.
+   */
   nucleusId: string;
 };
+
+/**
+ * What a name lookup returns: the identity plus the label that makes a candidate
+ * recognisable to a human.
+ *
+ * Separate from `PlayerIdentity` on purpose. Fetching stats needs the two ids and
+ * nothing else, so folding `username` into the identity would force every caller
+ * of `fetchStats` to carry a field it has no use for.
+ */
+export type ResolvedIdentity = PlayerIdentity & {
+  /**
+   * EA `username`, captured at resolution time. Never an input and never a
+   * lookup key: it is not searchable (searching a username returns nothing) and
+   * it is not unique — two distinct accounts named OJUN10R share the username
+   * `OJUN10R`. Kept because it is the most human-readable way to tell two
+   * candidates apart when someone has to choose between them.
+   */
+  username: string | null;
+};
+
+/**
+ * Outcome of resolving a display name, kept richer than `PlayerIdentity | null`
+ * so "nobody by that name" and "several different people by that name" stay
+ * distinguishable. Only the first is a data-entry problem; the second needs a
+ * human to pick, and `candidates` is what that screen would render.
+ */
+export type IdentityMatch =
+  | { status: "resolved"; identity: ResolvedIdentity }
+  | { status: "not-found" }
+  | { status: "ambiguous"; candidates: ResolvedIdentity[] };
 
 /**
  * One member's cumulative stats, already translated to OUR vocabulary.
@@ -80,10 +117,16 @@ export type RawStats = {
 
 export interface StatsProvider {
   /**
-   * Resolves a display name to the stable identity. Null when the player does
-   * not exist (or the name is ambiguous beyond recognition).
+   * Resolves an EA display name to the stable identity. Null when nobody carries
+   * that name AND when several different accounts do: binding one of them at
+   * random is how a member ends up showing a stranger's stats, so an ambiguous
+   * name stays unbound until someone resolves it. Use `matchPlayer` when the
+   * caller can tell those two cases apart.
    */
-  searchPlayer(name: string): Promise<PlayerIdentity | null>;
+  searchPlayer(name: string): Promise<ResolvedIdentity | null>;
+
+  /** Same lookup, keeping "not found" and "ambiguous" distinguishable. */
+  matchPlayer(name: string): Promise<IdentityMatch>;
 
   /**
    * Fetches cumulative stats for many players, batched however the source

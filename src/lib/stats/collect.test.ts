@@ -74,6 +74,7 @@ function fakeProvider(options: { costMs?: number } = {}): StatsProvider & {
   return {
     batches,
     searchPlayer: vi.fn(async () => null),
+    matchPlayer: vi.fn(async () => ({ status: "not-found" }) as const),
     fetchStats: vi.fn(async (players: PlayerIdentity[]) => {
       batches.push(players);
       if (options.costMs) clock += options.costMs;

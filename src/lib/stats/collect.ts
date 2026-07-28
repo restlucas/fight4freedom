@@ -33,6 +33,7 @@ import type { Prisma, StatsSyncStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 
 import { chunk, gametoolsProvider, STATS_BATCH_SIZE } from "./gametools";
+import { eaLookupName } from "./identity";
 import type { StatsProvider } from "./provider";
 import { hasNewActivity } from "./snapshots";
 
@@ -134,8 +135,10 @@ export async function collectStats(
     select: {
       id: true,
       nickname: true,
-      // The exact account id on the platform — what resolves the EA identity.
-      // The nickname is display only and is never used for lookups.
+      // The EA display name resolves the identity; `platformId` is only the
+      // fallback for rows created before the two were separated. The clan
+      // nickname is display only and is never used for lookups.
+      eaName: true,
       platformId: true,
       eaPersonaId: true,
       eaNucleusId: true,
@@ -178,20 +181,24 @@ export async function collectStats(
   if (members.length === 0) return report;
 
   // --- 1. Resolve missing EA identities (bounded per run) -------------------
-  // Members registered before platformId became mandatory may have none; there
-  // is nothing to search for, so they stay pending until an admin fills it in.
-  const unresolved = members.filter((m) => m.platformId && (!m.eaPersonaId || !m.eaNucleusId));
+  // A member with no EA name and no platform id has nothing to search for, so
+  // they stay pending until an admin or the member fills it in.
+  const unresolved = members.filter(
+    (m) => eaLookupName(m) && (!m.eaPersonaId || !m.eaNucleusId),
+  );
   for (const member of unresolved.slice(0, MAX_IDENTITY_RESOLUTIONS_PER_RUN)) {
     try {
-      // Search by platform id (the exact EA account name); the search only
-      // binds on an exact match (see GametoolsProvider.searchPlayer).
-      const identity = await provider.searchPlayer(member.platformId!);
+      // Search by EA display name. The match is case-exact and refuses to bind
+      // when several distinct accounts answer to it — see pickIdentity in
+      // ./gametools.ts for why binding one at random was the bug.
+      const identity = await provider.searchPlayer(eaLookupName(member)!);
       if (!identity) continue;
       await db.member.update({
         where: { id: member.id },
         data: {
           eaPersonaId: identity.personaId,
           eaNucleusId: identity.nucleusId,
+          eaUsername: identity.username,
         },
       });
       member.eaPersonaId = identity.personaId;

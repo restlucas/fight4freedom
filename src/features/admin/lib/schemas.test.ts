@@ -40,18 +40,41 @@ describe("memberFormSchema", () => {
     expect(memberFormSchema.safeParse({ ...validMember, platform: "steam" }).success).toBe(false);
   });
 
-  it("requires the platform id: it is what resolves the EA identity", () => {
-    expect(memberFormSchema.safeParse({ ...validMember, platformId: "" }).success).toBe(false);
-    expect(memberFormSchema.safeParse({ ...validMember, platformId: "   " }).success).toBe(false);
-    expect(memberFormSchema.safeParse({ ...validMember, platformId: undefined }).success).toBe(
-      false,
+  it("accepts a member with no EA name: blank beats an invented one", () => {
+    // Reversed on 2026-07-28. While the field was mandatory an admin who did not
+    // know a console member's EA name still had to type something, and 23 of 99
+    // members ended up carrying a value that matches no EA account.
+    const parsed = memberFormSchema.parse({ ...validMember, eaName: undefined });
+    expect(parsed.eaName).toBeNull();
+  });
+
+  it("normalises a blank EA name to null, never an empty string", () => {
+    // "" would pass a `not: null` filter and keep the member queued for
+    // resolution forever.
+    expect(memberFormSchema.parse({ ...validMember, eaName: "" }).eaName).toBeNull();
+    expect(memberFormSchema.parse({ ...validMember, eaName: "   " }).eaName).toBeNull();
+  });
+
+  it("trims the EA name, since it is matched exactly against EA", () => {
+    expect(memberFormSchema.parse({ ...validMember, eaName: "  RRRRRRRREST  " }).eaName).toBe(
+      "RRRRRRRREST",
     );
   });
 
-  it("trims the platform id, since it is matched exactly against EA", () => {
-    expect(
-      memberFormSchema.parse({ ...validMember, platformId: "  RRRRRRRREST  " }).platformId,
-    ).toBe("RRRRRRRREST");
+  it("keeps the EA name's case: EA treats Ovaca and OVaca as different accounts", () => {
+    expect(memberFormSchema.parse({ ...validMember, eaName: "Ovaca" }).eaName).toBe("Ovaca");
+  });
+
+  it("no longer requires the platform id, which is display only now", () => {
+    expect(memberFormSchema.safeParse({ ...validMember, platformId: undefined }).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects an EA name longer than 80 characters", () => {
+    expect(memberFormSchema.safeParse({ ...validMember, eaName: "x".repeat(81) }).success).toBe(
+      false,
+    );
   });
 
   it("only accepts the three clan cargos", () => {

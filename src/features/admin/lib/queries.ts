@@ -107,10 +107,12 @@ export type AdminMember = {
   nickname: string;
   platform: Platform;
   platformId: string | null;
+  /** EA display name the collector looks the member up by. Null = not informed. */
+  eaName: string | null;
   /**
    * Whether the EA identity behind the stats collection is bound. False means
-   * the nickname was not found on EA yet — the collector retries every run,
-   * but a wrong nickname stays pending forever, so the panel surfaces it.
+   * the EA name was not found yet — the collector retries every run, but a wrong
+   * or missing name stays pending forever, so the panel surfaces it.
    */
   statsLinked: boolean;
   /** Everything the panel needs to say whether stats are syncing. */
@@ -136,6 +138,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       nickname: true,
       platform: true,
       platformId: true,
+      eaName: true,
       eaPersonaId: true,
       eaNucleusId: true,
       role: true,
@@ -177,6 +180,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       nickname: m.nickname,
       platform: m.platform,
       platformId: m.platformId,
+      eaName: m.eaName,
       statsLinked: Boolean(m.eaPersonaId && m.eaNucleusId),
       sync: {
         state: syncState(input),

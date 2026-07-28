@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chunk, parsePlayersPayload, toRawStats } from "./gametools";
+import { chunk, parsePlayersPayload, pickIdentity, toRawStats } from "./gametools";
 import { gametoolsPlayerFixture } from "./gametools.fixture";
 
 describe("parsePlayersPayload", () => {
@@ -216,6 +216,83 @@ describe("isIncoherentPayload / partially zeroed payloads", () => {
       ),
     })[0];
     expect(toRawStats(player)).not.toBeNull();
+  });
+});
+
+describe("pickIdentity", () => {
+  // Payloads copied from GET /bf6/player/ on 2026-07-28. Kept verbatim because
+  // each one is a case the previous "first case-insensitive hit" rule got wrong
+  // or got right only by luck.
+  const result = (displayName: string, personaId: string, nucleusId: string, username: string) => ({
+    displayName,
+    personaId,
+    nucleusId,
+    username,
+  });
+
+  it("prefers the case-exact name over one that differs only in case", () => {
+    // Willam registered "morpheus98". The old rule bound the first result,
+    // a stranger's "Morpheus98" with 242 kills, instead of his 9.949.
+    const results = [
+      result("Morpheus98", "1004235403320", "1004937803320", "Morpheus98"),
+      result("Morpheus98", "1005669298052", "1002716198052", "Morpheus98"),
+      result("morpheus98", "1000301196", "1000331359268", "xXMorpheusXx"),
+    ];
+    const match = pickIdentity(results, "morpheus98");
+    expect(match).toEqual({
+      status: "resolved",
+      identity: {
+        personaId: "1000301196",
+        nucleusId: "1000331359268",
+        username: "xXMorpheusXx",
+      },
+    });
+  });
+
+  it("treats several personas of ONE account as resolved, not ambiguous", () => {
+    // Ovaca: four hits, two of them emptied accounts differing only in case.
+    // The two case-exact ones share a nucleus id — same account, two platform
+    // personas, identical stats — so either is a correct answer.
+    const results = [
+      result("oVaca", "1004753844667", "1000805144667", "oVaca"),
+      result("OVaca", "1003949045742", "1008015745742", "OVaca"),
+      result("Ovaca", "1007640405326", "1011812805326", "Ovaca"),
+      result("Ovaca", "1005825605326", "1011812805326", "Ovaca"),
+    ];
+    const match = pickIdentity(results, "Ovaca");
+    expect(match.status).toBe("resolved");
+    expect(match.status === "resolved" && match.identity.nucleusId).toBe("1011812805326");
+  });
+
+  it("refuses to bind when two DIFFERENT accounts answer to the same name", () => {
+    // OJUN10R: identical displayName AND identical username on both, so neither
+    // field separates them. Only the nucleus ids differ, and their stats differ
+    // wildly (6 kills against 10.501) — a coin toss here is a wrong profile.
+    const results = [
+      result("OJUN10R", "1840035192", "1004647435766", "OJUN10R"),
+      result("OJUN10R", "1841695743", "2843176908", "OJUN10R"),
+    ];
+    const match = pickIdentity(results, "OJUN10R");
+    expect(match.status).toBe("ambiguous");
+    expect(match.status === "ambiguous" && match.candidates).toHaveLength(2);
+  });
+
+  it("falls back to a case-insensitive match when nothing matches exactly", () => {
+    const results = [result("WENIOBR", "1181356023", "1000887954444", "weniobr")];
+    const match = pickIdentity(results, "weniobr");
+    expect(match).toEqual({
+      status: "resolved",
+      identity: { personaId: "1181356023", nucleusId: "1000887954444", username: "weniobr" },
+    });
+  });
+
+  it("reports not-found for an empty search", () => {
+    expect(pickIdentity([], "Kaelnunes")).toEqual({ status: "not-found" });
+  });
+
+  it("ignores results that are merely similar — the search is fuzzy", () => {
+    const results = [result("xuveroo123", "1", "2", "xuveroo123")];
+    expect(pickIdentity(results, "xuveroo")).toEqual({ status: "not-found" });
   });
 });
 

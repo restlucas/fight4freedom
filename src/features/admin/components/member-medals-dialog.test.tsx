@@ -51,6 +51,7 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
     nickname: "Panzer",
     platform: "xbox",
     platformId: "Panzer 128",
+    eaName: "Panzer128",
     statsLinked: true,
     sync: { state: "ok", checkedAt: null, readAt: null, lastAttemptFailed: false, canPause: true, paused: false },
     role: "member",

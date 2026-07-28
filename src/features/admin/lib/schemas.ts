@@ -7,6 +7,19 @@ import { z } from "zod";
 export const PLATFORMS = ["ea", "xbox", "psn"] as const;
 export const MEMBER_ROLES = ["member", "officer", "admin"] as const;
 
+/**
+ * Optional account-name field: trimmed, length-capped, and normalised so an
+ * empty input reaches Prisma as null instead of "". The distinction matters —
+ * "" would satisfy a `not: null` filter and put the member back in the queue of
+ * things to resolve, forever.
+ */
+const eaLookupField = z
+  .string()
+  .trim()
+  .max(80, "Use no máximo 80 caracteres")
+  .optional()
+  .transform((value) => (value ? value : null));
+
 export const memberFormSchema = z.object({
   /** Display name inside the clan. Free-form — never used to fetch stats. */
   nickname: z
@@ -16,16 +29,21 @@ export const memberFormSchema = z.object({
     .max(32, "O nick deve ter no máximo 32 caracteres"),
   platform: z.enum(PLATFORMS, { message: "Escolha uma plataforma" }),
   /**
-   * Exact account id on the platform (EA ID). REQUIRED because this is the key
-   * that resolves the EA identity behind stats collection — see
-   * resolveEaIdentity in ./actions.ts. The clan nickname is cosmetic and may
-   * differ from it, so it cannot play this role.
+   * EA display name — the key that resolves the EA identity behind stats
+   * collection (resolveEaIdentity in ./actions.ts).
+   *
+   * OPTIONAL by design, reversing the old rule. It was mandatory as `platformId`
+   * and that is precisely what broke it: an admin who does not know a console
+   * member's EA name still had to type something, so 23 of 99 members ended up
+   * with a value matching no EA account. Blank is honest and visible in the
+   * panel; an invented id is neither.
    */
-  platformId: z
-    .string()
-    .trim()
-    .min(2, "Informe o id exato da conta (é o que busca os stats)")
-    .max(80, "O id deve ter no máximo 80 caracteres"),
+  eaName: eaLookupField,
+  /**
+   * Public id on the platform. Display only since 2026-07-28 — it no longer
+   * drives the stats lookup, so it is optional too.
+   */
+  platformId: eaLookupField,
   /** Clan cargo. Display only — never grants access (see lib/auth/session.ts). */
   role: z.enum(MEMBER_ROLES),
   active: z.coerce.boolean(),

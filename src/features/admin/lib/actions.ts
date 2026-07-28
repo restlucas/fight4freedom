@@ -15,7 +15,8 @@ import {
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { db } from "@/lib/db";
 import { gametoolsProvider } from "@/lib/stats/gametools";
-import type { PlayerIdentity } from "@/lib/stats/provider";
+import { eaLookupName } from "@/lib/stats/identity";
+import type { ResolvedIdentity } from "@/lib/stats/provider";
 
 import {
   actionError,
@@ -39,19 +40,31 @@ function fieldErrorsOf(error: {
 }
 
 /**
- * Best-effort resolution of the EA identity from the platform id (the exact
- * account name on EA — NOT the clan nickname, which is cosmetic and may differ).
+ * Best-effort resolution of the EA identity from the EA display name (NOT the
+ * clan nickname, which is cosmetic and may differ).
  *
  * Registration must never fail because a third-party API is down, so any error
  * becomes null and the scheduled collector self-heals it on the next runs
- * (src/lib/stats/collect.ts).
+ * (src/lib/stats/collect.ts). A name matching several distinct accounts also
+ * resolves to null — see pickIdentity in src/lib/stats/gametools.ts.
  */
-async function resolveEaIdentity(platformId: string): Promise<PlayerIdentity | null> {
+async function resolveEaIdentity(name: string | null): Promise<ResolvedIdentity | null> {
+  if (!name) return null;
   try {
-    return await gametoolsProvider.searchPlayer(platformId);
+    return await gametoolsProvider.searchPlayer(name);
   } catch {
     return null;
   }
+}
+
+/** The identity columns to write, or nothing when the lookup did not resolve. */
+function identityData(identity: ResolvedIdentity | null) {
+  if (!identity) return {};
+  return {
+    eaPersonaId: identity.personaId,
+    eaNucleusId: identity.nucleusId,
+    eaUsername: identity.username,
+  };
 }
 
 export async function createMemberAction(
@@ -63,6 +76,7 @@ export async function createMemberAction(
   const parsed = memberFormSchema.safeParse({
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
+    eaName: formData.get("eaName") ?? undefined,
     platformId: formData.get("platformId") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
@@ -71,12 +85,11 @@ export async function createMemberAction(
     return actionError("Confira os campos.", fieldErrorsOf(parsed.error));
   }
 
-  const identity = await resolveEaIdentity(parsed.data.platformId);
+  const identity = await resolveEaIdentity(eaLookupName(parsed.data));
   const member = await db.member.create({
     data: {
       ...parsed.data,
-      eaPersonaId: identity?.personaId ?? null,
-      eaNucleusId: identity?.nucleusId ?? null,
+      ...identityData(identity),
       joinedAt: new Date(),
     },
     select: { id: true },
@@ -98,6 +111,7 @@ export async function updateMemberAction(
   const parsed = memberFormSchema.safeParse({
     nickname: formData.get("nickname"),
     platform: formData.get("platform"),
+    eaName: formData.get("eaName") ?? undefined,
     platformId: formData.get("platformId") ?? undefined,
     role: formData.get("role") ?? "member",
     active: formData.get("active") === "on" || formData.get("active") === "true",
@@ -108,27 +122,29 @@ export async function updateMemberAction(
 
   const current = await db.member.findUnique({
     where: { id: id.data.memberId },
-    select: { platformId: true, eaPersonaId: true, eaNucleusId: true },
+    select: { eaName: true, platformId: true, eaPersonaId: true, eaNucleusId: true },
   });
   if (!current) return actionError("Membro não encontrado.");
 
-  // Re-resolve the EA identity when the platform id changed or was never bound.
-  // Renaming the clan nickname does NOT trigger a lookup — it is cosmetic.
+  // Re-resolve the EA identity when the name we look up by changed or was never
+  // bound. Renaming the clan nickname does NOT trigger a lookup — it is cosmetic.
   // On failure the old ids are KEPT on purpose: EA ids survive account renames,
   // so a member who renamed keeps collecting; a typo fix gets rebound as soon
   // as the search succeeds (here or in the collector).
-  let identity: PlayerIdentity | null = null;
+  let identity: ResolvedIdentity | null = null;
   const needsResolution =
-    current.platformId !== parsed.data.platformId || !current.eaPersonaId || !current.eaNucleusId;
+    eaLookupName(current) !== eaLookupName(parsed.data) ||
+    !current.eaPersonaId ||
+    !current.eaNucleusId;
   if (needsResolution) {
-    identity = await resolveEaIdentity(parsed.data.platformId);
+    identity = await resolveEaIdentity(eaLookupName(parsed.data));
   }
 
   await db.member.update({
     where: { id: id.data.memberId },
     data: {
       ...parsed.data,
-      ...(identity ? { eaPersonaId: identity.personaId, eaNucleusId: identity.nucleusId } : {}),
+      ...identityData(identity),
     },
   });
 

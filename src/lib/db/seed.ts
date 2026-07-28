@@ -323,6 +323,9 @@ async function seed() {
       nickname: m.nickname,
       platform: m.platform,
       platformId: m.platformId,
+      // In seed data the two are the same string by construction; in real data
+      // they diverge, which is the whole reason the columns were split.
+      eaName: m.platformId,
       eaPersonaId: m.eaPersonaId,
       eaNucleusId: m.eaNucleusId,
       role: m.role,

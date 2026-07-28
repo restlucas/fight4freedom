@@ -78,16 +78,31 @@ model Member {
   id       String   @id @default(uuid())
   nickname String
   platform Platform
-  /// The member's exact public id on that platform (EA ID, gamertag, PSN ID).
-  /// Shown on hover over the platform icon AND used as the lookup key that
-  /// resolves the EA identity below — so it must match the account exactly.
-  /// Mandatory in the admin form; nullable here only for rows created before
-  /// that rule existed.
+  /// The member's public id on that platform (gamertag, PSN ID, EA ID). Display
+  /// only since 2026-07-28, and optional: it used to double as the EA lookup key,
+  /// which is exactly why it failed for console members — EA's search indexes the
+  /// EA display name, and a PSN or Xbox gamertag is usually not that name. The
+  /// lookup moved to `eaName`; this stays as "how to add this person on their
+  /// platform" and is still read as a fallback for rows predating the split.
   platformId String? @map("platform_id")
+  /// EA display name, the ONLY field EA's search accepts (`/bf6/player/?name=`).
+  /// Optional: an admin who does not know it leaves it blank, which is strictly
+  /// better than the invented values a mandatory field produced — 23 of 99
+  /// members carried an id that matches no EA account.
+  eaName String? @map("ea_name")
+  /// EA `username` of the account that was bound, recorded at resolution time.
+  /// Output, never input: it is not searchable and not unique (two distinct
+  /// accounts share the username `OJUN10R`). Kept because it is the clearest way
+  /// for a human to recognise which account was picked.
+  eaUsername String? @map("ea_username")
   /// EA persona id + nucleus id: the stable identity the stats API needs.
-  /// Resolved automatically from `platformId` (gametools /bf6/player/) on member
+  /// Resolved automatically from `eaName` (falling back to `platformId`) on member
   /// create/update and self-healed by the collector; never typed by hand.
   /// Account names change, these ids do not — collection survives a rename.
+  ///
+  /// `eaNucleusId` is the ACCOUNT; `eaPersonaId` is one of its per-platform
+  /// personas. One account can own several personas and they all report the same
+  /// stats, so which persona is stored does not matter — which account does.
   eaPersonaId String? @map("ea_persona_id")
   eaNucleusId String? @map("ea_nucleus_id")
   /// Discord snowflake, captured from the verified OAuth identity when the
