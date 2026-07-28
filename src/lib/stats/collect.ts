@@ -68,6 +68,10 @@ export type CollectReport = {
    * the order is oldest-snapshot-first.
    */
   deferred: number;
+  /** Batches that came back completely empty and were tried a second time. */
+  retriedBatches: number;
+  /** Members the retry rescued. The retry's whole justification, measurable. */
+  recoveredByRetry: number;
   members: { id: string; nickname: string; outcome: MemberOutcome }[];
 };
 
@@ -92,15 +96,21 @@ const RUN_BUDGET_MS = 45_000;
  * One `updateMany` per outcome group rather than one update per member: a sweep
  * touches ~76 rows, and this keeps that at a handful of statements.
  *
- * `statsCheckedAt` is written on every attempt, including failures — the panel's
- * question is "when did we last try and what happened", and a timestamp that
- * only moves on success cannot answer it.
+ * Two timestamps, deliberately: `statsCheckedAt` moves on EVERY attempt, so the
+ * queue rotates and the panel can say "when did we last try"; `statsReadAt`
+ * moves only on `ok`, so staleness is measurable. Collapsing them into one would
+ * lose whichever question the survivor does not answer.
  */
 async function markStatus(memberIds: string[], status: StatsSyncStatus): Promise<void> {
   if (memberIds.length === 0) return;
+  const now = new Date();
   await db.member.updateMany({
     where: { id: { in: memberIds } },
-    data: { statsStatus: status, statsCheckedAt: new Date() },
+    data: {
+      statsStatus: status,
+      statsCheckedAt: now,
+      ...(status === "ok" ? { statsReadAt: now } : {}),
+    },
   });
 }
 
@@ -161,6 +171,8 @@ export async function collectStats(
     noData: 0,
     identityPending: 0,
     deferred: 0,
+    retriedBatches: 0,
+    recoveredByRetry: 0,
     members: [],
   };
   if (members.length === 0) return report;
@@ -245,9 +257,31 @@ export async function collectStats(
       break;
     }
 
-    const stats = await provider.fetchStats(
-      slice.map((m) => ({ personaId: m.eaPersonaId!, nucleusId: m.eaNucleusId! })),
-    );
+    const identities = slice.map((m) => ({
+      personaId: m.eaPersonaId!,
+      nucleusId: m.eaNucleusId!,
+    }));
+    let stats = await provider.fetchStats(identities);
+
+    // ONE immediate retry, and only when the ENTIRE batch came back empty.
+    //
+    // That emptiness is the signature of a failed request: a 504 makes the
+    // provider return nothing for the whole batch, while a successful response
+    // omits only the players the source genuinely has no data for. So "all
+    // three missing" means the request died; "one of three missing" means that
+    // one player has no BF6 data, and retrying them would burn a round trip
+    // every cycle to be told the same thing.
+    //
+    // Retrying here rather than by re-queuing is what keeps this safe: the
+    // queue is ordered by `statsCheckedAt`, and holding a failed member at the
+    // front until they succeed is exactly the starvation that broke the sweep
+    // on 2026-07-28. A bounded retry inside the run cannot starve anyone.
+    if (stats.size === 0 && Date.now() - startedAt <= RUN_BUDGET_MS) {
+      report.retriedBatches += 1;
+      stats = await provider.fetchStats(identities);
+      if (stats.size > 0) report.recoveredByRetry += stats.size;
+    }
+
     handled += slice.length;
 
     const rows: Prisma.StatSnapshotCreateManyInput[] = [];

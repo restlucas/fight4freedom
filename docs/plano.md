@@ -71,6 +71,25 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
   Por isso a fila é ordenada por quem está mais desatualizado e **cada lote é gravado assim que
   chega** — quem uma execução não alcança é exatamente quem a próxima começa atendendo.
 
+  **Retentativa dentro da execução (28/07).** Um lote que volta **inteiramente vazio** é tentado
+  mais uma vez, na hora, se ainda houver orçamento. O vazio total é a assinatura de requisição
+  morta: o 504 derruba os 3 juntos, enquanto uma resposta boa omite só quem a fonte realmente não
+  tem. Por isso o gatilho é "o lote todo sumiu" e não "alguém sumiu" — retentar um jogador
+  genuinamente sem dados gastaria uma ida e volta por ciclo para ouvir a mesma coisa.
+
+  A retentativa é **dentro da execução, e só uma**, de propósito. A alternativa óbvia — segurar
+  quem falhou no início da fila até dar certo — é exatamente a fome que quebrou a varredura no dia
+  28: quem falha sempre bloquearia todo mundo atrás. Um retry limitado não tem como matar ninguém
+  de fome. `retriedBatches` e `recoveredByRetry` vão no relatório para a decisão ser medível.
+
+  **`statsReadAt` (28/07).** Coluna nova, separada de `statsCheckedAt`. Uma responde "quando
+  tentamos pela última vez", a outra "que idade tem o dado que temos". Sem as duas, um membro pode
+  ser tentado a cada ciclo por horas e ainda carregar número de ontem — se toda tentativa caiu em
+  lote falhado — e **nada no banco diria isso**. Não dá para usar a data do snapshot no lugar:
+  snapshot só existe quando o membro jogou, então idade de snapshot mede jogo, não coleta.
+  A linha "Última coleta de dados" no painel passou a ler `statsReadAt`; construída sobre
+  `statsCheckedAt` ela anunciaria "há 1 min" no meio de um apagão completo.
+
   **Continuação encadeada (2026-07-27).** Uma execução que para no orçamento com fila pendente
   **dispara a sucessora** em vez de deixar o resto do ciclo ocioso. Medido no primeiro ciclo real:
   37 de 76 membros em 41,9 s, e depois 9 minutos parado. Sem continuação, a varredura levava 20 a

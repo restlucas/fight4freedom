@@ -96,16 +96,20 @@ const NEXT_SYNC_SORT: Record<SyncSort, SyncSort> = {
 };
 
 /**
- * When the collector last touched ANY member — the newest attempt on the roster.
+ * When the collector last SUCCESSFULLY read any member on the roster.
  *
- * Newest and not oldest: the question the header answers is "is the collector
- * alive", and one neglected member at the back of the queue does not mean it
- * stopped. Members it never tried carry no timestamp and are skipped.
+ * Reads and not attempts: attempts move even when every one of them fails, so a
+ * header built on `checkedAt` would cheerfully report "há 1 min" through a total
+ * outage. This line is supposed to be the one place an admin can glance at to
+ * know the data is real.
+ *
+ * Newest and not oldest: the question is "is the collection working", and one
+ * neglected member at the back of the queue does not mean it stopped.
  */
 function lastCollection(members: readonly AdminMember[]): string | null {
   let latest: string | null = null;
   for (const member of members) {
-    const at = member.sync.checkedAt;
+    const at = member.sync.readAt;
     // String comparison is safe here: every value comes from `toISOString()`,
     // which is fixed-width UTC, so lexical order IS chronological order.
     if (at !== null && (latest === null || at > latest)) latest = at;

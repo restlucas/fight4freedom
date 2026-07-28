@@ -320,4 +320,106 @@ describe("collectStats sync status", () => {
     expect(write.data.statsStatus).toBe("no_data");
     expect(write.data.statsCheckedAt).toBeInstanceOf(Date);
   });
+
+  it("moves the read-at timestamp only when the read worked", async () => {
+    // The two answer different questions: checkedAt is "when did we last try",
+    // readAt is "how old is the data we hold". A member can be attempted every
+    // cycle for hours and still carry yesterday's numbers if every attempt lands
+    // in a failed batch — without readAt, nothing in the database says so.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1), member("Beto", null, 2)]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async (players) =>
+      new Map([[players[0].personaId, rawStats(10)]]),
+    );
+
+    await collectStats(provider);
+
+    const writes = db.member.updateMany.mock.calls.map(([a]) => a);
+    const ok = writes.find((w) => w.data.statsStatus === "ok");
+    const failed = writes.find((w) => w.data.statsStatus === "no_data");
+
+    expect(ok?.data.statsReadAt).toBeInstanceOf(Date);
+    // Present-and-undefined would overwrite a real timestamp with null.
+    expect(failed?.data).not.toHaveProperty("statsReadAt");
+    expect(failed?.data.statsCheckedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("collectStats batch retry", () => {
+  it("retries a batch that came back completely empty", async () => {
+    // An empty WHOLE batch is the signature of a failed request: a 504 loses
+    // every player in it, while a successful response omits only the players
+    // the source genuinely has nothing for.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    let call = 0;
+    provider.fetchStats = vi.fn(async (players: PlayerIdentity[]) => {
+      call += 1;
+      if (call === 1) return new Map<string, RawStats>(); // the 504
+      return new Map(players.map((p, i) => [p.personaId, rawStats(100 + i)]));
+    });
+
+    const report = await collectStats(provider);
+
+    expect(provider.fetchStats).toHaveBeenCalledTimes(2);
+    expect(report.retriedBatches).toBe(1);
+    expect(report.recoveredByRetry).toBe(STATS_BATCH_SIZE);
+    expect(report.noData).toBe(0);
+  });
+
+  it("does not retry when only some of the batch is missing", async () => {
+    // One player missing from a successful response means that player has no
+    // BF6 data. Retrying would spend a full round trip every cycle to be told
+    // the same thing.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async (players: PlayerIdentity[]) =>
+      new Map(players.slice(1).map((p, i) => [p.personaId, rawStats(100 + i)])),
+    );
+
+    const report = await collectStats(provider);
+
+    expect(provider.fetchStats).toHaveBeenCalledTimes(1);
+    expect(report.retriedBatches).toBe(0);
+    expect(report.noData).toBe(1);
+  });
+
+  it("retries at most once, then gives up on the batch", async () => {
+    // Bounded on purpose. The alternative — holding the member at the front of
+    // the queue until they succeed — is the starvation that broke the sweep on
+    // 2026-07-28: a member who always fails would block everyone behind them.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => new Map());
+
+    const report = await collectStats(provider);
+
+    expect(provider.fetchStats).toHaveBeenCalledTimes(2);
+    expect(report.recoveredByRetry).toBe(0);
+    expect(report.noData).toBe(STATS_BATCH_SIZE);
+  });
+
+  it("skips the retry when the budget is already spent", async () => {
+    // A retry costs a full round trip. Spending it past the deadline is how a
+    // run gets killed mid-write instead of returning a report.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: STATS_BATCH_SIZE }, (_, i) => member(`M${i}`, null, i)),
+    );
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => {
+      clock += 50_000; // the request itself blows the 45 s budget
+      return new Map();
+    });
+
+    const report = await collectStats(provider);
+
+    expect(provider.fetchStats).toHaveBeenCalledTimes(1);
+    expect(report.retriedBatches).toBe(0);
+  });
 });

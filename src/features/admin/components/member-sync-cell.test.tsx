@@ -15,6 +15,7 @@ function sync(overrides: Partial<MemberSync> = {}): MemberSync {
   return {
     state: "ok",
     checkedAt: null,
+    readAt: null,
     lastAttemptFailed: false,
     canPause: true,
     paused: false,

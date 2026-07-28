@@ -36,6 +36,8 @@ function report(overrides: Partial<CollectReport> = {}): CollectReport {
     noData: 0,
     identityPending: 23,
     deferred: 0,
+    retriedBatches: 0,
+    recoveredByRetry: 0,
     members: [],
     ...overrides,
   };

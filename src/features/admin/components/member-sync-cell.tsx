@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { useNow } from "@/hooks/use-now";
+import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 
 import { toggleMemberStatsAction } from "../lib/actions";
@@ -33,6 +35,7 @@ interface MemberSyncCellProps {
 
 export function MemberSyncCell({ memberId, nickname, sync, onChanged }: MemberSyncCellProps) {
   const [pending, startTransition] = useTransition();
+  const now = useNow();
   const label = SYNC_LABEL[sync.state];
   const Icon = SYNC_ICON[sync.state];
 
@@ -127,7 +130,16 @@ export function MemberSyncCell({ memberId, nickname, sync, onChanged }: MemberSy
           <HoverCardContent align="start" className="w-80 text-xs leading-relaxed">
             <p className="font-heading mb-1.5 text-sm font-bold">{SYNC_RETRY_NOTICE.heading}</p>
             <p className="text-muted-foreground">{SYNC_RETRY_NOTICE.body}</p>
-            <p className="text-muted-foreground mt-2 border-t pt-2">{SYNC_RETRY_NOTICE.action}</p>
+            {/* The number that turns the caveat into a decision. "Last round
+                failed" is harmless at five minutes and a real problem at six
+                hours, and only this line tells the two apart. */}
+            <p className="mt-2 border-t pt-2">
+              <span className="text-muted-foreground">Dados lidos com sucesso: </span>
+              <span className="font-semibold">
+                {sync.readAt === null || now === null ? "nunca" : timeAgo(sync.readAt, now)}
+              </span>
+            </p>
+            <p className="text-muted-foreground mt-1">{SYNC_RETRY_NOTICE.action}</p>
           </HoverCardContent>
         </HoverCard>
       ) : null}

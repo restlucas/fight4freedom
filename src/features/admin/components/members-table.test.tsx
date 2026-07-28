@@ -42,6 +42,7 @@ function member(
     sync: {
       state: syncState,
       checkedAt: null,
+      readAt: null,
       lastAttemptFailed: false,
       canPause: true,
       paused: false,
@@ -238,13 +239,14 @@ describe("MembersTable — coluna Stats", () => {
 });
 
 describe("MembersTable — relógio da coleta", () => {
-  function checked(nickname: string, at: string | null): AdminMember {
+  /** `at` is the last SUCCESSFUL read — what the header is built on. */
+  function read(nickname: string, at: string | null): AdminMember {
     const base = member(nickname, "member", "ea");
-    return { ...base, sync: { ...base.sync, checkedAt: at } };
+    return { ...base, sync: { ...base.sync, readAt: at } };
   }
 
-  it("reports the newest attempt across the whole roster", () => {
-    // Newest, not oldest: the question is "is the collector alive", and one
+  it("reports the newest successful read across the whole roster", () => {
+    // Newest, not oldest: the question is "is the collection working", and one
     // member stuck at the back of the queue does not mean it stopped.
     vi.useFakeTimers();
     try {
@@ -253,9 +255,9 @@ describe("MembersTable — relógio da coleta", () => {
       render(
         <MembersTable
           members={[
-            checked("Antigo", "2026-07-28T09:00:00.000Z"),
-            checked("Recente", "2026-07-28T11:56:00.000Z"),
-            checked("Nunca", null),
+            read("Antigo", "2026-07-28T09:00:00.000Z"),
+            read("Recente", "2026-07-28T11:56:00.000Z"),
+            read("Nunca", null),
           ]}
           medals={[]}
         />,
@@ -267,6 +269,30 @@ describe("MembersTable — relógio da coleta", () => {
     }
   });
 
+  it("counts reads, not attempts — an outage must not read as fresh", () => {
+    // `statsCheckedAt` moves on every attempt INCLUDING failures. A header built
+    // on it would report "há 1 min" straight through a total outage, which is
+    // the exact opposite of what this line exists to tell an admin.
+    const base = member("Panzer", "member", "ea");
+    render(
+      <MembersTable
+        members={[
+          {
+            ...base,
+            sync: {
+              ...base.sync,
+              checkedAt: new Date().toISOString(), // tried just now...
+              readAt: null, // ...and never once succeeded
+            },
+          },
+        ]}
+        medals={[]}
+      />,
+    );
+
+    expect(screen.getByText("A coleta ainda não rodou")).toBeInTheDocument();
+  });
+
   it("keeps counting while the panel stays open", async () => {
     // Computed once at render, the label froze at "há 1 min" while the real gap
     // grew. A frozen relative time is worse than none: it reads as fresh.
@@ -275,7 +301,7 @@ describe("MembersTable — relógio da coleta", () => {
       const start = new Date("2026-07-28T12:00:00Z");
       vi.setSystemTime(start);
       render(
-        <MembersTable members={[checked("Panzer", "2026-07-28T11:59:00.000Z")]} medals={[]} />,
+        <MembersTable members={[read("Panzer", "2026-07-28T11:59:00.000Z")]} medals={[]} />,
       );
       expect(screen.getByText(/há 1 min/)).toBeInTheDocument();
 
@@ -290,7 +316,7 @@ describe("MembersTable — relógio da coleta", () => {
   });
 
   it("says so plainly when nothing was ever collected", () => {
-    render(<MembersTable members={[checked("Panzer", null)]} medals={[]} />);
+    render(<MembersTable members={[read("Panzer", null)]} medals={[]} />);
     expect(screen.getByText("A coleta ainda não rodou")).toBeInTheDocument();
   });
 });

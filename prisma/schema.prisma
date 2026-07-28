@@ -132,6 +132,19 @@ model Member {
   /// table cannot answer "did the last fetch work?" — a member fetched fine with
   /// nothing new to record looks exactly like a member whose fetch failed.
   statsCheckedAt DateTime?        @map("stats_checked_at") @db.Timestamptz(6)
+  /// When the collector last SUCCESSFULLY read this member from the source.
+  ///
+  /// The difference from `statsCheckedAt` is the whole point: that one answers
+  /// "when did we last try", this one answers "how old is the data we hold".
+  /// Without it the staleness of the roster is unmeasurable — a member can be
+  /// attempted every ten minutes for hours and still carry data from yesterday
+  /// if every one of those attempts landed in a failed batch, and nothing in
+  /// the database would say so.
+  ///
+  /// Not the same as the newest snapshot either: a member who is read fine but
+  /// has not played gets no snapshot, so snapshot age measures playing, not
+  /// collecting.
+  statsReadAt    DateTime?        @map("stats_read_at") @db.Timestamptz(6)
   /// Outcome of that attempt. Null means never attempted.
   statsStatus    StatsSyncStatus? @map("stats_status")
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)

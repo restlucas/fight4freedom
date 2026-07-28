@@ -35,6 +35,13 @@ export type MemberSync = {
   /** ISO instant of the last attempt, successful or not. Null if never tried. */
   checkedAt: string | null;
   /**
+   * ISO instant of the last SUCCESSFUL read — how old the data actually is.
+   * Null when no attempt ever worked. Distinct from `checkedAt` on purpose:
+   * a member can be attempted every cycle and still hold stale data if every
+   * attempt lands in a failed batch.
+   */
+  readAt: string | null;
+  /**
    * The last attempt brought nothing back, but the member HAS stats from before
    * — so the collection works and only this round missed. Shown as a warning
    * next to a healthy badge, never as a broken state (see `syncState`).
@@ -139,6 +146,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       statsPaused: true,
       statsStatus: true,
       statsCheckedAt: true,
+      statsReadAt: true,
       // Only the count: "has this member ever had stats" is what separates a
       // transient failure from a member the collector genuinely cannot read.
       _count: { select: { snapshots: true } },
@@ -173,6 +181,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       sync: {
         state: syncState(input),
         checkedAt: m.statsCheckedAt?.toISOString() ?? null,
+        readAt: m.statsReadAt?.toISOString() ?? null,
         lastAttemptFailed: lastAttemptFailed(input),
         canPause: m.active && (m.discordId !== null || m.collectWithoutLogin),
         paused: m.statsPaused,
