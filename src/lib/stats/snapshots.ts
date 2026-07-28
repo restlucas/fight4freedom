@@ -26,7 +26,14 @@ export type StatTotals = {
   repairs: number;
 };
 
-export type SnapshotLike = StatTotals & { capturedAt: Date };
+export type SnapshotLike = StatTotals & {
+  capturedAt: Date;
+  /**
+   * EA account the counters came from. Optional so callers that do not score
+   * deltas (a member's lifetime totals, for instance) need not select it.
+   */
+  eaNucleusId?: string | null;
+};
 
 /**
  * Every key subtracted when computing a month's progress. Adding a counter to
@@ -140,14 +147,36 @@ function subtractTotals(a: StatTotals, b: StatTotals): StatTotals {
 
 /**
  * Activity within the reference month: last snapshot of the month minus the
- * first. Fewer than two snapshots in the month → all zeros.
+ * first, **counting only the account the member currently plays on**. Fewer than
+ * two comparable snapshots → all zeros.
+ *
+ * The account filter is the load-bearing part. These counters are lifetime totals
+ * of one EA account, so subtracting across a rebind subtracts one person's career
+ * from another's. On 2026-07-28 that produced 86.914 points for a member whose
+ * only real activity that month was 301 minutes: his first snapshot came from a
+ * stranger's account he had been bound to by mistake, the second from his own.
+ *
+ * "The account the member currently plays on" is taken as the newest snapshot's,
+ * not the member's column, so this stays a pure function over the rows it is
+ * given. The two agree in practice — a rebind is followed by a collection — and
+ * where they disagree the newest row is the better answer anyway, because it is
+ * the one whose totals the next cycle will extend.
  */
 export function deltaForMonth(snapshots: SnapshotLike[], reference: Date): StatTotals {
   const inMonth = snapshots
     .filter((s) => isSameMonth(s.capturedAt, reference))
     .sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
   if (inMonth.length < 2) return emptyTotals();
-  return subtractTotals(inMonth[inMonth.length - 1], inMonth[0]);
+
+  const current = inMonth[inMonth.length - 1];
+  // A null id means "written before the column existed", which the backfill
+  // assigned to the member's own account — so null and the current account are
+  // the same thing, and must compare as equal.
+  const sameAccount = inMonth.filter(
+    (s) => (s.eaNucleusId ?? null) === (current.eaNucleusId ?? null),
+  );
+  if (sameAccount.length < 2) return emptyTotals();
+  return subtractTotals(current, sameAccount[0]);
 }
 
 /** The counters the collector compares to decide "played since last snapshot". */

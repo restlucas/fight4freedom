@@ -242,6 +242,21 @@ model StatSnapshot {
   memberId          String     @map("member_id")
   capturedAt        DateTime   @default(now()) @map("captured_at") @db.Timestamptz(6)
   source            StatSource
+  /// Which EA ACCOUNT these cumulative counters came from.
+  ///
+  /// A snapshot belongs to an account, not to a member: the numbers are lifetime
+  /// totals of one EA account, and the monthly ranking scores last-minus-first.
+  /// Subtracting across a rebind therefore subtracts one person's career from
+  /// another's. That is not hypothetical — it happened on 2026-07-28. Willam had
+  /// been bound to a stranger's `Morpheus98` (76 kills); the fix pointed him at
+  /// his own account (8.989 kills), and the month's delta became 655 wins and
+  /// 2.439 objectives captured, scoring 86.914 points out of nothing.
+  ///
+  /// `deltaForMonth` now compares only rows carrying the same account, which
+  /// makes the guarantee live where the data does. Nullable for rows written
+  /// before the column existed; those are backfilled from the member's current
+  /// account and treated as belonging to it.
+  eaNucleusId       String?    @map("ea_nucleus_id")
   // Raw counters. Matches (wins+losses), K/D, kills-per-match and hours are
   // DERIVED in src/lib/stats/snapshots.ts, never stored.
   kills              Int          @default(0)

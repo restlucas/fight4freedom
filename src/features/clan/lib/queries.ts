@@ -211,7 +211,8 @@ export const getMonthlyRanking = cachedQuery(
         avatarUrl: true,
         platform: true,
         snapshots: {
-          select: { capturedAt: true, ...STAT_TOTALS_SELECT },
+          // eaNucleusId: deltaForMonth refuses to subtract across accounts.
+          select: { capturedAt: true, eaNucleusId: true, ...STAT_TOTALS_SELECT },
         },
       },
     });

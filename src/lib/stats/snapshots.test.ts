@@ -22,8 +22,12 @@ function totals(partial: Partial<StatTotals>): StatTotals {
   return { ...emptyTotals(), ...partial };
 }
 
-function snapshot(capturedAt: string, partial: Partial<StatTotals>): SnapshotLike {
-  return { capturedAt: new Date(capturedAt), ...totals(partial) };
+function snapshot(
+  capturedAt: string,
+  partial: Partial<StatTotals>,
+  eaNucleusId: string | null = null,
+): SnapshotLike {
+  return { capturedAt: new Date(capturedAt), eaNucleusId, ...totals(partial) };
 }
 
 describe("computeKd", () => {
@@ -89,6 +93,40 @@ describe("deltaForMonth", () => {
   it("returns zeros when the month has fewer than two snapshots", () => {
     const snaps = [snapshot("2026-07-02T00:00:00Z", { kills: 120 })];
     expect(deltaForMonth(snaps, july).kills).toBe(0);
+  });
+
+  it("never subtracts across a rebind: only the current account counts", () => {
+    // Willam, 2026-07-28. The first row is a stranger's account he had been bound
+    // to by mistake; the second is his own. Subtracting them scored 86.914 points
+    // for a member who had played 301 minutes that month.
+    const snaps = [
+      snapshot("2026-07-27T22:50:00Z", { kills: 76, wins: 4 }, "1004937803320"),
+      snapshot("2026-07-28T05:14:00Z", { kills: 8989, wins: 659 }, "1000331359268"),
+    ];
+    const delta = deltaForMonth(snaps, july);
+    expect(delta.kills).toBe(0);
+    expect(delta.wins).toBe(0);
+  });
+
+  it("scores normally once two readings of the SAME account exist", () => {
+    const snaps = [
+      snapshot("2026-07-27T22:50:00Z", { kills: 76 }, "conta-antiga"),
+      snapshot("2026-07-28T05:14:00Z", { kills: 8989, wins: 659 }, "conta-real"),
+      snapshot("2026-07-30T05:14:00Z", { kills: 9100, wins: 670 }, "conta-real"),
+    ];
+    const delta = deltaForMonth(snaps, july);
+    expect(delta.kills).toBe(111);
+    expect(delta.wins).toBe(11);
+  });
+
+  it("treats rows predating the column as belonging to the current account", () => {
+    // The backfill assigned null rows to the member's own account, so a null and
+    // the current id must compare as equal or every pre-column month goes to zero.
+    const snaps = [
+      snapshot("2026-07-02T00:00:00Z", { kills: 100 }),
+      snapshot("2026-07-28T00:00:00Z", { kills: 180 }),
+    ];
+    expect(deltaForMonth(snaps, july).kills).toBe(80);
   });
 
   it("ignores snapshots from other months", () => {

@@ -345,6 +345,9 @@ export async function collectStats(
       rows.push({
         memberId: member.id,
         source: "api",
+        // Stamped so a later rebind cannot make these totals comparable with
+        // another account's — see deltaForMonth.
+        eaNucleusId: member.eaNucleusId,
         kills: raw.kills,
         deaths: raw.deaths,
         wins: raw.wins,
