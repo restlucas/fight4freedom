@@ -186,7 +186,11 @@ export async function collectStats(
   const unresolved = members.filter(
     (m) => eaLookupName(m) && (!m.eaPersonaId || !m.eaNucleusId),
   );
-  for (const member of unresolved.slice(0, MAX_IDENTITY_RESOLUTIONS_PER_RUN)) {
+  // `members` is already ordered least-recently-tried first, so this slice is the
+  // stalest ones — and because only these get their `statsCheckedAt` moved below,
+  // the next run picks up where this one stopped instead of restarting the list.
+  const searched = unresolved.slice(0, MAX_IDENTITY_RESOLUTIONS_PER_RUN);
+  for (const member of searched) {
     try {
       // Search by EA display name. The match is case-exact and refuses to bind
       // when several distinct accounts answer to it — see pickIdentity in
@@ -222,11 +226,24 @@ export async function collectStats(
       outcome: "identity-pending",
     });
   }
-  // Stamped even though nothing was fetched: the panel needs to show that the
-  // collector DID look at this member and still could not bind their identity,
-  // which is what separates "wrong id" from "never tried".
+  // ONLY the members this run actually searched are stamped — never the ones the
+  // per-run cap left untouched.
+  //
+  // Stamping all of them is what broke identity resolution completely, and the
+  // failure is invisible from the outside: every pending member came out of each
+  // run with the SAME `statsCheckedAt`, so the sort below fell through to its
+  // alphabetical tiebreak and picked the same first ten names on every single
+  // cycle. The other fifteen were never searched once. Measured 2026-07-28 over
+  // 21 consecutive ticks: `identitiesResolved` was 0 in all of them, and two
+  // members whose identity was deliberately cleared for a rebind never got
+  // looked up because their nicknames sort late.
+  //
+  // Leaving the untouched ones alone keeps the column honest — it means "when we
+  // last TRIED this member", and we did not try them — and that older timestamp
+  // is exactly what floats them to the front of the queue next run.
+  const searchedIds = new Set(searched.map((m) => m.id));
   await markStatus(
-    pending.map((m) => m.id),
+    pending.filter((m) => searchedIds.has(m.id)).map((m) => m.id),
     "identity_pending",
   );
 

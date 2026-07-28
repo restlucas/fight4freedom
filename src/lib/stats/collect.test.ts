@@ -309,6 +309,29 @@ describe("collectStats sync status", () => {
     expect(statusWrites()).toContainEqual({ status: "identity_pending", ids: ["id-SemId"] });
   });
 
+  it("does NOT stamp pending members the per-run cap never searched", async () => {
+    // The bug this pins, measured in production over 21 consecutive ticks with
+    // identitiesResolved = 0 every time: stamping all pending members gave them
+    // an identical checked-at, the queue sort fell through to its alphabetical
+    // tiebreak, and the same first ten names were searched forever while the
+    // rest were never looked up once.
+    const pendentes = Array.from({ length: 14 }, (_, i) => ({
+      ...member(`P${String(i).padStart(2, "0")}`, null, i),
+      eaPersonaId: null,
+      eaNucleusId: null,
+    }));
+    db.member.findMany.mockResolvedValue(pendentes);
+
+    const report = await collectStats(fakeProvider());
+
+    expect(report.identityPending).toBe(14);
+    const stamped = statusWrites().find((w) => w.status === "identity_pending");
+    // Exactly the ten the run searched, so the other four keep the older
+    // timestamp that puts them first next time.
+    expect(stamped?.ids).toHaveLength(10);
+    expect(stamped?.ids).not.toContain("id-P13");
+  });
+
   it("always moves the checked-at timestamp, including on failure", async () => {
     // "When did we last try" must answer even when the answer is "and it failed".
     db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
