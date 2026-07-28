@@ -129,23 +129,27 @@ export async function collectStats(
       platformId: true,
       eaPersonaId: true,
       eaNucleusId: true,
-      // Newest snapshot per member, to order the queue by staleness below.
-      snapshots: {
-        orderBy: { capturedAt: "desc" },
-        take: 1,
-        select: { capturedAt: true },
-      },
+      // When we last TRIED this member — the queue order. See the sort below for
+      // why this is not the snapshot date.
+      statsCheckedAt: true,
     },
   });
 
-  // STALEST FIRST, never alphabetical. A run can hit its budget before sweeping
-  // everyone, and with a fixed alphabetical order the tail of the roster would be
-  // starved forever — the same names dropped every single cycle. Sorting by the
-  // last capture makes the queue self-balancing: whoever a run misses is at the
-  // front of the next one. Members never collected sort first.
+  // LEAST-RECENTLY-TRIED FIRST. Never alphabetical, and — the subtle part — never
+  // by snapshot date either.
+  //
+  // Ordering by the newest snapshot looks equivalent and is not: a member fetched
+  // successfully who simply has not played gets NO new snapshot, so their date
+  // never moves. They stay pinned at the front and are re-fetched every single
+  // run, while the members behind them are never reached. Measured 2026-07-28:
+  // the queue advanced by ONE member in four minutes, with 38 of 76 stuck
+  // unvisited behind a handful of idle players being fetched over and over.
+  //
+  // `statsCheckedAt` advances on every attempt, successful or not, so the queue
+  // actually rotates. Members never tried sort first.
   members.sort((a, b) => {
-    const at = a.snapshots[0]?.capturedAt?.getTime() ?? 0;
-    const bt = b.snapshots[0]?.capturedAt?.getTime() ?? 0;
+    const at = a.statsCheckedAt?.getTime() ?? 0;
+    const bt = b.statsCheckedAt?.getTime() ?? 0;
     return at - bt || a.nickname.localeCompare(b.nickname, "pt-BR");
   });
 

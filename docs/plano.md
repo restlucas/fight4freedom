@@ -556,31 +556,31 @@ convites.
       dourado sólido, coroa e barra de progresso amarelas. Nenhum tingimento no fundo.
 
       Duas tentativas anteriores erraram e vale não repetir. A primeira usava
-                                                          `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
-                                                          com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
-                                                          puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
-                                                          nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
-                                                          que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
+                                                                  `bg-yellow-500/[0.08]`, que **substituía** o `bg-card/80` da base e deixava a linha do líder
+                                                                  com _menos_ superfície que as linhas de baixo: um tom quase invisível sobre `backdrop-blur`
+                                                                  puro. A segunda punha `bg-card` opaco sob um dégradé `from-yellow-400/20 ... to-transparent`;
+                                                                  nada mais atravessava, mas **uma lavagem com alfa continua parecendo lavada**, porque overlay
+                                                                  que desaparece é exatamente a aparência de transparência, mesmo sobre tinta opaca.
 
-                                                          `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
-                                                          `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
-                                                          hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
-                                                          composição.
+                                                                  `--card` é `oklch(0.284 0.012 235)`, sem alfa, então `bg-card` sozinho já é sólido.
+                                                                  `hover:bg-card` é repetido porque o `hover:bg-card/95` da base devolveria a translucidez no
+                                                                  hover, e `backdrop-blur-none` porque desfocar atrás de preenchimento opaco só gasta
+                                                                  composição.
 
-                                                          O enriquecimento vem de **fora** do preenchimento: brilho dourado
-                                                          (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
-                                                          (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
-                                                          rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
-                                                          pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
-                                                          uma linha de 1px colada na borda, não um tingimento.
+                                                                  O enriquecimento vem de **fora** do preenchimento: brilho dourado
+                                                                  (`shadow-xl shadow-yellow-500/30`, mais forte no hover) e um anel interno de 1px
+                                                                  (`ring-1 ring-yellow-400/25 ring-inset`). A regra que separa o que funciona do que foi
+                                                                  rejeitado é curta: **alfa em `shadow` é bem-vindo, alfa em `background` não.** A sombra
+                                                                  pinta na página atrás da linha; fundo com alfa vira película sobre a superfície. O anel é
+                                                                  uma linha de 1px colada na borda, não um tingimento.
 
-                                                          `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
-                                                          nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
-                                                          linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
-                                                          demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
-                                                          porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
-                                                          fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
-                                                          nessa linha.
+                                                                  `ranking-row.test.tsx` trava isso: assere que a linha do líder não tem `bg-card/{alfa}`,
+                                                                  nem fundo amarelo com alfa, nem dégradé, que ela tem brilho `shadow-yellow-*`, e que as
+                                                                  linhas comuns seguem translúcidas. São asserções em nome de classe, normalmente frágeis
+                                                                  demais para valer a pena, aceitas aqui porque **esse bug foi entregue duas vezes** — e
+                                                                  porque provam o que eu não conseguia afirmar de outro jeito: que o `tailwind-merge` de
+                                                                  fato resolve `bg-card/80` para `bg-card` e `shadow-black/20` para `shadow-yellow-500/30`
+                                                                  nessa linha.
 
 - [x] Seletor de temporadas com links (`/ranking?mes=2026-06`), para temporada encerrada ser
       compartilhável. Só aparece quando existe mais de uma temporada. `getRankingMonths()` lista
@@ -770,6 +770,36 @@ ciclo seguinte, e o texto orienta a só investigar se persistir.
 
 Separar de verdade exigiria o `fetchStats` reportar quais jogadores estavam num lote que falhou, o
 que muda o contrato do `StatsProvider`. Vale fazer se as falhas transitórias continuarem frequentes.
+
+### Fila da coleta: a armadilha do indicador que não avança (2026-07-28)
+
+Vale ler antes de mexer na ordenação de `collect.ts`, porque o erro é natural e passou duas vezes.
+
+**Sintoma:** o painel mostrava 39 "Aguardando" de 76, e em quatro minutos a fila andou **um membro**.
+O aproveitamento parecia ~50% quando o esperado era 90–95%.
+
+**Não era a API nem o orçamento.** Era a ordenação. A fila ordenava pela **data do último snapshot**,
+e um membro buscado com sucesso que **não jogou não ganha snapshot novo** — a data dele nunca avança.
+Ele fica cravado no início da fila e é rebuscado a cada execução, enquanto quem está atrás nunca é
+alcançado. O sinal no relatório era `updated: 0, unchanged: 20`: vinte membros lidos e nenhuma
+novidade, ou seja, a execução gastou o orçamento inteiro relendo gente que já tinha snapshot. Se a
+fila estivesse girando, os nunca-visitados apareceriam como `updated`, porque o primeiro snapshot
+sempre conta como novidade.
+
+É a **mesma inanição** que a ordenação alfabética causava e que já tinha sido "corrigida" — a troca
+foi por um indicador que também não avança. A regra que faltava: **ordenar pelo que a própria ação
+atualiza.** `statsCheckedAt` avança em toda tentativa, inclusive nas que falham, então a fila gira.
+`collect.test.ts` trava isso com o cenário exato — membro ocioso, tentado agora, vai por último —
+e com um teste que impede o `snapshots` de voltar ao `select` usado na ordenação.
+
+**Diagnóstico do painel, no mesmo dia.** O estado `waiting` significa "não carimbado desde que a
+coluna existe", **não** "nunca coletado". Os 38 nesse estado tinham snapshots de 22:40–23:10 e
+estavam sincronizando bem: o número real era 71 de 76, **93,4%**. O rótulo virou
+"Aguardando 1ª leitura" e o texto diz explicitamente que não indica problema.
+
+Lição que vale além deste caso: quando um número do painel contradiz a expectativa, **conferir se o
+painel mede o que promete** antes de caçar o sistema. Aqui o coletor estava a 93% e a leitura dizia
+50%.
 
 ### Fase 4 — Progressão e polimento
 

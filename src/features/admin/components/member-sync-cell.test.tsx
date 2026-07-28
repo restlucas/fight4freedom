@@ -33,7 +33,7 @@ describe("state labels", () => {
   // single badge this replaces, said only that something was off.
   it.each([
     ["ok", "Sincronizando"],
-    ["waiting", "Aguardando"],
+    ["waiting", "Aguardando 1ª leitura"],
     ["identity_pending", "ID não encontrado"],
     ["no_data", "Sem retorno"],
     ["paused", "Pausado"],

@@ -21,8 +21,13 @@ export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
     className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
   },
   waiting: {
-    text: "Aguardando",
-    title: "Na fila da coleta, ainda sem nenhuma tentativa registrada.",
+    text: "Aguardando 1ª leitura",
+    // "Aguardando" alone was read as "broken". On 2026-07-28 the panel showed 38
+    // members here and the roster looked 50% healthy, when in truth all 38 had
+    // recent snapshots and were collecting fine — they simply had not been
+    // visited since this column shipped. The label now says which wait it means.
+    title:
+      "A coleta ainda não passou por este membro DESDE que esta coluna existe. Não indica problema: se ele já tem stats no site, está sincronizando. O estado some assim que a próxima varredura o alcançar.",
     className: "text-muted-foreground",
     // Spins because this state really is in motion: the collector sweeps the
     // roster over two or three runs, so a member sits here until their turn.

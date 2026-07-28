@@ -17,15 +17,18 @@ vi.mock("@/lib/db", () => ({ db }));
 
 const { collectStats } = await import("./collect");
 
-/** A member row shaped like the collector's select. */
-function member(nickname: string, capturedAt: string | null, index: number) {
+/**
+ * A member row shaped like the collector's select. `checkedAt` is when the
+ * collector last TRIED them, which is what orders the queue.
+ */
+function member(nickname: string, checkedAt: string | null, index: number) {
   return {
     id: `id-${nickname}`,
     nickname,
     platformId: nickname,
     eaPersonaId: `persona-${index}`,
     eaNucleusId: `nucleus-${index}`,
-    snapshots: capturedAt ? [{ capturedAt: new Date(capturedAt) }] : [],
+    statsCheckedAt: checkedAt ? new Date(checkedAt) : null,
   };
 }
 
@@ -137,23 +140,69 @@ describe("collectStats batching", () => {
 });
 
 describe("collectStats queue order", () => {
-  it("serves the stalest members first, never alphabetical", async () => {
+  it("serves the least-recently-tried first, never alphabetical", async () => {
     // With a fixed alphabetical order the tail of a 100-member roster would be
-    // dropped every single cycle. Staleness ordering makes the queue self-balancing.
+    // dropped every single cycle.
     db.member.findMany.mockResolvedValue([
-      member("Ana", "2026-07-27T12:00:00Z", 1), // freshest
+      member("Ana", "2026-07-27T12:00:00Z", 1), // tried most recently
       member("Beto", "2026-07-20T12:00:00Z", 2),
-      member("Caio", null, 3), // never collected
+      member("Caio", null, 3), // never tried
     ]);
     const provider = fakeProvider();
 
     await collectStats(provider);
 
     expect(provider.batches[0].map((p) => p.personaId)).toEqual([
-      "persona-3", // never collected sorts first
+      "persona-3", // never tried sorts first
       "persona-2",
       "persona-1",
     ]);
+  });
+
+  it("orders by when we last TRIED, not by when a snapshot was written", async () => {
+    // The bug this replaced, measured in production on 2026-07-28: the queue was
+    // ordered by newest snapshot, and a member who is fetched fine but has not
+    // played gets NO new snapshot. Their date never moved, so they stayed pinned
+    // at the front and were re-fetched every run while 38 of 76 members behind
+    // them were never reached — the queue advanced by ONE member in four minutes.
+    //
+    // Idle is exactly that member: tried a second ago, nothing new to record.
+    // They must go LAST despite having no recent snapshot.
+    const idle = { ...member("Idle", "2026-07-28T09:00:00Z", 1) };
+    const neglected = { ...member("Neglected", "2026-07-28T08:00:00Z", 2) };
+    db.member.findMany.mockResolvedValue([idle, neglected]);
+
+    // Idle's snapshot is ancient; Neglected has none. Under the old sort Idle
+    // would come first. It must not.
+    db.statSnapshot.findMany.mockResolvedValue([
+      {
+        memberId: "id-Idle",
+        kills: 1,
+        deaths: 1,
+        wins: 1,
+        losses: 1,
+        timePlayedMinutes: 1,
+      },
+    ]);
+    const provider = fakeProvider();
+
+    await collectStats(provider);
+
+    expect(provider.batches[0].map((p) => p.personaId)).toEqual([
+      "persona-2", // Neglected: tried longer ago
+      "persona-1", // Idle: just tried, goes last
+    ]);
+  });
+
+  it("does not select snapshots for ordering any more", async () => {
+    // Guards the fix at the query level: reading snapshots back would invite the
+    // old, broken ordering to creep in again.
+    db.member.findMany.mockResolvedValue([]);
+    await collectStats(fakeProvider());
+
+    const select = db.member.findMany.mock.calls[0][0].select;
+    expect(select.statsCheckedAt).toBe(true);
+    expect(select.snapshots).toBeUndefined();
   });
 });
 
