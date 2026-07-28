@@ -943,11 +943,22 @@ cron job que não termina bloqueia a própria execução seguinte.
 | Serviço               | novo, no **mesmo repositório** (não repo separado)                |
 | Start command         | `pnpm worker`                                                    |
 | Cron schedule         | `*/10 * * * *`                                                   |
-| `DATABASE_URL`        | mesma string da Vercel, pelo **pooler** do Supabase (porta 6543) |
+| `DATABASE_URL`        | **exatamente** a mesma string da Vercel, sem trocar a porta      |
 | `CRON_SECRET`         | o mesmo valor da Vercel — é o que autentica a purga de cache     |
 | `NEXT_PUBLIC_APP_URL` | URL de produção do site. **Obrigatória aqui**, ver abaixo        |
 
-Duas armadilhas de configuração, ambas de falha silenciosa:
+Sobre o `DATABASE_URL`: copiar sem alterar. O nosso aponta para o pooler do Supabase na porta
+**5432** (modo sessão), e para o worker isso é o mais adequado, não uma concessão — ele abre uma
+conexão, faz o ciclo e encerra, que é o caso em que modo sessão é melhor que o transacional (6543).
+O 6543 existe para serverless, onde dezenas de invocações concorrentes disputam conexão. Aqui é um
+processo só.
+
+Três armadilhas de configuração, todas de falha silenciosa:
+
+- **O tipo do serviço.** A Railway cria serviço web por padrão e roda o start command do
+  `package.json`, que aqui é `next start`. O serviço da coleta tem de ser **cron job**, com start
+  command `pnpm worker` e schedule `*/10 * * * *`. Serviço web rodaria uma segunda cópia do site em
+  vez da coleta, e o log pareceria saudável.
 
 - **`NEXT_PUBLIC_APP_URL`.** No app ela tem fallback para `localhost` (o request carrega o host
   real). No worker não há request, e com o fallback ele faria POST de purga para uma máquina
