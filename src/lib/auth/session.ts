@@ -28,8 +28,32 @@ export type SessionProfile = {
     id: string;
     nickname: string;
     avatarUrl: string | null;
+    /**
+     * Identity state, carried in the SESSION query on purpose.
+     *
+     * The gate in src/app/(site)/layout.tsx runs on every navigation, and this
+     * query already runs there for the header. Two extra columns on a row we are
+     * fetching anyway cost nothing; a separate query would cost a round trip per
+     * page view, which is what would make anyone tempted to weaken the gate.
+     */
+    identityConfirmedAt: Date | null;
+    identityHelpRequestedAt: Date | null;
   } | null;
 };
+
+/**
+ * Whether this member still has to identify their own EA account.
+ *
+ * Two ways out, and both are real: confirming, or asking an admin for help.
+ * Without the second one a member whose name resolves to nothing anywhere — four
+ * of the roster on 2026-07-29 — would be locked out of the site permanently.
+ */
+export function needsIdentityConfirmation(profile: SessionProfile | null): boolean {
+  if (!profile?.member) return false;
+  return (
+    profile.member.identityConfirmedAt === null && profile.member.identityHelpRequestedAt === null
+  );
+}
 
 /**
  * The signed-in profile, or null. Memoised per request: the header, the page and
@@ -54,7 +78,15 @@ export const getSessionProfile = cache(async (): Promise<SessionProfile | null> 
       id: true,
       isAdmin: true,
       memberId: true,
-      member: { select: { id: true, nickname: true, avatarUrl: true } },
+      member: {
+        select: {
+          id: true,
+          nickname: true,
+          avatarUrl: true,
+          identityConfirmedAt: true,
+          identityHelpRequestedAt: true,
+        },
+      },
     },
   });
   // An auth user with no profile is signed in but not part of the clan: it has

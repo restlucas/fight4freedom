@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { chunk, isEmptyProfile, parsePlayersPayload, pickIdentity, toRawStats } from "./gametools";
-import { gametoolsPlayerFixture } from "./gametools.fixture";
+import {
+  bestClassByKitTime,
+  chunk,
+  isEmptyProfile,
+  parseCardStats,
+  parsePlayersPayload,
+  parseProfilePayload,
+  pickIdentity,
+  profileStat,
+  toIdentityCard,
+  toRawStats,
+} from "./gametools";
+import { gametoolsPlayerFixture, gametoolsProfileFixture } from "./gametools.fixture";
 
 describe("parsePlayersPayload", () => {
   it("unwraps the { data: [...] } envelope (2+ players)", () => {
@@ -408,5 +419,148 @@ describe("chunk", () => {
 
   it("handles an empty list", () => {
     expect(chunk([], 10)).toEqual([]);
+  });
+});
+
+/**
+ * Both card fixtures, run through the SAME parsers the provider uses. Parsing
+ * rather than casting is the point: it proves the schema accepts the real payload
+ * shape, and it is what let the `as const` fixtures stay readonly.
+ */
+const profileFixture = parseProfilePayload(gametoolsProfileFixture);
+
+describe("profileStat", () => {
+  it("reads a value from the flat name/value list", () => {
+    expect(profileStat(profileFixture, "matches_level")).toBe(413);
+  });
+
+  it("takes the FIRST occurrence of a repeated name, never the sum", () => {
+    // The live payload repeats names with identical values; summing 3.713.760
+    // twice would report a score nobody has.
+    expect(profileStat(profileFixture, "score_total")).toBe(3713760);
+  });
+
+  it("treats an entry with no value as unknown, not as zero", () => {
+    expect(profileStat(profileFixture, "kill_death_ratio")).toBeNull();
+  });
+
+  it("returns null for a name the payload does not carry", () => {
+    expect(profileStat(profileFixture, "tp_kit_medic")).toBeNull();
+  });
+
+  it("survives a missing profile", () => {
+    expect(profileStat(null, "matches_level")).toBeNull();
+  });
+});
+
+describe("bestClassByKitTime", () => {
+  it("picks the class with the most TIME played", () => {
+    expect(bestClassByKitTime(profileFixture)).toBe("support");
+  });
+
+  it("returns null on a tie instead of whichever key came first", () => {
+    const tied = {
+      playerProfiles: [
+        {
+          stats: [
+            { name: "tp_kit_assault", value: 5000 },
+            { name: "tp_kit_recon", value: 5000 },
+          ],
+        },
+      ],
+    };
+    expect(bestClassByKitTime(parseProfilePayload(tied))).toBeNull();
+  });
+
+  it("ignores kits with zero time, so a fresh account resolves to null", () => {
+    const fresh = {
+      playerProfiles: [{ stats: [{ name: "tp_kit_assault", value: 0 }] }],
+    };
+    expect(bestClassByKitTime(parseProfilePayload(fresh))).toBeNull();
+  });
+
+  it("survives a missing profile", () => {
+    expect(bestClassByKitTime(null)).toBeNull();
+  });
+});
+
+describe("toIdentityCard", () => {
+  const identity = {
+    personaId: "1111751848",
+    nucleusId: "1000707516734",
+    username: "sig4rro",
+  };
+  const stats = parseCardStats(gametoolsPlayerFixture);
+
+  it("builds the full card from both endpoints", () => {
+    const card = toIdentityCard(identity, stats, profileFixture);
+
+    expect(card.rankName).toBe("Second Lieutenant V");
+    expect(card.rankLevel).toBe(141);
+    expect(card.rankImageUrl).toBe("https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_sm.png");
+    expect(card.badges).toBe(104);
+    expect(card.dogTags).toBe(39);
+    expect(card.bestClass).toBe("support");
+    expect(card.empty).toBe(false);
+    expect(card.identity.username).toBe("sig4rro");
+  });
+
+  it("reads hours and matches from gm_all, not from the top level", () => {
+    const card = toIdentityCard(identity, stats, profileFixture);
+
+    // gm_all: 745.876 s and 512 matches. The top level carries matchesPlayed 388,
+    // a DIFFERENT bucket (docs §5.3) — a card showing 388 would disagree with the
+    // member's own page and make a correct match look wrong.
+    expect(card.hoursPlayed).toBe(207);
+    expect(card.matches).toBe(512);
+  });
+
+  it("shows kills against real players, not the bot-inclusive total", () => {
+    const card = toIdentityCard(identity, stats, profileFixture);
+    // dividedKills.human, not the 13.695 top-level nor gm_all's 17.587.
+    expect(card.kills).toBe(12320);
+  });
+
+  it("falls back to most-killed class when the profile call failed", () => {
+    // Deliberately disagreeing buckets: assault has the kills, and without the
+    // profile there is no kit-time to prefer.
+    const killsLean = {
+      secondsPlayed: 1000,
+      gameModeGroups: [{ id: "gm_all", matches: 10, secondsPlayed: 7200 }],
+      classes: [
+        { className: "Assault", kills: 900 },
+        { className: "Support", kills: 100 },
+      ],
+      dividedKills: { human: 1000 },
+    };
+
+    const card = toIdentityCard(identity, parseCardStats(killsLean), null);
+    expect(card.bestClass).toBe("assault");
+    expect(card.rankName).toBeNull();
+    expect(card.hoursPlayed).toBe(2);
+  });
+
+  it("does NOT claim an account is empty when the stats call failed", () => {
+    // The distinction the §11 warning depends on: "EA has no BF6 record" is a
+    // finding, "we could not read it" is not. Conflating them would show a
+    // stranger's-account warning to a member whose only problem was a 504.
+    const card = toIdentityCard(identity, null, profileFixture);
+
+    expect(card.empty).toBe(false);
+    expect(card.kills).toBeNull();
+    expect(card.hoursPlayed).toBeNull();
+    expect(card.rankName).toBe("Second Lieutenant V");
+  });
+
+  it("flags an account with no BF6 record at all", () => {
+    const card = toIdentityCard(
+      identity,
+      parseCardStats({ secondsPlayed: 0, gameModeGroups: [], classes: [], dividedKills: null }),
+      parseProfilePayload({ playerProfiles: [] }),
+    );
+
+    expect(card.empty).toBe(true);
+    expect(card.bestClass).toBeNull();
+    expect(card.rankName).toBeNull();
   });
 });

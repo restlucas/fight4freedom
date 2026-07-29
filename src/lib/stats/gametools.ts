@@ -18,6 +18,7 @@ import { z } from "zod";
 import type { PlayerClass } from "@prisma/client";
 
 import type {
+  IdentityCard,
   IdentityMatch,
   PlayerIdentity,
   RawStats,
@@ -58,6 +59,12 @@ export const STATS_BATCH_SIZE = 3;
 const SEARCH_TIMEOUT_MS = 10_000;
 // A cold-cache batch was measured at ~2-6 s for 2 players; give 10 players room.
 const BATCH_TIMEOUT_MS = 30_000;
+/**
+ * Per-call ceiling for the identity card. Tighter than the batch on purpose:
+ * somebody is watching a spinner, and the gateway's 504 lands at ~15,2 s anyway,
+ * so waiting 30 s only turns a failure into an abandoned page.
+ */
+const CARD_TIMEOUT_MS = 15_000;
 
 // --- Response schemas (validate only what we read; extra keys pass through) --
 
@@ -273,7 +280,15 @@ export function isIncoherentPayload(
  * `pickIdentity` only disambiguates between several candidates, so a single
  * coincidentally-named account binds silently and is retried forever.
  */
-export function isEmptyProfile(player: GametoolsPlayer): boolean {
+export function isEmptyProfile(player: {
+  // Structural, not `GametoolsPlayer`, so the identity card can reuse the SAME
+  // predicate. The card parses with a deliberately lenient schema (see
+  // cardStatsSchema) and two copies of this rule would be free to drift apart —
+  // which matters, because this is the §11 detector.
+  gameModeGroups: readonly unknown[];
+  classes: readonly unknown[];
+  secondsPlayed?: number | null;
+}): boolean {
   return (
     player.gameModeGroups.length === 0 &&
     player.classes.length === 0 &&
@@ -384,6 +399,189 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
       winPercent: all.winPercent,
       damagePerMinute: all.dpm,
     },
+  };
+}
+
+// --- Identity card (the "is this you?" screen) -----------------------------
+//
+// A SECOND, LENIENT PAIR OF SCHEMAS over the same two endpoints, and the
+// looseness is the design. The collector must be strict: a missing counter there
+// means "skip this member and retry", because writing a snapshot from a partial
+// payload corrupts a month's delta. This path writes nothing and only has to help
+// a human recognise an account, so a response missing half its fields must still
+// render — a card showing only "116 h, Support" identifies someone fine.
+//
+// It also has to survive the payload shape the strict schema is not built for:
+// an account with NO BF6 record, which is exactly the case the screen exists to
+// catch (docs/api-gametools.md §11). Parsing that with `playerStatsSchema` risks
+// throwing on an absent `kills`, and a throw would hide the very signal we want.
+
+const cardStatsSchema = z
+  .object({
+    secondsPlayed: z.number().nullish(),
+    gameModeGroups: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            matches: z.number().nullish(),
+            secondsPlayed: z.number().nullish(),
+          })
+          .loose(),
+      )
+      .default([]),
+    classes: z
+      .array(z.object({ className: z.string(), kills: z.number().nullish() }).loose())
+      .default([]),
+    dividedKills: z.object({ human: z.number().nullish() }).loose().nullish(),
+  })
+  .loose();
+
+export type CardStats = z.output<typeof cardStatsSchema>;
+
+const profileResponseSchema = z.object({
+  playerProfiles: z
+    .array(
+      z
+        .object({
+          /** In-game rank, already worded ("Second Lieutenant V"). */
+          rankName: z.string().nullish(),
+          playerCard: z
+            .object({
+              rank: z.number().nullish(),
+              badges: z.number().nullish(),
+              rankImage: z
+                .object({ small: z.string().nullish(), large: z.string().nullish() })
+                .nullish(),
+            })
+            .nullish(),
+          totalDogTags: z.object({ intValue: z.number().nullish() }).nullish(),
+          /**
+           * A flat name/value list, NOT an object, and it contains repeats: the
+           * live payload for persona 1111751848 had 339 entries under 268
+           * distinct names. Entries also arrive with no `value` at all
+           * (`kill_death_ratio`), which is why value is nullish instead of
+           * defaulted to 0 — a missing ratio is unknown, not zero.
+           */
+          stats: z
+            .array(z.object({ name: z.string(), value: z.number().nullish() }).loose())
+            .default([]),
+        })
+        .loose(),
+    )
+    .default([]),
+});
+
+export type GametoolsProfile = z.output<typeof profileResponseSchema>;
+
+/**
+ * Validating parsers for the two card endpoints, exported for the same reason
+ * `parsePlayersPayload` is: the provider and the tests must go through the SAME
+ * code, or the fixtures stop proving anything about the live path.
+ */
+export function parseCardStats(payload: unknown): CardStats {
+  return cardStatsSchema.parse(payload);
+}
+
+export function parseProfilePayload(payload: unknown): GametoolsProfile {
+  return profileResponseSchema.parse(payload);
+}
+
+/** `tp_kit_*` is seconds spent playing that kit. Verified live 2026-07-29. */
+const KIT_TIME_TO_CLASS: Record<string, PlayerClass> = {
+  tp_kit_assault: "assault",
+  tp_kit_engineer: "engineer",
+  tp_kit_support: "support",
+  tp_kit_recon: "recon",
+};
+
+/**
+ * First value for a stat name in the profile's flat list.
+ *
+ * FIRST, not sum, and not last: the list repeats names (`score_total` appears
+ * three times with the same value), so summing would triple a total. The repeats
+ * observed were identical, so the first occurrence is the value.
+ */
+export function profileStat(profile: GametoolsProfile | null, name: string): number | null {
+  const entries = profile?.playerProfiles?.[0]?.stats ?? [];
+  for (const entry of entries) {
+    if (entry.name === name && entry.value != null) return entry.value;
+  }
+  return null;
+}
+
+/**
+ * The class the account has spent the most TIME on.
+ *
+ * Time rather than kills because this feeds recognition, not scoring: a player
+ * knows they are the one who plays medic, while "most kills" can name a class
+ * they touched for one good round. Ties go to nobody (null) rather than to
+ * whichever key JavaScript enumerated first.
+ */
+export function bestClassByKitTime(profile: GametoolsProfile | null): PlayerClass | null {
+  let best: { playerClass: PlayerClass; seconds: number } | null = null;
+  let tied = false;
+
+  for (const [name, playerClass] of Object.entries(KIT_TIME_TO_CLASS)) {
+    const seconds = profileStat(profile, name);
+    if (seconds == null || seconds <= 0) continue;
+    if (!best || seconds > best.seconds) {
+      best = { playerClass, seconds };
+      tied = false;
+    } else if (seconds === best.seconds) {
+      tied = true;
+    }
+  }
+
+  return best && !tied ? best.playerClass : null;
+}
+
+/** Most-killed class from `classes[]`, the fallback when the profile call fails. */
+function bestClassByKills(stats: CardStats | null): PlayerClass | null {
+  let best: { playerClass: PlayerClass; kills: number } | null = null;
+  for (const entry of stats?.classes ?? []) {
+    const playerClass = CLASS_NAME_TO_ENUM[entry.className];
+    if (!playerClass) continue;
+    const kills = entry.kills ?? 0;
+    if (!best || kills > best.kills) best = { playerClass, kills };
+  }
+  return best && best.kills > 0 ? best.playerClass : null;
+}
+
+/**
+ * Builds the card from whatever the two calls brought back. Pure, so the real
+ * payload shapes can be pinned in tests.
+ *
+ * Hours and matches come from `gm_all`, NOT from the top level and not from the
+ * profile's `tp_*` sums, so the number here is the same one the member's own page
+ * will show them (docs/api-gametools.md §5.3 and §10.3). A card that disagrees
+ * with the site by ten hours is a card that makes someone doubt a correct match.
+ */
+export function toIdentityCard(
+  identity: ResolvedIdentity,
+  stats: CardStats | null,
+  profile: GametoolsProfile | null,
+): IdentityCard {
+  const all = stats?.gameModeGroups.find((group) => group.id === "gm_all") ?? null;
+  const seconds = all?.secondsPlayed ?? null;
+  const card = profile?.playerProfiles?.[0]?.playerCard ?? null;
+
+  return {
+    identity,
+    rankName: profile?.playerProfiles?.[0]?.rankName ?? null,
+    rankLevel: card?.rank ?? null,
+    rankImageUrl: card?.rankImage?.small ?? card?.rankImage?.large ?? null,
+    hoursPlayed: seconds == null ? null : Math.round(seconds / 3600),
+    matches: all?.matches ?? null,
+    kills: stats?.dividedKills?.human ?? null,
+    bestClass: bestClassByKitTime(profile) ?? bestClassByKills(stats),
+    badges: card?.badges ?? null,
+    dogTags: profile?.playerProfiles?.[0]?.totalDogTags?.intValue ?? null,
+    // Only the stats call can answer this. When it failed we do NOT claim the
+    // account is empty: an unread account and an account with nothing in it are
+    // different answers, and guessing here would show a stranger's-account
+    // warning to a member whose only problem was a 504.
+    empty: stats ? isEmptyProfile(stats) : false,
   };
 }
 
@@ -540,6 +738,57 @@ export class GametoolsProvider implements StatsProvider {
     }
 
     return stats;
+  }
+
+  /**
+   * The two calls behind one card, run SEQUENTIALLY.
+   *
+   * Sequential for the same reason the collector's batches are (one request in
+   * flight at a time toward a free community API), and it costs nothing here: the
+   * screen runs for one to three candidates, once per member, ever.
+   *
+   * Each call is independently best-effort. The stats call is the more valuable of
+   * the two — it carries kills, hours and the empty-account signal — but a card
+   * with only the rank and the class still lets someone recognise themselves, so
+   * losing one is not losing the screen.
+   */
+  async fetchIdentityCard(identity: ResolvedIdentity): Promise<IdentityCard | null> {
+    const query =
+      `playerid=${encodeURIComponent(identity.personaId)}` +
+      `&nucleus_id=${encodeURIComponent(identity.nucleusId)}&platform=pc`;
+
+    const stats = await this.tryCall(
+      `${this.baseUrl}/bf6/stats/?${query}&format_values=false&seperation=true`,
+      parseCardStats,
+      "stats",
+    );
+    const profile = await this.tryCall(
+      `${this.baseUrl}/bf6/profile/?${query}`,
+      parseProfilePayload,
+      "profile",
+    );
+
+    // Both failed: we know nothing, and saying so lets the screen offer a retry
+    // instead of rendering an all-null card that reads like an empty account.
+    if (!stats && !profile) return null;
+    return toIdentityCard(identity, stats, profile);
+  }
+
+  /** Fetch + validate one endpoint, degrading to null with a named warning. */
+  private async tryCall<T>(
+    url: string,
+    parse: (payload: unknown) => T,
+    label: string,
+  ): Promise<T | null> {
+    try {
+      return parse(await fetchJson(url, {}, CARD_TIMEOUT_MS));
+    } catch (error) {
+      console.warn(
+        `[stats] card de identidade: ${label} falhou —`,
+        error instanceof Error ? error.message : error,
+      );
+      return null;
+    }
   }
 }
 

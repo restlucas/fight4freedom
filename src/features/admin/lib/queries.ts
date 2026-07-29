@@ -30,7 +30,13 @@ export type MemberSyncState =
   /** No attempt has EVER worked. Almost always the wrong EA account. */
   | "never_read"
   /** No EA identity: the platform id matches no EA account. */
-  | "identity_pending";
+  | "identity_pending"
+  /**
+   * The member tried to identify their own EA account on /confirmar-conta, could
+   * not, and asked for help. The only state a MEMBER can put themselves into, and
+   * the only one carrying a request rather than a symptom.
+   */
+  | "help_requested";
 
 export type MemberSync = {
   state: MemberSyncState;
@@ -52,6 +58,14 @@ export type MemberSync = {
   /** Whether an admin may pause/resume this member (pointless when "off"). */
   canPause: boolean;
   paused: boolean;
+  /** ISO instant the member asked an admin to sort their EA account out. */
+  helpRequestedAt: string | null;
+  /**
+   * Why the collection is paused, when anything wrote a reason. Surfaced next to
+   * the badge because "Pausado" alone never said whether a human decided it or a
+   * member got stuck.
+   */
+  pausedReason: string | null;
 };
 
 type SyncInput = {
@@ -65,11 +79,17 @@ type SyncInput = {
   hasStats: boolean;
   /** When a read last WORKED. Null means not once, ever. */
   statsReadAt: Date | null;
+  /** Set when the member gave up on /confirmar-conta and asked for help. */
+  identityHelpRequestedAt: Date | null;
 };
 
 function syncState(m: SyncInput): MemberSyncState {
   const eligible = m.active && (m.discordId !== null || m.collectWithoutLogin);
   if (!eligible) return "off";
+  // BEFORE `paused`, and that order is the point: asking for help is what pauses a
+  // member who has nothing bound, so checking `statsPaused` first would relabel
+  // every request as a routine admin pause and hide the queue completely.
+  if (m.identityHelpRequestedAt != null) return "help_requested";
   if (m.statsPaused) return "paused";
   // The stored outcome is the truth about the last attempt; the identity column
   // is the fallback for members the collector has not stamped yet.
@@ -169,9 +189,11 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       discordId: true,
       collectWithoutLogin: true,
       statsPaused: true,
+      statsPausedReason: true,
       statsStatus: true,
       statsCheckedAt: true,
       statsReadAt: true,
+      identityHelpRequestedAt: true,
       // Only the count: "has this member ever had stats" is what separates a
       // transient failure from a member the collector genuinely cannot read.
       _count: { select: { snapshots: true } },
@@ -212,6 +234,8 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
         lastAttemptFailed: lastAttemptFailed(input),
         canPause: m.active && (m.discordId !== null || m.collectWithoutLogin),
         paused: m.statsPaused,
+        helpRequestedAt: m.identityHelpRequestedAt?.toISOString() ?? null,
+        pausedReason: m.statsPausedReason,
       },
       role: m.role,
       active: m.active,

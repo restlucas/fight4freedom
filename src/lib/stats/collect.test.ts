@@ -114,6 +114,11 @@ function fakeProvider(options: { costMs?: number } = {}): StatsProvider & {
     batches,
     searchPlayer: vi.fn(async () => null),
     matchPlayer: vi.fn(async () => ({ status: "not-found" }) as const),
+    // Part of the interface, and deliberately never called from a collection run:
+    // the identity card belongs to the interactive screen. A stub that throws
+    // would say that louder, but the collector must not depend on it at all, and
+    // returning null is what an unread account looks like.
+    fetchIdentityCard: vi.fn(async () => null),
     fetchStats: vi.fn(async (players: PlayerIdentity[]) => {
       batches.push(players);
       if (options.costMs) clock += options.costMs;

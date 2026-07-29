@@ -71,6 +71,17 @@ export const SYNC_LABEL: Record<MemberSyncState, SyncLabel> = {
       "Este membro já foi lido com sucesso antes, mas as tentativas recentes voltam vazias. Pode ser instabilidade da fonte, que se resolve sozinha, ou uma conta que trocou de nome. Investigue se continuar assim por várias horas.",
     className: "border-orange-500/40 bg-orange-500/10 text-orange-300",
   },
+  help_requested: {
+    text: "Pediu ajuda",
+    // The only state a member puts themselves into, and the only one that is a
+    // REQUEST rather than a diagnosis. It exists because the alternative was worse:
+    // a member who cannot find their own EA account would either sit blocked on the
+    // confirmation screen or slip into `never_read`, indistinguishable from a bad
+    // round nobody needs to look at.
+    title:
+      "O próprio membro tentou identificar a conta da EA no primeiro login, não conseguiu e pediu ajuda. Só um humano resolve: peça o EA ID exato a ele (o nome no app da EA, não o nick do clã nem a gamertag do console), preencha em “Nome da EA” no cadastro e salve. Ao corrigir a conta, o membro é convidado a confirmar de novo no próximo acesso.",
+    className: "border-sky-500/40 bg-sky-500/10 text-sky-300",
+  },
   paused: {
     text: "Pausado",
     title: "Um admin tirou este membro da coleta. Ele continua visível no site.",
@@ -106,8 +117,11 @@ export const SYNC_RETRY_NOTICE = {
  * "Fora da coleta" and "Pausado", which is the opposite of useful.
  */
 export const SYNC_STATES_BY_URGENCY: readonly MemberSyncState[] = [
-  // First, because it is the only state that never resolves on its own and the
-  // only one whose fix is known: correct the eaName.
+  // Above everything, because a person is waiting on it. Every other state here is
+  // the system reporting a symptom; this one is a member who already tried.
+  "help_requested",
+  // Then the only other state that never resolves on its own and whose fix is
+  // known: correct the eaName.
   "never_read",
   "identity_pending",
   "no_data",

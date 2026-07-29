@@ -48,6 +48,8 @@ function member(
       lastAttemptFailed: false,
       canPause: true,
       paused: false,
+      helpRequestedAt: null,
+      pausedReason: null,
     },
     role,
     active: true,

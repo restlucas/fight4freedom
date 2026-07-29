@@ -88,6 +88,38 @@ enum StatsSyncStatus {
   @@map("stats_sync_status")
 }
 
+/// How one attempt by a MEMBER to declare their own EA account ended.
+///
+/// Recorded per ATTEMPT, which is why it lives on `identityClaim` and not as a
+/// column on `member`: someone who mistypes twice and gets it right on the third
+/// try leaves three rows, and the two failures are exactly what an admin needs to
+/// see in order to help. A single column would keep only the last one.
+enum IdentityClaimOutcome {
+  /// EA's search returned nothing for the declared name. The most common failure:
+  /// 13 of the 27 unresolved members on 2026-07-29 were in this state, usually a
+  /// clan tag typed into a field that matches the whole name (see §11).
+  not_found
+  /// Exactly one account was found and shown to the member, who has not clicked
+  /// yet. Separate from `ambiguous` because the two ask nothing of an admin and
+  /// everything of each other: this one usually ends in `confirmed` seconds later,
+  /// and a row that stays here means the member walked away from a good match.
+  offered
+  /// Several DISTINCT EA accounts answer to that name and the member has not
+  /// picked one yet. Not an error — the candidate list is the answer.
+  ambiguous
+  /// An account was found and EA has no BF6 record for it. The §11 case: a real
+  /// account that is not this person's.
+  empty_profile
+  /// The member looked at the account's own numbers and said "this is me". The
+  /// only outcome that binds anything.
+  confirmed
+  /// The source failed (504, timeout). Says nothing about whether the name is
+  /// right, so it must never be shown to the member as "not found".
+  error
+
+  @@map("identity_claim_outcome")
+}
+
 model Member {
   id                  String           @id @default(uuid())
   nickname            String
@@ -104,10 +136,15 @@ model Member {
   /// better than the invented values a mandatory field produced — 23 of 99
   /// members carried an id that matches no EA account.
   eaName              String?          @map("ea_name")
-  /// EA `username` of the account that was bound, recorded at resolution time.
-  /// Output, never input: it is not searchable and not unique (two distinct
-  /// accounts share the username `OJUN10R`). Kept because it is the clearest way
-  /// for a human to recognise which account was picked.
+  /// EA `username` of the account that was bound, as EA reports it.
+  ///
+  /// Output, never input, and that survived the identity flow of 2026-07-29 on
+  /// purpose. Members now TYPE a username on /confirmar-conta, but that string
+  /// lands in `identityClaim.declaredUsername`, never here: it is not searchable
+  /// and not unique (two distinct accounts share the username `OJUN10R`), so its
+  /// only job is breaking a tie between candidates. This column stays "what EA
+  /// says the bound account is called", which is what makes it trustworthy in the
+  /// panel.
   eaUsername          String?          @map("ea_username")
   /// EA persona id + nucleus id: the stable identity the stats API needs.
   /// Resolved automatically from `eaName` (falling back to `platformId`) on member
@@ -119,6 +156,34 @@ model Member {
   /// stats, so which persona is stored does not matter — which account does.
   eaPersonaId         String?          @map("ea_persona_id")
   eaNucleusId         String?          @map("ea_nucleus_id")
+  /// When the MEMBER THEMSELF looked at the bound account's numbers and confirmed
+  /// it is theirs.
+  ///
+  /// The difference from `eaPersonaId` being filled is the whole point, and it is
+  /// what §11 of docs/api-gametools.md cost us: an id resolved from a name is a
+  /// GUESS an admin made, and on 2026-07-28 ten members were bound to accounts
+  /// that existed and were not theirs. Nothing in the database could tell those
+  /// apart from a correct bind. This column can: only a human who knows the answer
+  /// sets it.
+  ///
+  /// Null is the gate. An unconfirmed member is sent to /confirmar-conta on login
+  /// and cannot leave the site's pages until they confirm or ask for help.
+  ///
+  /// Cleared when an admin rebinds the member to a DIFFERENT EA account, because
+  /// the member's agreement was about the old one and says nothing about the new.
+  identityConfirmedAt DateTime?        @map("identity_confirmed_at") @db.Timestamptz(6)
+  /// When the member gave up and asked an admin to sort their account out.
+  ///
+  /// The gate's ESCAPE HATCH, and it has to exist: without it, a member whose EA
+  /// name genuinely resolves to nothing (4 of the 27 on 2026-07-29 exist on no
+  /// source at all) would be held on the confirmation screen forever, unable to
+  /// use the site they were invited to.
+  ///
+  /// Its own column rather than a read of `identityClaim.needsHelp` because the
+  /// gate runs on every navigation and rides along in the session query
+  /// (getSessionProfile), where one more column costs nothing and a second query
+  /// would cost a round trip per page. The claim rows keep the per-attempt detail.
+  identityHelpRequestedAt DateTime?    @map("identity_help_requested_at") @db.Timestamptz(6)
   /// Discord snowflake, captured from the verified OAuth identity when the
   /// member claims their invite — never typed by hand. Unique so the login
   /// lookup can never be ambiguous.
@@ -164,6 +229,14 @@ model Member {
   /// alternative was setting `active = false`, which also removes them from
   /// /membros and from the ranking, punishing the member for a data problem.
   statsPaused         Boolean          @default(false) @map("stats_paused")
+  /// Why the collection is paused, in one line, for the admin panel.
+  ///
+  /// Exists because the flag above had exactly one state for two very different
+  /// situations: "an admin paused this on purpose" and "the member tried to
+  /// identify their own account and could not". The second is a queue item that
+  /// someone has to work; the first is a decision nobody should undo. Free text
+  /// rather than an enum: it is read by a human and never branched on.
+  statsPausedReason   String?          @map("stats_paused_reason")
   /// When the collector last ATTEMPTED this member, successful or not.
   ///
   /// Needed because a snapshot only exists when counters moved, so the snapshot
@@ -188,14 +261,57 @@ model Member {
   createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  medals     MemberMedal[]
-  snapshots  StatSnapshot[]
-  highlights Highlight[]
-  profiles   Profile[]
-  invites    MemberInvite[]
-  events     ClanEvent[]
+  medals          MemberMedal[]
+  snapshots       StatSnapshot[]
+  highlights      Highlight[]
+  profiles        Profile[]
+  invites         MemberInvite[]
+  events          ClanEvent[]
+  identityClaims  IdentityClaim[]
 
   @@map("member")
+}
+
+/// One attempt by a member to declare which EA account is theirs.
+///
+/// APPEND-ONLY, and the reason is the failure path. When the search returns
+/// nothing there is no candidate to copy anything from, so the string the member
+/// typed is the ONLY record of what was tried — and that string is the entire
+/// content of the admin's queue item. Storing it as a column on `member` would
+/// keep just the last attempt and would mix "what the person said" with "what we
+/// resolved", which is precisely the comparison a human needs in order to guess
+/// the right name.
+///
+/// On the happy path these rows are only history: `member.eaName`, `eaUsername`
+/// and the two ids are overwritten from the CONFIRMED candidate, so nothing here
+/// is read by the collector.
+model IdentityClaim {
+  id               String               @id @default(uuid())
+  memberId         String               @map("member_id")
+  /// Exactly what the member typed, trimmed but never normalised: the accents,
+  /// the clan tag and the casing are the evidence.
+  declaredName     String               @map("declared_name")
+  /// The EA `username` they typed. Mandatory in the form (clan owner's decision,
+  /// 2026-07-29) even though it is neither searchable nor unique, because it is a
+  /// legitimate tiebreak between same-named accounts (pickIdentity, step 3).
+  declaredUsername String               @map("declared_username")
+  outcome          IdentityClaimOutcome
+  /// The member ticked "não consegui". A PRIORITY signal, not the record itself:
+  /// the row is written on every failed attempt, so someone who gives up in
+  /// silence is still visible in the queue.
+  needsHelp        Boolean              @default(false) @map("needs_help")
+  /// Which account was bound, for a `confirmed` row. Duplicated from `member` on
+  /// purpose: an admin may later change those columns, and this is the record of
+  /// what the member actually vouched for.
+  eaPersonaId      String?              @map("ea_persona_id")
+  eaNucleusId      String?              @map("ea_nucleus_id")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// The queue reads "latest attempt per member"; both filters hit this.
+  @@index([memberId, createdAt], map: "identity_claim_member_created_idx")
+  @@map("identity_claim")
 }
 
 /// One-time invite that binds a Discord account to a member.

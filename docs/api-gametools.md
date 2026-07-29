@@ -567,6 +567,69 @@ então não é fonte confiável. O caminho é pedir o **EA ID** a cada um.
 
 ---
 
+## 12. Quem confirma a conta é o membro (2026-07-29)
+
+Resposta ao §11. O problema não é a busca, é que **ninguém nunca foi perguntado**: `pickIdentity`
+desempata entre vários candidatos, mas quando a busca devolve **um**, ele vincula em silêncio, e não
+existia passo algum que perguntasse "essa conta é sua?". Custou dez membros vestindo a carreira de
+estranhos, um deles pontuando 86.914 no ranking mensal.
+
+A correção não é heurística nenhuma — `displayName` não é único nem normalizado por caixa. É pedir
+para a única pessoa que sabe a resposta, mostrando números que ela reconhece.
+
+### O que foi sondado na fonte (persona 1111751848, 2026-07-29)
+
+`GET /bf6/profile/` devolve, além do que o anexo já listava:
+
+| Campo                   | Valor observado                                                   | Uso no card                      |
+| ----------------------- | ----------------------------------------------------------------- | -------------------------------- |
+| `rankName`              | `"Second Lieutenant V"`                                           | Patente, como o jogo escreve     |
+| `playerCard.rank`       | `141`                                                             | Nível numérico                   |
+| `playerCard.rankImage`  | `cdn.gametools.network/ranks/bf6/...`                             | Arte da insígnia                 |
+| `playerCard.badges`     | `104`                                                             | Insígnias                        |
+| `totalDogTags.intValue` | `39`                                                              | Dog tags                         |
+| `stats[].tp_kit_*`      | assault 22.860 · support 332.549 · engineer 43.270 · recon 19.954 | **Classe mais jogada por TEMPO** |
+
+Três propriedades do payload que quebram parser ingênuo, todas preservadas no fixture:
+
+1. `stats` é uma **lista plana** de `{name, value}`, não um objeto.
+2. **Nomes repetem** (339 entradas, 268 nomes distintos). Somar `score_total` triplica o valor; a
+   primeira ocorrência é o valor.
+3. Entradas chegam **sem a chave `value`** (`kill_death_ratio`). Ausente significa desconhecido,
+   nunca zero.
+
+### Não existe carimbo de data em lugar nenhum
+
+Sondamos o payload **inteiro** dos dois endpoints procurando qualquer coisa parecida com data (ISO,
+epoch em segundos, epoch em ms): **zero ocorrências**. O `lastPlacement` vem `null`. Isso confirma a
+§5.2 e tem uma consequência de produto: **"última atividade" não pode vir da fonte**. O card mostra
+o nosso próprio dado (o snapshot mais recente, que só é escrito quando os contadores andaram) e
+rotula como "registrada pelo site". Para uma conta candidata que nunca coletamos, o campo
+simplesmente não aparece — nulo ali significa "não observamos", jamais "nunca jogou".
+
+### As decisões
+
+- **Nunca auto-aceitar, nem com um único candidato.** É exatamente o bug do §11.
+- **Horas e partidas saem do `gm_all`**, não do topo nem da soma dos `tp_*`, para o card não
+  discordar da própria página do membro. O topo carrega `matchesPlayed: 388` contra as 512 do
+  `gm_all` — um card com 388 faria um casamento correto parecer errado.
+- **Classe por tempo, não por kills.** O jogador sabe que é o medic da esquadra; "mais kills" pode
+  apontar uma classe que ele tocou em uma rodada boa. Empate devolve nulo.
+- **Schema tolerante só neste caminho.** O do coletor é estrito de propósito (contador faltando =
+  pula e retenta, porque snapshot parcial corrompe o delta do mês). Aqui nada é escrito e um card
+  com metade dos campos ainda identifica alguém. O `isEmptyProfile` é o **mesmo** predicado nos dois,
+  por assinatura estrutural: duas cópias da regra que detecta o §11 iam divergir.
+- **Confirmar é porta de mão única para o membro.** Depois disso só admin troca. E admin que troca
+  para outra conta (`nucleusId` diferente) **limpa a confirmação**: o que o membro concordou foi com
+  a conta antiga.
+- **Rebind não precisa de guarda nova.** Todo snapshot carrega o próprio `eaNucleusId` e o
+  `deltaForMonth` só subtrai linhas da mesma conta, então a carreira do estranho não vaza para o mês
+  de quem acabou de se corrigir.
+- **Válvula de escape obrigatória.** Quatro membros não existem em fonte alguma. Sem o "não consegui"
+  eles ficariam presos na tela para sempre, e o pedido virou o estado mais urgente do painel.
+
+---
+
 ## Anexo: endpoints do BF6 disponíveis
 
 A API expõe 18 rotas para BF6. As que interessam a este projeto:

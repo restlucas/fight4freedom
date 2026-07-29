@@ -9,6 +9,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { publicEnv } from "@/lib/env";
+import { PATHNAME_HEADER } from "@/lib/request-headers";
 
 function isAdminPath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
@@ -21,8 +22,22 @@ function redirectToLogin(request: NextRequest): NextResponse {
   return NextResponse.redirect(login);
 }
 
+/**
+ * Request headers plus the pathname, so a layout can read it via `headers()`.
+ *
+ * The identity gate lives in src/app/(site)/layout.tsx because that is the only
+ * place already holding the session, and a layout is never told which URL it is
+ * rendering. This is how it finds out.
+ */
+function withPathname(request: NextRequest): Headers {
+  const headers = new Headers(request.headers);
+  headers.set(PATHNAME_HEADER, request.nextUrl.pathname);
+  return headers;
+}
+
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const headers = withPathname(request);
+  let response = NextResponse.next({ request: { headers } });
 
   // Auth not configured (or a build with no secrets): nobody can be signed in,
   // so treat every visitor as anonymous — /admin still has to be closed.
@@ -39,7 +54,7 @@ export async function middleware(request: NextRequest) {
         for (const { name, value } of cookiesToSet) {
           request.cookies.set(name, value);
         }
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers: withPathname(request) } });
         for (const { name, value, options } of cookiesToSet) {
           response.cookies.set(name, value, options);
         }

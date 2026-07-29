@@ -19,6 +19,8 @@ function sync(overrides: Partial<MemberSync> = {}): MemberSync {
     lastAttemptFailed: false,
     canPause: true,
     paused: false,
+    helpRequestedAt: null,
+    pausedReason: null,
     ...overrides,
   };
 }

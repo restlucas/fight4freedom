@@ -105,7 +105,17 @@ async function resolveAccount(params: {
     if (claimed) {
       revalidateVitrine(CACHE_TAG.members);
       return {
-        redirectTo: claimed.isAdmin ? "/admin" : `/membros/${claimed.memberId}`,
+        // The identity gate comes FIRST, before the panel and before the profile.
+        // This is the literal "no primeiro login" moment: the member has just
+        // proved who they are on Discord, and the next thing asked of them is
+        // which EA account is theirs — while they are still paying attention.
+        // Admins included: an unconfirmed admin has the same broken stats as
+        // anyone else, and /admin stays one click away from the gate anyway.
+        redirectTo: claimed.needsIdentity
+          ? "/confirmar-conta"
+          : claimed.isAdmin
+            ? "/admin"
+            : `/membros/${claimed.memberId}`,
         clearInviteCookie: true,
       };
     }
@@ -125,7 +135,12 @@ async function resolveAccount(params: {
   if (discordId) {
     const member = await db.member.findFirst({
       where: { discordId, profiles: { none: {} } },
-      select: { id: true, avatarUrl: true },
+      select: {
+        id: true,
+        avatarUrl: true,
+        identityConfirmedAt: true,
+        identityHelpRequestedAt: true,
+      },
     });
     if (member) {
       await db.$transaction([
@@ -143,7 +158,13 @@ async function resolveAccount(params: {
             ]),
       ]);
       revalidateVitrine(CACHE_TAG.members);
-      return { redirectTo: `/membros/${member.id}`, clearInviteCookie: false };
+      // Same rule as the invite path: identify the EA account first.
+      const needsIdentity =
+        member.identityConfirmedAt === null && member.identityHelpRequestedAt === null;
+      return {
+        redirectTo: needsIdentity ? "/confirmar-conta" : `/membros/${member.id}`,
+        clearInviteCookie: false,
+      };
     }
   }
 
@@ -156,7 +177,7 @@ async function claimInvite(params: {
   discordId: string | null;
   discordAvatar: string | null;
   tokenHash: string;
-}): Promise<{ memberId: string; isAdmin: boolean } | null> {
+}): Promise<{ memberId: string; isAdmin: boolean; needsIdentity: boolean } | null> {
   const { authUserId, discordId, discordAvatar, tokenHash } = params;
 
   const invite = await db.memberInvite.findUnique({
@@ -167,7 +188,14 @@ async function claimInvite(params: {
       grantsAdmin: true,
       expiresAt: true,
       usedAt: true,
-      member: { select: { avatarUrl: true, profiles: { select: { id: true } } } },
+      member: {
+        select: {
+          avatarUrl: true,
+          identityConfirmedAt: true,
+          identityHelpRequestedAt: true,
+          profiles: { select: { id: true } },
+        },
+      },
     },
   });
 
@@ -211,7 +239,13 @@ async function claimInvite(params: {
         },
       });
 
-      return { memberId: invite.memberId, isAdmin: invite.grantsAdmin };
+      return {
+        memberId: invite.memberId,
+        isAdmin: invite.grantsAdmin,
+        needsIdentity:
+          invite.member.identityConfirmedAt === null &&
+          invite.member.identityHelpRequestedAt === null,
+      };
     });
   } catch {
     // Unique violation on discordId means that Discord account already belongs to

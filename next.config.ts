@@ -12,6 +12,15 @@ const nextConfig: NextConfig = {
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      // BF6 rank insignia on the identity screen (/confirmar-conta). The card has
+      // to LOOK like the member's own game for them to recognise it at a glance,
+      // and this is the artwork EA's own payload points at. Narrowed to the rank
+      // path so the optimizer cannot be aimed at anything else on that CDN.
+      {
+        protocol: "https",
+        hostname: "cdn.gametools.network",
+        pathname: "/ranks/**",
+      },
     ],
   },
   experimental: {

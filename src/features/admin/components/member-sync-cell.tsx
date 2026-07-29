@@ -3,6 +3,7 @@
 import {
   CircleAlert,
   CircleSlash,
+  HelpCircle,
   Loader2,
   PauseCircle,
   PlayCircle,
@@ -32,6 +33,8 @@ const SYNC_ICON: Record<MemberSyncState, typeof TriangleAlert | null> = {
   // wrong and only a human can fix it".
   never_read: CircleAlert,
   no_data: TriangleAlert,
+  // A hand, not a warning: this one is somebody asking, not the system complaining.
+  help_requested: HelpCircle,
   paused: PauseCircle,
   off: CircleSlash,
 };
@@ -116,6 +119,20 @@ export function MemberSyncCell({ memberId, nickname, sync, onChanged }: MemberSy
           <HoverCardContent align="start" className="w-80 text-xs leading-relaxed">
             <p className="font-heading mb-1.5 text-sm font-bold">{label.text}</p>
             <p className="text-muted-foreground">{label.title}</p>
+            {/* The generic explanation above says what the STATE means; this says
+                what happened to THIS member. Only present when something wrote a
+                reason, which today means the member asked for help. */}
+            {sync.pausedReason ? (
+              <p className="mt-2 border-t pt-2">
+                <span className="text-muted-foreground">Motivo registrado: </span>
+                <span className="font-semibold">{sync.pausedReason}</span>
+              </p>
+            ) : null}
+            {sync.helpRequestedAt && now !== null ? (
+              <p className="text-muted-foreground mt-1">
+                Pedido feito {timeAgo(sync.helpRequestedAt, now)}.
+              </p>
+            ) : null}
           </HoverCardContent>
         </HoverCard>
       ) : (

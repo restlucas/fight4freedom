@@ -115,6 +115,50 @@ export type RawStats = {
   extra: Record<string, number | string | null>;
 };
 
+/**
+ * Everything needed for a HUMAN to recognise an EA account as their own, in one
+ * object. Not a stats type: it exists for the identity screen, where the only
+ * question is "is this you?".
+ *
+ * The fields were chosen against what the source actually publishes (probed
+ * 2026-07-29 on the live API), and the notable absence is deliberate: there is
+ * **no last-activity timestamp anywhere in the EA payload** — not in
+ * `/bf6/stats/`, not in `/bf6/profile/`, whose entire response was walked looking
+ * for one. `lastPlayedAt` therefore comes from OUR history (the newest snapshot)
+ * and is null for an account we have never collected. Never present a null here
+ * as "never played"; it means "we have not watched this account".
+ *
+ * Every field is nullable because the two endpoints fail independently and a card
+ * missing its rank is still far better for identification than no card at all.
+ */
+export type IdentityCard = {
+  identity: ResolvedIdentity;
+  /** In-game rank, as the game words it ("Second Lieutenant V"). */
+  rankName: string | null;
+  /** Numeric level behind that rank (141), and the insignia artwork EA serves. */
+  rankLevel: number | null;
+  rankImageUrl: string | null;
+  /** Hours from the same `gm_all` bucket the site displays, so numbers match. */
+  hoursPlayed: number | null;
+  matches: number | null;
+  /** Kills against real players — the number the member sees on their own page. */
+  kills: number | null;
+  /**
+   * Class the account has spent the most TIME on (`tp_kit_*`), not the one with
+   * the most kills. Time is the better recognition cue: a player knows they are a
+   * medic, and a support main can still have most kills on assault.
+   */
+  bestClass: PlayerClass | null;
+  badges: number | null;
+  dogTags: number | null;
+  /**
+   * True when EA has no BF6 record for this account at all (see isEmptyProfile).
+   * The §11 signature: a real account that is not this person's. The screen must
+   * show it as a warning instead of an empty card.
+   */
+  empty: boolean;
+};
+
 export interface StatsProvider {
   /**
    * Resolves an EA display name to the stable identity. Null when nobody carries
@@ -135,4 +179,17 @@ export interface StatsProvider {
    * result is normal and the collector treats absence as "skip this run".
    */
   fetchStats(players: PlayerIdentity[]): Promise<Map<string, RawStats>>;
+
+  /**
+   * Everything a human needs to recognise one account, for the identity screen.
+   *
+   * Separate from `fetchStats` even though both read the same account, because
+   * they answer different questions and fail differently. `fetchStats` is a batch
+   * whose absent members simply retry next cycle; this one is interactive, runs
+   * for at most a handful of candidates, and must return a partially-filled card
+   * rather than nothing when one of its calls fails.
+   *
+   * Null only when the source told us nothing at all.
+   */
+  fetchIdentityCard(identity: ResolvedIdentity): Promise<IdentityCard | null>;
 }

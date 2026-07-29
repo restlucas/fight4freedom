@@ -126,29 +126,10 @@ export const inviteIdSchema = z.object({
   inviteId: z.string().uuid("Convite inválido"),
 });
 
-/** Shape every admin action returns, so forms can render errors uniformly. */
-export type ActionResult<T = undefined> =
-  { ok: true; data: T } | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
-
-export function actionError(
-  error: string,
-  fieldErrors?: Record<string, string[]>,
-): ActionResult<never> {
-  return { ok: false, error, fieldErrors };
-}
-
-/**
- * Zod issues keyed by field name, the shape `ActionResult.fieldErrors` uses.
- * Lives here (and not in an action file) because a `"use server"` module may only
- * export async functions.
- */
-export function fieldErrorsOf(error: {
-  issues: { path: (string | number | symbol)[]; message: string }[];
-}): Record<string, string[]> {
-  const map: Record<string, string[]> = {};
-  for (const issue of error.issues) {
-    const key = String(issue.path[0] ?? "form");
-    map[key] = [...(map[key] ?? []), issue.message];
-  }
-  return map;
-}
+// Re-exported, not defined here: these moved to @/lib/action-result when the
+// identity feature needed them too (a feature may not import from another
+// feature). Kept as re-exports so the panel's many `from "./schemas"` imports —
+// and the mental model that the admin forms get their contract from one file —
+// did not have to churn.
+export type { ActionResult } from "@/lib/action-result";
+export { actionError, fieldErrorsOf } from "@/lib/action-result";

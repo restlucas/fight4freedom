@@ -171,3 +171,43 @@ export const gametoolsPlayerFixture = {
     },
   ],
 } as const;
+
+// Trimmed from a REAL /bf6/profile/ response for the same account (persona
+// 1111751848), captured on 2026-07-29. Three properties of the live payload are
+// preserved on purpose, because each one broke a naive parser:
+//
+//   1. `stats` is a FLAT name/value list, not an object.
+//   2. Names REPEAT — the real response had 339 entries under 268 distinct names
+//      — so `score_total` appears twice here with the same value. Summing would
+//      double it; the first occurrence is the value.
+//   3. Some entries arrive with NO `value` key at all (`kill_death_ratio`), which
+//      means unknown and must not be read as zero.
+export const gametoolsProfileFixture = {
+  playerProfiles: [
+    {
+      rankName: "Second Lieutenant V",
+      playerCard: {
+        rank: 141,
+        badges: 104,
+        rankImage: {
+          small: "https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_sm.png",
+          large: "https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_lg.png",
+        },
+      },
+      totalDogTags: { intValue: 39 },
+      stats: [
+        { name: "score_total", value: 3713760 },
+        { name: "kill_death_ratio" },
+        { name: "matches_level", value: 413 },
+        { name: "wins_level", value: 215 },
+        // Seconds per kit. Support by a wide margin, which is what makes this
+        // account recognisable to its owner.
+        { name: "tp_kit_assault", value: 22860 },
+        { name: "tp_kit_support", value: 332549 },
+        { name: "tp_kit_engineer", value: 43270 },
+        { name: "tp_kit_recon", value: 19954 },
+        { name: "score_total", value: 3713760 },
+      ],
+    },
+  ],
+} as const;

@@ -27,6 +27,11 @@ function row(overrides: Record<string, unknown> = {}) {
     discordId: "discord-1",
     collectWithoutLogin: false,
     statsPaused: false,
+    statsPausedReason: null,
+    // Null = this member never asked for help. Non-null outranks every other
+    // state, so a fixture missing it would silently report "help_requested" for
+    // every case below.
+    identityHelpRequestedAt: null,
     statsStatus: "ok",
     statsCheckedAt: new Date("2026-07-28T12:00:00Z"),
     // A read that WORKED. Null here is what separates "never once" from "not this
@@ -88,10 +93,16 @@ describe("a failed attempt", () => {
     expect(sync.state).toBe("no_data");
   });
 
-  it("never_read outranks every other state in the column sort", async () => {
-    // It is the only state that cannot resolve on its own AND whose fix is known,
-    // so it has to sort above "ID não encontrado".
-    expect(SYNC_STATES_BY_URGENCY[0]).toBe("never_read");
+  it("never_read outranks every other DIAGNOSED state in the column sort", async () => {
+    // It is the only diagnosed state that cannot resolve on its own AND whose fix
+    // is known, so it has to sort above "ID não encontrado".
+    //
+    // "Diagnosed" became the right word on 2026-07-29, when `help_requested` took
+    // the top slot: that one is a member explicitly asking, which outranks anything
+    // the system merely inferred. Asserted by filtering rather than by index so
+    // this keeps testing the rule instead of a position.
+    const diagnosed = SYNC_STATES_BY_URGENCY.filter((state) => state !== "help_requested");
+    expect(diagnosed[0]).toBe("never_read");
     expect(syncUrgency("never_read")).toBeLessThan(syncUrgency("identity_pending"));
     expect(syncUrgency("never_read")).toBeLessThan(syncUrgency("no_data"));
   });
@@ -133,5 +144,41 @@ describe("states that outrank the last outcome", () => {
     const sync = await syncOf({ statsStatus: null, statsCheckedAt: null });
     expect(sync.state).toBe("waiting");
     expect(sync.checkedAt).toBeNull();
+  });
+});
+
+describe("a member who asked for help identifying their EA account", () => {
+  it("outranks every state the system diagnosed on its own", async () => {
+    // The combination that made the ordering necessary: asking for help is what
+    // PAUSES a member with nothing bound, so checking statsPaused first would
+    // relabel the whole queue as routine admin pauses and hide it.
+    const sync = await syncOf({
+      identityHelpRequestedAt: new Date("2026-07-29T18:00:00Z"),
+      statsPaused: true,
+      statsPausedReason: "O membro não conseguiu identificar a própria conta da EA",
+      statsStatus: "no_data",
+      statsReadAt: null,
+      _count: { snapshots: 0 },
+    });
+
+    expect(sync.state).toBe("help_requested");
+    expect(sync.helpRequestedAt).toBe("2026-07-29T18:00:00.000Z");
+    expect(sync.pausedReason).toBe("O membro não conseguiu identificar a própria conta da EA");
+  });
+
+  it("still reads as out-of-collection when the member is inactive", async () => {
+    // Eligibility comes first: a request cannot pull an inactive member back into
+    // a collection that is not looking at them anyway.
+    const sync = await syncOf({
+      active: false,
+      identityHelpRequestedAt: new Date("2026-07-29T18:00:00Z"),
+    });
+
+    expect(sync.state).toBe("off");
+  });
+
+  it("is the most urgent state in the column's sort order", async () => {
+    expect(syncUrgency("help_requested")).toBe(0);
+    expect(SYNC_STATES_BY_URGENCY[0]).toBe("help_requested");
   });
 });

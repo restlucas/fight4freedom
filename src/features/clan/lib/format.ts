@@ -1,6 +1,13 @@
 // Display helpers for the clan vitrine (pt-BR labels and number formatting).
 
-import type { MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
+import type { MedalTier, MemberRole, Platform } from "@prisma/client";
+
+import { formatNumber } from "@/lib/format";
+
+// Moved to @/lib/format when the identity feature needed them too (a feature may
+// not import from another feature). Re-exported so every existing
+// `from "@/features/clan/lib/format"` import kept working.
+export { formatNumber, CLASS_LABEL } from "@/lib/format";
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   ea: "EA",
@@ -22,19 +29,6 @@ export const TIER_LABEL: Record<MedalTier, string> = {
   special: "Especial",
 };
 
-export const CLASS_LABEL: Record<PlayerClass, string> = {
-  assault: "Assalto",
-  engineer: "Engenheiro",
-  support: "Suporte",
-  recon: "Recon",
-};
-
-const numberFormatter = new Intl.NumberFormat("pt-BR");
-
-export function formatNumber(value: number): string {
-  return numberFormatter.format(value);
-}
-
 export function formatKd(kd: number): string {
   return kd.toFixed(2);
 }
@@ -44,7 +38,7 @@ export function formatPercent(fraction: number): string {
 }
 
 export function formatHours(timePlayedMinutes: number): string {
-  return `${numberFormatter.format(Math.round(timePlayedMinutes / 60))} h`;
+  return `${formatNumber(Math.round(timePlayedMinutes / 60))} h`;
 }
 
 export function formatKillsPerMatch(value: number): string {
@@ -76,7 +70,7 @@ export function formatHeadshotRate(fraction: number): string {
 
 /** Ranking score, e.g. "1.240". */
 export function formatPoints(points: number): string {
-  return numberFormatter.format(points);
+  return formatNumber(points);
 }
 
 /** Month label for the ranking season, e.g. "julho de 2026". */

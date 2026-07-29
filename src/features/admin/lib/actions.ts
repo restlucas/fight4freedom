@@ -149,7 +149,13 @@ export async function updateMemberAction(
 
   const current = await db.member.findUnique({
     where: { id: id.data.memberId },
-    select: { eaName: true, platformId: true, eaPersonaId: true, eaNucleusId: true },
+    select: {
+      eaName: true,
+      platformId: true,
+      eaPersonaId: true,
+      eaNucleusId: true,
+      identityConfirmedAt: true,
+    },
   });
   if (!current) return actionError("Membro não encontrado.");
 
@@ -168,12 +174,25 @@ export async function updateMemberAction(
     identity = await resolveEaIdentity(lookup, parsed.data.eaUsername);
   }
 
+  // An admin moving a member to a DIFFERENT EA account invalidates the member's
+  // confirmation, which sends them back through /confirmar-conta on their next
+  // visit. Correct rather than annoying: what the member agreed to was the old
+  // account, and that agreement says nothing about this one — re-asking is the
+  // whole point of having the column (see the schema comment).
+  //
+  // Only a genuine ACCOUNT change counts. A re-resolution that lands on the same
+  // nucleus id (a rename, a different persona of the same account) keeps it.
+  const reboundToAnotherAccount = Boolean(
+    identity && current.eaNucleusId && identity.nucleusId !== current.eaNucleusId,
+  );
+
   await db.member.update({
     where: { id: id.data.memberId },
     data: {
       ...parsed.data,
       platformId,
       ...identityData(identity, parsed.data.eaUsername),
+      ...(reboundToAnotherAccount ? { identityConfirmedAt: null } : {}),
     },
   });
 

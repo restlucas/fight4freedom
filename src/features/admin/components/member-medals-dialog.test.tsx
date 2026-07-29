@@ -61,6 +61,8 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
       lastAttemptFailed: false,
       canPause: true,
       paused: false,
+      helpRequestedAt: null,
+      pausedReason: null,
     },
     role: "member",
     active: true,
