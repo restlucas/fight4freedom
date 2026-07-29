@@ -40,8 +40,11 @@ export default function Loading() {
         <Skeleton className="mb-4 h-6 w-32" />
         <div className="space-y-3 rounded-xl border p-4 sm:p-5">
           <div className="flex flex-wrap gap-1.5">
-            {["w-20", "w-16", "w-14", "w-20"].map((width) => (
-              <Skeleton key={width} className={`h-8 ${width} rounded-md`} />
+            {/* One per metric button, sized after its label ("Pontos", "Kills",
+                "K/D", "Partidas"). Indexed keys because the widths repeat — two
+                buttons are w-20, and keying by the class collided. */}
+            {["w-20", "w-16", "w-14", "w-20"].map((width, i) => (
+              <Skeleton key={i} className={`h-8 ${width} rounded-md`} />
             ))}
           </div>
           <div className="flex gap-3">
