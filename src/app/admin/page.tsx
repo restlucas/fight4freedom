@@ -92,7 +92,7 @@ export default async function AdminHomePage() {
         <div className="space-y-1">
           <h2 className="font-heading text-lg font-semibold">Atividade recente</h2>
           <p className="text-muted-foreground text-sm">
-            Sessões e promoções, atualizando a cada 30 segundos.
+            Sessões e promoções do clã, atualizando sozinho.
           </p>
         </div>
         <ActivityFeed initialEvents={activity} limit={ACTIVITY_FEED_LIMIT} />
