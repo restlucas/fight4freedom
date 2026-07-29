@@ -67,7 +67,7 @@ export function RankForecastPanel({ points, series, className }: RankForecastPan
               {formatPoints(forecast.pointsToNext)}
             </span>{" "}
             pts, cerca de{" "}
-            <span className="text-foreground font-mono font-medium tabular-nums">{hours} h</span> de
+            <span className="text-foreground font-mono font-medium tabular-nums">{hours}h</span> de
             jogo
             {forecast.basis === "member" ? " no seu ritmo" : " no ritmo médio do clã"}.
           </p>
