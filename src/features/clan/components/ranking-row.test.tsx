@@ -13,6 +13,8 @@ function entry(overrides: Partial<RankingEntry> = {}): RankingEntry {
     avatarUrl: null,
     platform: "ea",
     points: 1240,
+    // No movement by default, so the cases that test the arrows say so.
+    previousRank: null,
     progress: { kills: 40, matches: 10, kd: 1.5, timePlayedMinutes: 120 },
     ...overrides,
   };
@@ -102,5 +104,38 @@ describe("leader surface stays opaque", () => {
     expect(cls).toContain("bg-card/80");
     expect(cls).toContain("backdrop-blur-md");
     expect(cls).not.toContain("border-yellow-400");
+  });
+});
+
+describe("RankingRow movement", () => {
+  it("shows how many places were gained", () => {
+    const row = rowOf(entry({ rank: 4, previousRank: 9 }));
+    expect(row).toHaveTextContent("subiu");
+    expect(row).toHaveTextContent("5");
+  });
+
+  it("shows how many places were lost", () => {
+    const row = rowOf(entry({ rank: 9, previousRank: 4 }));
+    expect(row).toHaveTextContent("caiu");
+  });
+
+  it("stays silent when the position did not move", () => {
+    const row = rowOf(entry({ rank: 4, previousRank: 4 }));
+    expect(row).not.toHaveTextContent("subiu");
+    expect(row).not.toHaveTextContent("caiu");
+  });
+
+  it("stays silent when there is no comparable standing", () => {
+    // Null covers a zero-point member and a closed season — see RankingEntry.
+    const row = rowOf(entry({ rank: 40, previousRank: null }));
+    expect(row).not.toHaveTextContent("subiu");
+    expect(row).not.toHaveTextContent("caiu");
+  });
+
+  it("says the direction in text, not only in colour", () => {
+    // Red and green is exactly the pair colourblind readers cannot separate, so
+    // the arrow and a screen-reader word carry the direction too.
+    const row = rowOf(entry({ rank: 2, previousRank: 3 }));
+    expect(row.querySelector(".sr-only")?.textContent).toBe("subiu");
   });
 });

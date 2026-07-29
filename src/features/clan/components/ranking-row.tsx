@@ -1,4 +1,4 @@
-import { ChevronRight, Crown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Crown } from "lucide-react";
 import Link from "next/link";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -93,11 +93,17 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
       </Avatar>
 
       <div className="min-w-0 flex-1">
-        <p className="font-heading flex items-center gap-1.5 truncate text-base leading-none font-semibold">
-          {entry.nickname}
+        {/* Name, then the crown, then the movement, all on one line.
+            The nickname carries `truncate` on its own span rather than on the row:
+            with the movement inside a flex line, truncating the whole line would
+            let a long name push the arrow out of view — and the arrow is the part
+            that changes between visits. */}
+        <p className="font-heading flex items-center gap-1.5 text-base leading-none font-semibold">
+          <span className="truncate">{entry.nickname}</span>
           {isLeader ? (
             <Crown className="size-3.5 shrink-0 text-yellow-400" aria-label="Líder do mês" />
           ) : null}
+          <RankMovement rank={entry.rank} previousRank={entry.previousRank} />
         </p>
         {/* Score relative to the leader — gives the list a sense of distance. */}
         <div className="bg-background/70 mt-1.5 h-1 w-full max-w-40 overflow-hidden rounded-full">
@@ -126,5 +132,43 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
         <ChevronRight className="size-4" />
       </span>
     </Link>
+  );
+}
+
+/**
+ * Positions gained or lost in the last three hours (MOVEMENT_WINDOW_MS in
+ * queries.ts, where the measurement behind that number lives), inline after the
+ * member's name.
+ *
+ * Renders nothing at all in three cases, and each is deliberate: no comparable
+ * standing (`previousRank` null — see RankingEntry), no change, and a closed
+ * season, where the board is final and an arrow would suggest it still moves.
+ *
+ * The number rides beside the arrow rather than replacing it: colour alone would
+ * carry the direction, and red/green is the one pair colourblind readers cannot
+ * separate.
+ */
+function RankMovement({ rank, previousRank }: { rank: number; previousRank: number | null }) {
+  if (previousRank === null || previousRank === rank) return null;
+
+  const delta = previousRank - rank;
+  const up = delta > 0;
+  const Icon = up ? ArrowUp : ArrowDown;
+
+  return (
+    <span
+      className={cn(
+        // `shrink-0` so the flex line squeezes the NAME and never this: a member
+        // with a long nickname would otherwise lose the one part of the row that
+        // says something changed.
+        "flex shrink-0 items-center gap-px font-mono text-[11px] leading-none font-semibold tabular-nums",
+        up ? "text-emerald-400" : "text-red-400",
+      )}
+      title={`${up ? "Subiu" : "Caiu"} ${Math.abs(delta)} ${Math.abs(delta) > 1 ? "posições" : "posição"} nas últimas 3 h`}
+    >
+      <Icon className="size-3" aria-hidden />
+      <span className="sr-only">{up ? "subiu" : "caiu"}</span>
+      {Math.abs(delta)}
+    </span>
   );
 }

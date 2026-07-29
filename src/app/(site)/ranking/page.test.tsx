@@ -13,6 +13,7 @@ function entry(rank: number, nickname: string, points: number): RankingEntry {
     avatarUrl: null,
     platform: "ea",
     points,
+    previousRank: null,
     progress: { kills: points, matches: 10, kd: 1.5, timePlayedMinutes: 120 },
   };
 }

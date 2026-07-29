@@ -84,6 +84,15 @@ export function insigniaPath(rank: Rank): string {
   return `/patentes/${rank.slug}.webp`;
 }
 
+/**
+ * The rank a slug names, or null. Used by the activity feed, which stores the slug
+ * on the event row rather than the name: the slug is stable, addresses the artwork
+ * and survives a rename of the label.
+ */
+export function rankBySlug(slug: string): Rank | null {
+  return RANKS.find((rank) => rank.slug === slug) ?? null;
+}
+
 export type RankProgress = {
   rank: Rank;
   /** Null once the top rank is reached. */

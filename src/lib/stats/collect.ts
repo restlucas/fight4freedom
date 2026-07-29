@@ -31,6 +31,7 @@ import type { Prisma, StatsSyncStatus } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
+import { recordCollectionEvents, type CreditedMember } from "./events";
 import { chunk, gametoolsProvider, STATS_BATCH_SIZE } from "./gametools";
 import { eaLookupName } from "./identity";
 import { accrueCareerPoints } from "./points";
@@ -249,6 +250,9 @@ export async function collectStats(
       // When a read last WORKED. Null after a run that failed means "never once",
       // which is the signal for `neverRead` — see its field in CollectReport.
       statsReadAt: true,
+      // The balance BEFORE this run, which is what makes a rank crossing
+      // detectable at the only moment it is knowable (see ./events.ts).
+      rankPoints: true,
     },
   });
 
@@ -430,6 +434,8 @@ export async function collectStats(
     const noDataIds: string[] = [];
     /** Career points to credit, per member. Only members whose counters moved. */
     const accrued: { id: string; points: number }[] = [];
+    /** The same credits, described for the activity feed (see ./events.ts). */
+    const credited: CreditedMember[] = [];
 
     for (const member of slice) {
       const raw = stats.get(member.eaPersonaId!);
@@ -493,11 +499,25 @@ export async function collectStats(
       // snapshot. A member read with nothing new earns nothing, which is what
       // makes this idempotent against re-reads: the accrual is tied to the row
       // being inserted, not to the member being fetched.
-      const points = accrueCareerPoints(latestByMember.get(member.id) ?? null, {
+      const previous = latestByMember.get(member.id) ?? null;
+      const points = accrueCareerPoints(previous, {
         ...raw,
         eaNucleusId: member.eaNucleusId,
       });
-      if (points > 0) accrued.push({ id: member.id, points });
+      if (points > 0) {
+        accrued.push({ id: member.id, points });
+        credited.push({
+          memberId: member.id,
+          pointsBefore: member.rankPoints,
+          pointsGained: points,
+          // Clamped: the source occasionally reports a lower total than before,
+          // and negative minutes would shrink an open session.
+          minutesGained: Math.max(
+            0,
+            raw.timePlayedMinutes - (previous?.timePlayedMinutes ?? raw.timePlayedMinutes),
+          ),
+        });
+      }
 
       report.updated += 1;
       report.pointsAccrued += points;
@@ -522,6 +542,10 @@ export async function collectStats(
       markStatus(okIds, "ok"),
       markStatus(noDataIds, "no_data"),
     ]);
+
+    // After the balances, never before: a promotion event that outlived a failed
+    // credit would announce something that did not happen.
+    await recordCollectionEvents(credited);
     return okIds.length;
   };
 

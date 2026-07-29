@@ -52,6 +52,20 @@ export function formatKillsPerMatch(value: number): string {
 }
 
 /**
+ * Play time in the unit a player thinks in: "45 min", "2h10", "3 h".
+ *
+ * Separate from `formatHours`, which rounds to whole hours for career totals. A
+ * session of 45 minutes rounded to "1 h" would be a lie about something the member
+ * just did and remembers.
+ */
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${Math.max(1, Math.round(minutes))} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  return rest === 0 ? `${hours} h` : `${hours}h${String(rest).padStart(2, "0")}`;
+}
+
+/**
  * Headshot rate, e.g. "11,8%". One decimal, unlike `formatPercent`: the values
  * cluster between 10 and 20 %, and rounding to whole numbers would make most of
  * the roster look identical.

@@ -9,6 +9,7 @@ import { MemberMedals } from "@/features/clan/components/member-medals";
 import { MemberProgression } from "@/features/clan/components/member-progression";
 import { PlatformIcon } from "@/features/clan/components/platform-icon";
 import { PlayerStats } from "@/features/clan/components/player-stats";
+import { RankForecastPanel } from "@/features/clan/components/rank-forecast";
 import { RankCard } from "@/features/clan/components/rank-card";
 import { CLASS_LABEL, memberInitials } from "@/features/clan/lib/format";
 import { getMemberProfile, getStatLeaders } from "@/features/clan/lib/queries";
@@ -151,6 +152,11 @@ export default async function MemberProfilePage({ params }: Params) {
         {/* Progression */}
         <section className="mt-10">
           <h2 className="font-heading mb-4 text-xl font-semibold">Progressão</h2>
+          <RankForecastPanel
+            points={member.rankPoints}
+            series={member.progression}
+            className="mb-3"
+          />
           {member.progression.length >= 2 ? (
             /* Opaque enough to be a chart SURFACE: the page background is a
                photograph, and a 40 % panel let it read through the plot area. */

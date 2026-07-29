@@ -8,7 +8,7 @@
 //   - Return values must be JSON-safe, so dates are exposed as ISO strings.
 //   - Arguments become part of the cache key, so no volatile values.
 
-import type { MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
+import type { ClanEventKind, MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
 
 import { cachedQuery, CACHE_TAG } from "@/lib/cache";
 import { db } from "@/lib/db";
@@ -29,6 +29,35 @@ import {
 
 import { buildProgression, type ProgressionPoint } from "./progression";
 import { findStatLeaders, type StatLeaders } from "./stat-keys";
+
+/**
+ * How far back the ranking compares to, for the movement arrows.
+ *
+ * MEASURED, not picked (2026-07-29, against the real board of 26 scoring members):
+ *
+ *   | window        | arrows | avg places | biggest |
+ *   | last cycle    |      0 |          0 |       0 |
+ *   | 20 min        |      0 |          0 |       0 |
+ *   | 1 h           |      7 |        1.4 |       2 |
+ *   | 3 h           |     21 |        2.5 |      10 |
+ *   | 6 h           |     19 |        4.2 |       8 |
+ *   | 24 h          |     16 |        6.4 |      12 |
+ *
+ * Three hours is where movement is visible and its magnitude is still honest.
+ *
+ * WHY NOT THE COLLECTION CADENCE, which is the obvious guess: gaining points in
+ * one 20-minute cycle almost never swaps a position — neighbours on this board sit
+ * hundreds of points apart and a 20-minute session is worth about fifty — so the
+ * window produces no arrows at all. It also makes the arrow vanish at the next
+ * cycle, hiding a climb that actually happened, and a window equal to the cadence
+ * lands on the cycle boundary, so the last snapshot falls in or out of the cut
+ * depending on the instant the page renders.
+ *
+ * The BOARD does follow the 20-minute cadence, and always did: the stats tag is
+ * purged every cycle. This constant is a different axis — what to compare against,
+ * not how fresh the data is.
+ */
+const MOVEMENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 /** How many medals the listing shows before collapsing into a "+N" chip. */
 export const MEDAL_PREVIEW_LIMIT = 5;
@@ -151,6 +180,17 @@ export type RankingEntry = {
   avatarUrl: string | null;
   platform: Platform;
   points: number;
+  /**
+   * Where this member stood MOVEMENT_WINDOW_MS ago (3 h), so the board can show
+   * movement.
+   *
+   * Null means "no movement to show", and it covers three cases on purpose:
+   * a member with no points this month (their position is alphabetical filler, not
+   * a standing they can lose), a member who had no points at the start of the
+   * window (their first session is an entry, not an overtake), and a season that is
+   * already closed.
+   */
+  previousRank: number | null;
   /** Progress made during the reference month, not lifetime totals. */
   progress: {
     kills: number;
@@ -237,6 +277,38 @@ export const getMonthlyRanking = cachedQuery(
       };
     });
 
+    // MOVEMENT: the same board, scored as it stood at the start of the window.
+    // Same members, same rules, only the snapshots after the cutoff withheld.
+    //
+    // `new Date()` here does NOT reach the cache key — the key is the month, and
+    // that is deliberate. What the clock does affect is the cached VALUE, bounded
+    // two ways: the 300 s TTL and the stats tag, which every collection purges.
+    // A "since yesterday" window drifting by minutes is not a defect; a volatile
+    // cache key would be (see src/lib/cache.ts).
+    const cutoff = new Date(Date.now() - MOVEMENT_WINDOW_MS);
+    const before = withOrdinalRanks(
+      members.map((member) => ({
+        memberId: member.id,
+        nickname: member.nickname,
+        points: computePoints(
+          deltaForMonth(
+            member.snapshots.filter((s) => s.capturedAt <= cutoff),
+            reference,
+          ),
+        ),
+      })),
+      (entry) => entry.points,
+      (a, b) => a.nickname.localeCompare(b.nickname, "pt-BR"),
+    );
+    // Only members who had a real standing then. A member on zero points was
+    // sitting in the alphabetical tail, so "climbed 80 places" would be describing
+    // their FIRST session of the month as an overtake of 80 people. Measured on
+    // 2026-07-29 that produced +80, +64, +53 and +42 on one board, which reads as
+    // a leaderboard in chaos when it was really four people starting to play.
+    const previousRankByMember = new Map(
+      before.filter((entry) => entry.points > 0).map((entry) => [entry.memberId, entry.rank]),
+    );
+
     // Ordinal, not competition ranks: every row gets its own number. Most of the
     // roster sits on zero points in a fresh month, and sharing one number across
     // that whole tail reads as a bug. Ties break alphabetically so the order is
@@ -253,10 +325,86 @@ export const getMonthlyRanking = cachedQuery(
       avatarUrl: entry.avatarUrl,
       platform: entry.platform,
       points: entry.points,
+      // Zero-point members get no arrow: their place on the board is the
+      // alphabetical tiebreak, and drawing them a red arrow because somebody
+      // above them played would be blaming them for someone else's session.
+      previousRank: entry.points > 0 ? (previousRankByMember.get(entry.memberId) ?? null) : null,
       progress: entry.progress,
     }));
   },
 );
+
+export type ActivityEvent = {
+  id: string;
+  kind: ClanEventKind;
+  memberId: string;
+  nickname: string;
+  avatarUrl: string | null;
+  /** ISO instants — the cache serializes with JSON (see src/lib/cache.ts). */
+  occurredAt: string;
+  /** Also the polling cursor: a session grows without a new row appearing. */
+  updatedAt: string;
+  points: number;
+  minutesPlayed: number;
+  /** Rank reached, for a promotion. Addresses the insignia artwork too. */
+  rankSlug: string | null;
+};
+
+/** How many events the feed shows, and the cap the polling endpoint honours. */
+export const ACTIVITY_FEED_LIMIT = 8;
+
+/**
+ * How far back the feed looks. A week: past that, "recent activity" is history,
+ * and a fresh clan with a quiet week is better served by an honest empty state
+ * than by a month-old promotion pretending to be news.
+ */
+const ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The activity feed, newest first.
+ *
+ * Ordered by `updatedAt`, not `occurredAt`: a session that is still being
+ * extended is the most current thing on the page, and ordering by when it started
+ * would sink it below a promotion that happened earlier.
+ *
+ * Not cached, unlike its neighbours here. This one is read by a page AND polled
+ * by the browser every 30 s (see /api/activity), and a cached read would answer
+ * the poll with the same snapshot for the whole TTL — the poll exists precisely
+ * to see through the cache.
+ */
+export async function getActivityFeed(limit = ACTIVITY_FEED_LIMIT): Promise<ActivityEvent[]> {
+  const rows = await db.clanEvent.findMany({
+    where: {
+      updatedAt: { gte: new Date(Date.now() - ACTIVITY_WINDOW_MS) },
+      member: { active: true },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      kind: true,
+      occurredAt: true,
+      updatedAt: true,
+      points: true,
+      minutesPlayed: true,
+      rankSlug: true,
+      member: { select: { id: true, nickname: true, avatarUrl: true } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    memberId: row.member.id,
+    nickname: row.member.nickname,
+    avatarUrl: row.member.avatarUrl,
+    occurredAt: row.occurredAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    points: row.points,
+    minutesPlayed: row.minutesPlayed,
+    rankSlug: row.rankSlug,
+  }));
+}
 
 export type ProfileMedal = {
   id: string;

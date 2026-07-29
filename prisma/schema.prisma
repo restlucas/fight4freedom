@@ -57,6 +57,20 @@ enum PlayerClass {
   @@map("player_class")
 }
 
+/// What happened, for the activity feed on the home page.
+///
+/// Deliberately few kinds. A feed that lists everything lists nothing: the
+/// collection runs every 20 minutes over 98 members, so "counters moved" as an
+/// event would bury the two things a member actually wants to see.
+enum ClanEventKind {
+  /// Crossed a rank threshold. Rare, and the only event that is pure good news.
+  promotion
+  /// A play session, accumulated across consecutive readings — see ClanEvent.
+  session
+
+  @@map("clan_event_kind")
+}
+
 /// Result of the last collection attempt for a member, so the admin panel can
 /// tell a working sync from a broken one. Mirrors the outcomes in
 /// src/lib/stats/collect.ts, minus `deferred` — a member the run never reached
@@ -75,26 +89,26 @@ enum StatsSyncStatus {
 }
 
 model Member {
-  id       String   @id @default(uuid())
-  nickname String
-  platform Platform
+  id                  String           @id @default(uuid())
+  nickname            String
+  platform            Platform
   /// The member's public id on that platform (gamertag, PSN ID, EA ID). Display
   /// only since 2026-07-28, and optional: it used to double as the EA lookup key,
   /// which is exactly why it failed for console members — EA's search indexes the
   /// EA display name, and a PSN or Xbox gamertag is usually not that name. The
   /// lookup moved to `eaName`; this stays as "how to add this person on their
   /// platform" and is still read as a fallback for rows predating the split.
-  platformId String? @map("platform_id")
+  platformId          String?          @map("platform_id")
   /// EA display name, the ONLY field EA's search accepts (`/bf6/player/?name=`).
   /// Optional: an admin who does not know it leaves it blank, which is strictly
   /// better than the invented values a mandatory field produced — 23 of 99
   /// members carried an id that matches no EA account.
-  eaName String? @map("ea_name")
+  eaName              String?          @map("ea_name")
   /// EA `username` of the account that was bound, recorded at resolution time.
   /// Output, never input: it is not searchable and not unique (two distinct
   /// accounts share the username `OJUN10R`). Kept because it is the clearest way
   /// for a human to recognise which account was picked.
-  eaUsername String? @map("ea_username")
+  eaUsername          String?          @map("ea_username")
   /// EA persona id + nucleus id: the stable identity the stats API needs.
   /// Resolved automatically from `eaName` (falling back to `platformId`) on member
   /// create/update and self-healed by the collector; never typed by hand.
@@ -103,17 +117,17 @@ model Member {
   /// `eaNucleusId` is the ACCOUNT; `eaPersonaId` is one of its per-platform
   /// personas. One account can own several personas and they all report the same
   /// stats, so which persona is stored does not matter — which account does.
-  eaPersonaId String? @map("ea_persona_id")
-  eaNucleusId String? @map("ea_nucleus_id")
+  eaPersonaId         String?          @map("ea_persona_id")
+  eaNucleusId         String?          @map("ea_nucleus_id")
   /// Discord snowflake, captured from the verified OAuth identity when the
   /// member claims their invite — never typed by hand. Unique so the login
   /// lookup can never be ambiguous.
-  discordId     String?    @unique @map("discord_id")
-  avatarUrl     String?    @map("avatar_url")
+  discordId           String?          @unique @map("discord_id")
+  avatarUrl           String?          @map("avatar_url")
   /// Plain text only, written by the member on their own profile. Rendered as
   /// text (React escapes it); no markup, no links.
-  bio           String?
-  role          MemberRole @default(member)
+  bio                 String?
+  role                MemberRole       @default(member)
   /// Cumulative career points driving the rank ladder in src/lib/ranks.ts.
   ///
   /// Fed by the collector since 2026-07-28: every snapshot credits the points of
@@ -125,9 +139,9 @@ model Member {
   /// member's first reading credits nothing, because those lifetime totals were
   /// earned before collection existed. `pnpm db:rebase-ranks` converted those
   /// balances when the ladder was recalibrated.
-  rankPoints    Int        @default(0) @map("rank_points")
-  joinedAt      DateTime?  @map("joined_at") @db.Date
-  active        Boolean    @default(true)
+  rankPoints          Int              @default(0) @map("rank_points")
+  joinedAt            DateTime?        @map("joined_at") @db.Date
+  active              Boolean          @default(true)
   /// Collect this member's stats even without a verified Discord link.
   ///
   /// The normal rule is that a member enters the collection only after claiming
@@ -144,18 +158,18 @@ model Member {
   /// Default false, so every member registered from here on follows the invite
   /// flow. Members carrying this flag still need an invite to get a login, a
   /// profile and their Discord avatar.
-  collectWithoutLogin Boolean @default(false) @map("collect_without_login")
+  collectWithoutLogin Boolean          @default(false) @map("collect_without_login")
   /// Admin switch to take a member out of the collection without hiding them
   /// from the vitrine. For when the platform id is known to be wrong: the
   /// alternative was setting `active = false`, which also removes them from
   /// /membros and from the ranking, punishing the member for a data problem.
-  statsPaused Boolean @default(false) @map("stats_paused")
+  statsPaused         Boolean          @default(false) @map("stats_paused")
   /// When the collector last ATTEMPTED this member, successful or not.
   ///
   /// Needed because a snapshot only exists when counters moved, so the snapshot
   /// table cannot answer "did the last fetch work?" — a member fetched fine with
   /// nothing new to record looks exactly like a member whose fetch failed.
-  statsCheckedAt DateTime?        @map("stats_checked_at") @db.Timestamptz(6)
+  statsCheckedAt      DateTime?        @map("stats_checked_at") @db.Timestamptz(6)
   /// When the collector last SUCCESSFULLY read this member from the source.
   ///
   /// The difference from `statsCheckedAt` is the whole point: that one answers
@@ -168,17 +182,18 @@ model Member {
   /// Not the same as the newest snapshot either: a member who is read fine but
   /// has not played gets no snapshot, so snapshot age measures playing, not
   /// collecting.
-  statsReadAt    DateTime?        @map("stats_read_at") @db.Timestamptz(6)
+  statsReadAt         DateTime?        @map("stats_read_at") @db.Timestamptz(6)
   /// Outcome of that attempt. Null means never attempted.
-  statsStatus    StatsSyncStatus? @map("stats_status")
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  statsStatus         StatsSyncStatus? @map("stats_status")
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   medals     MemberMedal[]
   snapshots  StatSnapshot[]
   highlights Highlight[]
   profiles   Profile[]
   invites    MemberInvite[]
+  events     ClanEvent[]
 
   @@map("member")
 }
@@ -189,18 +204,18 @@ model Member {
 /// here, so a database leak cannot be used to claim invites. Claiming is what
 /// captures `member.discordId` and what grants admin — the only path that does.
 model MemberInvite {
-  id       String @id @default(uuid())
-  memberId String @map("member_id")
+  id              String    @id @default(uuid())
+  memberId        String    @map("member_id")
   /// SHA-256 of the token that travels in the link.
-  tokenHash String @unique @map("token_hash")
+  tokenHash       String    @unique @map("token_hash")
   /// Whether claiming this invite grants system-level admin access.
-  grantsAdmin Boolean @default(false) @map("grants_admin")
+  grantsAdmin     Boolean   @default(false) @map("grants_admin")
   /// Label only, so the admin remembers who the link was for. Never used for
   /// authorization — Discord handles are mutable and not unique.
-  discordUsername String?  @map("discord_username")
-  expiresAt       DateTime @map("expires_at") @db.Timestamptz(6)
-  createdBy       String?  @map("created_by")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  discordUsername String?   @map("discord_username")
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
+  createdBy       String?   @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   /// Set when consumed; the claim only succeeds while this is null.
   usedAt          DateTime? @map("used_at") @db.Timestamptz(6)
   usedByProfileId String?   @map("used_by_profile_id")
@@ -247,10 +262,10 @@ model MemberMedal {
 }
 
 model StatSnapshot {
-  id                String     @id @default(uuid())
-  memberId          String     @map("member_id")
-  capturedAt        DateTime   @default(now()) @map("captured_at") @db.Timestamptz(6)
-  source            StatSource
+  id                   String       @id @default(uuid())
+  memberId             String       @map("member_id")
+  capturedAt           DateTime     @default(now()) @map("captured_at") @db.Timestamptz(6)
+  source               StatSource
   /// Which EA ACCOUNT these cumulative counters came from.
   ///
   /// A snapshot belongs to an account, not to a member: the numbers are lifetime
@@ -265,42 +280,48 @@ model StatSnapshot {
   /// makes the guarantee live where the data does. Nullable for rows written
   /// before the column existed; those are backfilled from the member's current
   /// account and treated as belonging to it.
-  eaNucleusId       String?    @map("ea_nucleus_id")
+  eaNucleusId          String?      @map("ea_nucleus_id")
   // Raw counters. Matches (wins+losses), K/D, kills-per-match and hours are
   // DERIVED in src/lib/stats/snapshots.ts, never stored.
-  kills              Int          @default(0)
-  deaths             Int          @default(0)
-  wins               Int          @default(0)
-  losses             Int          @default(0)
-  assists            Int          @default(0)
-  revives            Int          @default(0)
-  headshots          Int          @default(0)
-  objectivesCaptured Int          @default(0) @map("objectives_captured")
-  timePlayedMinutes  Int          @default(0) @map("time_played_minutes")
-  bestClass          PlayerClass? @map("best_class")
+  kills                Int          @default(0)
+  deaths               Int          @default(0)
+  wins                 Int          @default(0)
+  losses               Int          @default(0)
+  assists              Int          @default(0)
+  revives              Int          @default(0)
+  headshots            Int          @default(0)
+  objectivesCaptured   Int          @default(0) @map("objectives_captured")
+  timePlayedMinutes    Int          @default(0) @map("time_played_minutes")
+  bestClass            PlayerClass? @map("best_class")
   // Teamwork counters (2026-07-27). The ranking scores teamwork above combat,
   // so these are first-class columns instead of `extra` keys: the monthly delta
   // reads them on every board render, and jsonb would mean parsing on each row.
-  objectivesDefended   Int @default(0) @map("objectives_defended")
-  objectivesDestroyed  Int @default(0) @map("objectives_destroyed")
-  objectivesArmed      Int @default(0) @map("objectives_armed")
-  objectivesDisarmed   Int @default(0) @map("objectives_disarmed")
-  sectorsDefended      Int @default(0) @map("sectors_defended")
-  /** Seconds standing on an objective. Scored per second, at a tiny weight. */
-  objectiveTimeSeconds Int @default(0) @map("objective_time_seconds")
-  /** Enemies marked for the team. Verified NOT to be Recon-only (see points.ts). */
-  spots                Int @default(0)
-  /** Hit points restored to teammates — a magnitude, not an action count. */
-  healthRestored       Int @default(0) @map("health_restored")
+  objectivesDefended   Int          @default(0) @map("objectives_defended")
+  objectivesDestroyed  Int          @default(0) @map("objectives_destroyed")
+  objectivesArmed      Int          @default(0) @map("objectives_armed")
+  objectivesDisarmed   Int          @default(0) @map("objectives_disarmed")
+  sectorsDefended      Int          @default(0) @map("sectors_defended")
+  /**
+   * Seconds standing on an objective. Scored per second, at a tiny weight.
+   */
+  objectiveTimeSeconds Int          @default(0) @map("objective_time_seconds")
+  /**
+   * Enemies marked for the team. Verified NOT to be Recon-only (see points.ts).
+   */
+  spots                Int          @default(0)
+  /**
+   * Hit points restored to teammates — a magnitude, not an action count.
+   */
+  healthRestored       Int          @default(0) @map("health_restored")
   /**
    * Vehicle repairs. Collected but deliberately NOT scored: it is locked to
    * Engineer, so scoring it taxes everyone who plays another class (decision of
    * 2026-07-27). Stored anyway because history cannot be backfilled if the clan
    * later changes its mind.
    */
-  repairs              Int @default(0)
+  repairs              Int          @default(0)
   // Extra BF6 metrics without a migration.
-  extra              Json?
+  extra                Json?
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
@@ -338,4 +359,43 @@ model Profile {
   member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 
   @@map("profile")
+}
+
+/// Fase 8 — one row per notable thing that happened, for the home page feed.
+///
+/// WRITTEN, NOT DERIVED, and that is the whole design decision. A promotion is
+/// only knowable at the instant it happens: the collector is the one thing that
+/// sees "this member had 1.980 points and now has 2.040". Reconstructing it later
+/// from `member.rankPoints` would mean subtracting past deltas from a mutable
+/// running total, which is exactly the class of reasoning that produced 86.914
+/// points for 301 minutes of play (see deltaForMonth). Append a row when it
+/// happens and the feed is a read.
+///
+/// It is also the queue the Discord webhook will consume when that ships
+/// (docs/plano.md > Backlog técnico): the producer already exists.
+model ClanEvent {
+  id            String        @id @default(uuid())
+  memberId      String        @map("member_id")
+  kind          ClanEventKind
+  /// When it started. For a session, the first reading that credited points.
+  occurredAt    DateTime      @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  /// Last time the row changed, and the feed's CURSOR — not just bookkeeping.
+  /// A session grows while the member keeps playing, so "what is new since I
+  /// loaded the page" cannot be answered by `occurredAt` or by the id.
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Career points the event is worth. Accumulates for a session.
+  points        Int           @default(0)
+  /// Minutes played, so a session can be described in the unit members think in.
+  minutesPlayed Int           @default(0) @map("minutes_played")
+  /// Rank reached, for a promotion. Slug (not name) because it also addresses the
+  /// insignia artwork in public/patentes.
+  rankSlug      String?       @map("rank_slug")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// The feed reads by recency and polls by cursor; both hit this.
+  @@index([updatedAt], map: "clan_event_updated_idx")
+  /// Finding a member's open session, once per collected batch.
+  @@index([memberId, kind, occurredAt], map: "clan_event_member_kind_idx")
+  @@map("clan_event")
 }

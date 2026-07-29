@@ -964,6 +964,115 @@ setembro.
 - [x] **Headshot em percentual (28/07).** Ver o item 1 do Backlog técnico, resolvido na exibição.
 - [ ] Refino visual e animações. Sem escopo fechado: precisa de direção do dono sobre o que incomoda.
 
+### Fase 8 — Vida no site: atividade, previsão e movimento (2026-07-28)
+
+Etapa criada depois da 7.A, com um diagnóstico simples: o site estava **correto e
+estático**. Tudo que ele mostrava era verdade e nada mudava enquanto alguém olhava, então um membro
+que voltava no dia seguinte não tinha como perceber que existe um sistema rodando atrás. As três
+entregas atacam isso em ordem de impacto.
+
+#### 8.1 — Feed de atividade no painel, reativo
+
+**Eventos são gravados, não derivados.** Tabela `clan_event`, escrita pelo coletor no mesmo ponto em
+que credita os pontos. A razão é a mesma que já apareceu duas vezes neste projeto: uma promoção
+existe por um instante, e quem vê os dois lados do limiar é o código que credita. Reconstruir depois
+significaria subtrair deltas de um total mutável, que é exatamente o raciocínio que um dia creditou
+86.914 pontos por 301 minutos de jogo.
+
+Dois tipos, de propósito. `promotion` e `session` — um feed que lista tudo não lista nada, e com 98
+membros varridos a cada 20 min "contadores mudaram" enterraria as duas coisas que interessam.
+
+**Sessões são mescladas, não empilhadas.** Uma noite de jogo geraria uma dúzia de linhas idênticas.
+Em vez disso a leitura estende a sessão aberta (janela de 90 min, que tolera quatro ciclos sem
+progresso antes de decidir que a sessão acabou) e a linha cresce. É por isso que o cursor do feed é
+`updatedAt` e não o id: a linha muda sem uma linha nova aparecer.
+
+**Reatividade por polling, e isso é decisão registrada.** O componente consulta `/api/activity` a
+cada 30 s, pausa com a aba escondida e dispara uma vez ao voltar para ela. As alternativas foram
+pesadas: SSE morre a cada 60 s no teto da função da Vercel, então reconectaria em loop — um polling
+com mais peças; e Supabase Realtime é push de verdade, mas exige publicar a tabela e conceder SELECT
+anônimo nela, ou seja, um caminho de leitura pública novo no banco para um feed cujo produtor é um
+cron de 20 minutos. Contra essa cadência, 30 s já é mais rápido do que o dado muda. **Caminho de
+upgrade:** Realtime, e o gatilho para tomá-lo é a cadência cair para segundos.
+
+Só linhas que mudaram piscam: payload idêntico é no-op, e a maioria dos polls é (30 s contra 20 min).
+O merge é função pura (`lib/activity.ts`), então isso é teste e não inspeção visual.
+
+**Fica na visão geral do painel, e só lá** (decisão do dono, 29/07). Nasceu na home, embaixo do hero,
+e saiu de lá: é informação operacional, não conteúdo de vitrine. No painel ele acumula uma segunda
+função que a home não dava — é o monitor mais próximo que temos da coleta. Linha nova aparecendo
+significa que o worker rodou e creditou, sem abrir log da Railway.
+
+A visão geral foi reorganizada no mesmo passo: os sete cards viraram **quatro**, em grid responsivo, e
+nenhum número foi perdido — os que ficaram sem card viraram hint do card a que pertencem. Sete cards
+em três colunas deixavam uma linha órfã de um e davam o mesmo peso visual a "Administradores" (muda
+uma vez por ano) e a "Membros". Os botões de ação subiram para o header, ao lado do título.
+
+#### 8.2 — Previsão da próxima patente no perfil
+
+"Faltam 12.000 pts para Major, cerca de 80 h no seu ritmo." Duas regras sustentam a honestidade da
+conta:
+
+- **Ritmo do próprio membro na frente da calibração do clã.** Um Suporte que joga objetivo pontua
+  diferente de um fragger, e dar o mesmo número aos dois torna a previsão decorativa.
+- **Dizer qual base foi usada.** Previsão na média do clã é uma afirmação diferente de previsão no
+  ritmo medido do membro, e quem não distingue as duas não pode julgar nenhuma.
+
+A armadilha que o teste trava: as horas da série são **horas de carreira**, então dividir pontos
+coletados por horas de carreira daria ritmo perto de zero para todo veterano e previsão em décadas.
+Numerador e denominador saem da mesma janela.
+
+Fica em bloco próprio e não dentro do hover do `RankCard`: hover não existe em toque, que é a maior
+parte do clã, e meta que precisa ser descoberta com o mouse não é meta.
+
+#### 8.3 — Setas de variação no ranking
+
+`previousRank` no `RankingEntry`: o mesmo board, pontuado como estava no início da janela, mesmos
+membros e mesmas regras, só retendo os snapshots depois do corte.
+
+**Janela de 3 h, medida e não escolhida (29/07).** A primeira versão usou 24 h e o dono achou demais.
+Antes de trocar por palpite, medimos as candidatas contra o board real, com 26 membros pontuando:
+
+| Janela             | Setas | Média de posições | Maior salto |
+| ------------------ | ----: | ----------------: | ----------: |
+| Último ciclo       |     0 |                 0 |           0 |
+| 20 min             |     0 |                 0 |           0 |
+| 1 h                |     7 |               1,4 |           2 |
+| **3 h**            |    21 |               2,5 |          10 |
+| 6 h                |    19 |               4,2 |           8 |
+| 24 h               |    16 |               6,4 |          12 |
+
+**Por que não a cadência da coleta, que era a intuição inicial:** ganhar pontos num ciclo de 20 min
+quase nunca troca posição — vizinhos nesse board estão a centenas de pontos e uma sessão de 20 min
+vale ~50 — então a janela não produz seta nenhuma. Pior, ela faria a seta desaparecer no ciclo
+seguinte, escondendo uma subida que aconteceu de verdade; e janela igual à cadência cai na fronteira
+do ciclo, então o último snapshot entra ou sai do corte conforme o instante em que a página renderiza.
+
+O que **já** acompanha os 20 min é o board: a tag `stats` é purgada a cada ciclo, então posições e
+pontos são sempre do último. A janela é outro eixo — contra o que comparar, não quão fresco é o dado.
+
+**Posição final: inline, depois do nome do membro** (29/07). Duas tentativas anteriores e o que cada
+uma ensinou. Embaixo do índice num flex column: os dois dividiam a mesma caixa, então a caixa crescia
+quando havia seta e o número centralizado ficava mais alto que nas linhas sem seta — board com os
+números desalinhados. Embaixo do índice em `absolute`: alinhou (offset de 15 px medido em todas as
+linhas), mas o rótulo pendia na borda inferior da linha. Na linha do nome não há caixa para crescer nem
+borda para invadir, e o `truncate` mudou de lugar: fica no span do apelido, não na linha, senão um
+nome longo empurraria a seta para fora — justamente a parte que muda entre visitas.
+
+Três decisões que valem registro:
+
+- **`new Date()` dentro da query cacheada, e não na chave.** A chave segue sendo o mês. O relógio
+  afeta o valor, limitado por dois lados: o TTL de 300 s e a tag `stats`, que toda coleta purga. Uma
+  janela "desde ontem" derivando alguns minutos não é defeito; chave de cache volátil seria.
+- **Seta exige posição real nas duas pontas.** Membro com zero pontos no mês não recebe seta: a
+  posição dele é o desempate alfabético, e pintar vermelho porque alguém acima jogou seria culpá-lo
+  pela sessão de outro. E quem tinha zero pontos **24 h atrás** também não recebe, porque a primeira
+  sessão do mês é entrada no board, não ultrapassagem. Sem essa segunda metade, o board de 29/07
+  exibia +80, +64, +53 e +42 ao mesmo tempo, o que parece ranking em convulsão quando era quatro
+  pessoas começando a jogar.
+- **Direção não fica só na cor.** Verde e vermelho é exatamente o par que o leitor com daltonismo não
+  separa, então vai seta, número e texto para leitor de tela.
+
 #### 7.B — depende de um mês real (a partir do fim de agosto)
 
 - [ ] "Membro do mês" e conquistas automáticas sugeridas a partir de deltas.
@@ -1276,6 +1385,8 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
   `api` que a guarda de coerência hoje rejeitaria. **Dry run por padrão**; aplica com `--apply`.
   É o caminho para tirar os dados de exemplo quando o roster real entrar pelo painel.
 - `pnpm invite:admin` — reemite o convite de admin (ver Convite de admin acima).
+- `pnpm db:rebase-ranks` — converte os saldos de carreira para a escada recalibrada. **Rodado uma
+  vez, em 2026-07-28**, e a guarda dele impede uma segunda passada (ver Deploy > Agendamento).
 
 **Armadilha recorrente: `db:push` exige reiniciar o `pnpm dev`.** Mordeu três vezes em 2026-07-27,
 sempre com a mesma cara — `PrismaClientValidationError: Unknown field` numa página que compila e
@@ -1430,3 +1541,70 @@ Três saídas possíveis, da mais barata à mais definitiva:
 
 Nada disso é urgente: não afeta número nenhum, só a legenda. Vale resolver junto do item 1, porque os
 dois são a mesma classe de defeito — **a tela mostrando um recorte diferente do que a coleta usa**.
+
+---
+
+## Backlog de produto (ideias levantadas em 2026-07-28)
+
+Levantadas depois da 7.A, quando a pergunta virou "como dar vida ao site". Estão aqui em ordem de
+retorno por esforço, e **quase tudo é derivação do dado que já existe** — a coleta de 20 min sobre 98
+membros já produz mais do que a vitrine mostra. As três primeiras da lista original viraram a Fase 8.
+
+### 1. Webhook de promoção no Discord — o de maior retorno da lista
+
+O produtor **já existe**: a Fase 8 grava `clan_event`, então o webhook é ler os eventos novos de um
+ciclo e fazer um POST. Fecha o laço que nenhuma feature interna fecha: o Discord anuncia, o membro
+clica, o site recebe a visita, o membro quer subir mais.
+
+Onde entra: no fim do ciclo do worker, junto da purga de cache, com a mesma tolerância a falha (um
+webhook que não responde não pode custar a coleta). Precisa de `DISCORD_WEBHOOK_URL` como env do
+serviço na Railway, e de uma marca no evento para não anunciar duas vezes — uma coluna
+`announcedAt` em `clan_event` resolve, e a query fica "eventos sem `announcedAt`".
+
+### 2. Card Open Graph por membro
+
+`opengraph-image` dinâmico em `/membros/[id]`, com patente, avatar, K/D e pontos do mês. O Next gera
+imagem nativamente (`ImageResponse`), sem dependência nova. Todo link colado no Discord passa a ser
+vitrine em vez de URL crua. Cuidado conhecido: fontes precisam ser carregadas explicitamente no
+runtime de imagem, e a arte das insígnias tem de ser lida como bytes, não como `<Image>`.
+
+### 3. Sessões no perfil
+
+O `clan_event` já registra sessão com duração e pontos. Falta a leitura: "última sessão: 2h40, 1.240
+pontos" no perfil, e uma lista das últimas. É narrativa a custo quase zero, e transforma o perfil de
+retrato em histórico.
+
+### 4. Comparação entre dois membros
+
+`/comparar?a=&b=`, derivação pura dos totais que já estão na tela. Gera conversa no Discord, que é
+engajamento de graça.
+
+### 5. Recordes do clã
+
+"Melhor sessão do mês", "mais revives numa leitura", "maior sequência de dias jogando". O ranking
+mensal premia volume; recordes premiam momentos, e momento é o que as pessoas contam. A sequência de
+dias precisa de agregação sobre `stat_snapshot`, o resto sai de `clan_event`.
+
+### 6. Sugestão automática de medalhas para o admin
+
+O sistema de medalhas é 100% manual por design (os critérios não são detectáveis na API) e vai
+continuar. O que o coletor pode fazer é **sugerir**: "Ovaca fez 400 revives este mês, considere a
+medalha X". Mantém a curadoria e elimina o garimpo de números. Já previsto na 7.B.
+
+### 7. Página de temporada encerrada
+
+O arquivo de temporadas existe e o board fecha sozinho. Falta o ritual: campeão do mês, pódio, board
+congelado como troféu.
+
+### 8. Polimento com movimento
+
+Números contando para cima ao entrar na viewport, transições de página com View Transitions (nativo,
+sem biblioteca), hover nos cards de membro respondendo com a arte da classe, e animação de promoção
+quando o membro abre o próprio perfil e subiu desde a última visita.
+
+### O que NÃO fazer, e por quê
+
+- **Gráfico por partida.** A fonte não expõe histórico de partidas, só totais vitalícios. Qualquer
+  coisa "por partida" seria estimativa vestida de fato.
+- **Melhores jogadas com upload de vídeo agora.** Continua caro (storage, validação de duração,
+  thumbnail) e o Discord já resolve compartilhar clipe. Segue no Backlog de features.

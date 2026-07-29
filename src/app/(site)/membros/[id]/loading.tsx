@@ -38,6 +38,20 @@ export default function Loading() {
           y-axis labels down the left) */}
       <div className="mt-10">
         <Skeleton className="mb-4 h-6 w-32" />
+        {/* Forecast panel: two insignias, two lines of copy, then the bar. */}
+        <div className="mb-3 rounded-xl border p-4">
+          <div className="flex items-center gap-3">
+            <Skeleton className="size-8 rounded" />
+            <Skeleton className="size-4 rounded" />
+            <Skeleton className="size-10 rounded" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </div>
+          </div>
+          <Skeleton className="mt-3 h-1.5 w-full rounded-full" />
+          <Skeleton className="mt-2 h-3 w-72" />
+        </div>
         <div className="space-y-3 rounded-xl border p-4 sm:p-5">
           <div className="flex flex-wrap gap-1.5">
             {/* One per metric button, sized after its label ("Pontos", "Kills",

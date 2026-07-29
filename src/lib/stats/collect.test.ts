@@ -14,6 +14,7 @@ import { emptyTotals, type StatTotals } from "./snapshots";
 const db = {
   member: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   statSnapshot: { findMany: vi.fn(), createMany: vi.fn() },
+  clanEvent: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
 };
 vi.mock("@/lib/db", () => ({ db }));
 
@@ -35,6 +36,9 @@ function member(nickname: string, checkedAt: string | null, index: number) {
   return {
     id: `id-${nickname}`,
     nickname,
+    // Balance before the run, so a rank crossing is detectable. Mid-ladder by
+    // default, so a normal credit does not accidentally promote anyone.
+    rankPoints: 10_000,
     platformId: nickname,
     eaPersonaId: `persona-${index}`,
     eaNucleusId: `nucleus-${index}`,
@@ -126,6 +130,9 @@ beforeEach(() => {
   db.statSnapshot.findMany.mockResolvedValue([]);
   db.statSnapshot.createMany.mockResolvedValue({ count: 0 });
   db.member.updateMany.mockResolvedValue({ count: 0 });
+  db.clanEvent.findMany.mockResolvedValue([]);
+  db.clanEvent.create.mockResolvedValue({});
+  db.clanEvent.update.mockResolvedValue({});
   clock = 1_700_000_000_000;
   vi.spyOn(Date, "now").mockImplementation(() => clock);
 });
@@ -801,6 +808,41 @@ describe("collectStats career points", () => {
     // The snapshot itself is still written: the reading is valid, only the
     // comparison with the old account is not.
     expect(report.updated).toBe(1);
+  });
+
+  it("records the credit as an activity event, after the balance is written", async () => {
+    // Order matters: a promotion row that outlived a failed credit would announce
+    // something that did not happen.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    db.statSnapshot.findMany.mockResolvedValue([
+      previousRow("id-Ana", { kills: 50, timePlayedMinutes: 100 }, "nucleus-1"),
+    ]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players) =>
+        new Map([[players[0].personaId, { ...rawStats(100), timePlayedMinutes: 145 }]]),
+    );
+
+    await collectStats(provider);
+
+    expect(db.clanEvent.create).toHaveBeenCalledTimes(1);
+    const event = db.clanEvent.create.mock.calls[0][0].data;
+    expect(event).toMatchObject({ memberId: "id-Ana", kind: "session" });
+    // Minutes come from the difference between readings, not the lifetime total.
+    expect(event.minutesPlayed).toBe(45);
+  });
+
+  it("records no event for a member who was read but did not play", async () => {
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    const same = rawStats(100);
+    db.statSnapshot.findMany.mockResolvedValue([previousRow("id-Ana", { ...same }, "nucleus-1")]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async (players) => new Map([[players[0].personaId, same]]));
+
+    await collectStats(provider);
+
+    expect(db.clanEvent.create).not.toHaveBeenCalled();
+    expect(db.clanEvent.findMany).not.toHaveBeenCalled();
   });
 
   it("uses increment, never a computed total", async () => {
