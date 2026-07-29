@@ -41,8 +41,11 @@ describe("RankForecastPanel", () => {
       <RankForecastPanel points={CABO.threshold - 400} series={[point(0, 0), point(2, 400)]} />,
     );
 
-    expect(screen.getByText(/no seu ritmo/)).toBeInTheDocument();
-    expect(screen.getByText(/medidos nas suas leituras/)).toBeInTheDocument();
+    // Third person on purpose: an admin reads this panel about other members, so
+    // "no seu ritmo" would be wrong for half of its readers.
+    expect(screen.getByText(/neste ritmo/)).toBeInTheDocument();
+    expect(screen.getByText(/medidos nas leituras deste membro/)).toBeInTheDocument();
+    expect(screen.queryByText(/seu ritmo/)).not.toBeInTheDocument();
   });
 
   it("exposes the progress as a real progressbar, named after the gap", () => {

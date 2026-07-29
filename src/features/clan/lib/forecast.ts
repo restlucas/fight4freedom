@@ -1,4 +1,4 @@
-// "Faltam N pontos, cerca de H horas no seu ritmo" — the profile's next-rank
+// "Faltam N pontos, cerca de H horas neste ritmo" — the profile's next-rank
 // forecast.
 //
 // Pure, because the interesting part is the arithmetic and the honesty of it, not

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { rankForPoints, rankProgress } from "@/lib/ranks";
 import { render, screen } from "@/test-utils";
@@ -6,6 +6,18 @@ import { render, screen } from "@/test-utils";
 // Stubbed: it calls useRouter, which needs a router context these tests do not
 // provide, and its behaviour has its own suite (refresh-on-focus.test.tsx).
 vi.mock("@/components/refresh-on-focus", () => ({ RefreshOnFocus: () => null }));
+
+// Who is looking at the page, which decides whether the progression section
+// renders at all. Hoisted so the factory below can close over the same spy.
+const { getSessionProfile } = vi.hoisted(() => ({ getSessionProfile: vi.fn() }));
+vi.mock("@/lib/auth/session", () => ({ getSessionProfile }));
+
+/** The profile whose page this is — the member reading their own progression. */
+const OWNER = { id: "u-owner", isAdmin: false, memberId: "m1", member: null };
+/** Signed in, part of the clan, but this is somebody else's page. */
+const OTHER_MEMBER = { id: "u-other", isAdmin: false, memberId: "m2", member: null };
+/** Admin: sees every member's progression, on `isAdmin` and never on member.role. */
+const ADMIN = { id: "u-admin", isAdmin: true, memberId: "m9", member: null };
 
 vi.mock("@/features/clan/lib/queries", () => ({
   // This member leads the clan in kills, so the Kills tile gets a crown.
@@ -65,6 +77,12 @@ vi.mock("@/features/clan/lib/queries", () => ({
 import MemberProfilePage from "./page";
 
 describe("MemberProfilePage", () => {
+  beforeEach(() => {
+    // Default viewer is the member themselves: the progression section is part of
+    // the page for them, so the tests about the rest of the page keep their layout.
+    getSessionProfile.mockResolvedValue(OWNER);
+  });
+
   it("renders the member name, stats and medals", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
     expect(screen.getByRole("heading", { name: "RRRRRRRREST", level: 1 })).toBeInTheDocument();
@@ -131,5 +149,51 @@ describe("MemberProfilePage", () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
     expect(screen.getByLabelText("Líder do clã em Kills")).toBeInTheDocument();
     expect(screen.queryByLabelText("Líder do clã em Partidas")).not.toBeInTheDocument();
+  });
+
+  // Progression is private: the member's own record of when they played and how
+  // fast they climb. The rest of the profile stays vitrine.
+  describe("progression visibility", () => {
+    it("hides the whole section from a signed-out visitor", async () => {
+      getSessionProfile.mockResolvedValue(null);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.queryByText("Progressão")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Próxima patente/)).not.toBeInTheDocument();
+      expect(screen.queryByText("Sem histórico suficiente ainda")).not.toBeInTheDocument();
+      // Only the section went away, not the page.
+      expect(screen.getByRole("heading", { name: "RRRRRRRREST", level: 1 })).toBeInTheDocument();
+      expect(screen.getByText("Estatísticas")).toBeInTheDocument();
+      expect(screen.getByText("Sharpshooter")).toBeInTheDocument();
+    });
+
+    it("hides it from another signed-in member", async () => {
+      // The regression that matters most: being logged in is not the permission,
+      // being THIS member is.
+      getSessionProfile.mockResolvedValue(OTHER_MEMBER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.queryByText("Progressão")).not.toBeInTheDocument();
+    });
+
+    it("shows it to the member themselves", async () => {
+      getSessionProfile.mockResolvedValue(OWNER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByText("Progressão")).toBeInTheDocument();
+      expect(screen.getByText(/Próxima patente/)).toBeInTheDocument();
+    });
+
+    it("shows it to an admin on someone else's page", async () => {
+      getSessionProfile.mockResolvedValue(ADMIN);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByText("Progressão")).toBeInTheDocument();
+      expect(screen.getByText(/Próxima patente/)).toBeInTheDocument();
+    });
   });
 });

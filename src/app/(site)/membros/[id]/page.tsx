@@ -15,6 +15,7 @@ import { RankCard } from "@/features/clan/components/rank-card";
 import { CLASS_LABEL, memberInitials } from "@/features/clan/lib/format";
 import { getMemberProfile, getStatLeaders } from "@/features/clan/lib/queries";
 import { STAT_KEYS, type StatKey } from "@/features/clan/lib/stat-keys";
+import { getSessionProfile } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +40,32 @@ function formatJoinedDate(iso: string): string {
 
 export default async function MemberProfilePage({ params }: Params) {
   const { id } = await params;
-  const [member, leaders] = await Promise.all([getMemberProfile(id), getStatLeaders()]);
+  const [member, leaders, viewer] = await Promise.all([
+    getMemberProfile(id),
+    getStatLeaders(),
+    getSessionProfile(),
+  ]);
   if (!member) notFound();
 
   const leadsIn: StatKey[] = STAT_KEYS.filter((key) => leaders[key].includes(member.id));
+
+  /**
+   * Who gets to see the progression section (rank forecast + history chart).
+   *
+   * The rest of the profile is vitrine — patente, stats and medals are the clan's
+   * shop window. The progression is the member's own record of when they played and
+   * how fast they are climbing, so it is restricted to the member themselves and to
+   * the admins.
+   *
+   * `profile.isAdmin` and NOT `member.role`: the role is the clan cargo and is
+   * display-only, so reading it here would let anyone with the "admin" cargo see
+   * every history (see src/lib/auth/session.ts).
+   *
+   * This gate also keeps the series out of the response: MemberProgression is a
+   * Client Component, so not rendering it means the points never reach the RSC
+   * payload — hiding it with CSS would have shipped the data anyway.
+   */
+  const canSeeProgression = viewer !== null && (viewer.isAdmin || viewer.memberId === member.id);
 
   return (
     <>
@@ -153,38 +176,43 @@ export default async function MemberProfilePage({ params }: Params) {
           />
         </section>
 
-        {/* Progression */}
-        <section className="mt-10">
-          <h2 className="font-heading mb-4 text-xl font-semibold">Progressão</h2>
-          <RankForecastPanel
-            points={member.rankPoints}
-            series={member.progression}
-            className="mb-3"
-          />
-          {member.progression.length >= 2 ? (
-            /* Opaque enough to be a chart SURFACE: the page background is a
-               photograph, and a 40 % panel let it read through the plot area. */
-            <div className="bg-secondary/70 rounded-xl border p-4 backdrop-blur-sm sm:p-5">
-              <MemberProgression series={member.progression} />
-            </div>
-          ) : (
-            /* Two readings are the minimum for a line to exist at all, and today
-               most of the roster is below that: collection started on 27/07. The
-               copy says so plainly instead of showing an empty frame that reads as
-               a bug — the same mistake the "Aguardando 1ª leitura" label fixed in
-               the panel. */
-            <div className="bg-secondary/40 text-muted-foreground rounded-xl border p-6 text-sm backdrop-blur-sm">
-              <p className="text-foreground font-medium">Sem histórico suficiente ainda</p>
-              <p className="mt-1">
-                O gráfico aparece a partir da segunda leitura de stats.{" "}
-                {member.progression.length === 1
-                  ? "Este membro tem uma leitura até agora."
-                  : "Este membro ainda não tem nenhuma leitura."}{" "}
-                A coleta roda a cada 20 minutos e só registra uma leitura nova quando o membro joga.
-              </p>
-            </div>
-          )}
-        </section>
+        {/* Progression — private, see canSeeProgression above. No placeholder for
+            everyone else: a "restrito" box would announce that there is something
+            here to be denied, and the page reads better without the hole. */}
+        {canSeeProgression ? (
+          <section className="mt-10">
+            <h2 className="font-heading mb-4 text-xl font-semibold">Progressão</h2>
+            <RankForecastPanel
+              points={member.rankPoints}
+              series={member.progression}
+              className="mb-3"
+            />
+            {member.progression.length >= 2 ? (
+              /* Opaque enough to be a chart SURFACE: the page background is a
+                 photograph, and a 40 % panel let it read through the plot area. */
+              <div className="bg-secondary/70 rounded-xl border p-4 backdrop-blur-sm sm:p-5">
+                <MemberProgression series={member.progression} />
+              </div>
+            ) : (
+              /* Two readings are the minimum for a line to exist at all, and today
+                 most of the roster is below that: collection started on 27/07. The
+                 copy says so plainly instead of showing an empty frame that reads as
+                 a bug — the same mistake the "Aguardando 1ª leitura" label fixed in
+                 the panel. */
+              <div className="bg-secondary/40 text-muted-foreground rounded-xl border p-6 text-sm backdrop-blur-sm">
+                <p className="text-foreground font-medium">Sem histórico suficiente ainda</p>
+                <p className="mt-1">
+                  O gráfico aparece a partir da segunda leitura de stats.{" "}
+                  {member.progression.length === 1
+                    ? "Este membro tem uma leitura até agora."
+                    : "Este membro ainda não tem nenhuma leitura."}{" "}
+                  A coleta roda a cada 20 minutos e só registra uma leitura nova quando o membro
+                  joga.
+                </p>
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {/* Medals */}
         <section className="mt-10">

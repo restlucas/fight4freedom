@@ -1,9 +1,14 @@
-// "Faltam 12.000 pts para Major, cerca de 80 h no seu ritmo."
+// "Faltam 12.000 pts para Major, cerca de 80 h neste ritmo."
 //
 // Its own block on the profile rather than more text inside the RankCard's hover
 // card, for two reasons. The hover card does not exist on touch, which is most of
 // the clan; and a goal that has to be discovered by hovering is not a goal, it is
 // a detail.
+//
+// THIRD PERSON, not "no seu ritmo". The panel sits in the profile's private
+// progression section, which an admin also reads about other members — copy that
+// says "seu" is wrong for half of its readers, and the member reading their own
+// page loses nothing by it.
 
 import { ArrowRight } from "lucide-react";
 
@@ -69,7 +74,7 @@ export function RankForecastPanel({ points, series, className }: RankForecastPan
             pts, cerca de{" "}
             <span className="text-foreground font-mono font-medium tabular-nums">{hours}h</span> de
             jogo
-            {forecast.basis === "member" ? " no seu ritmo" : " no ritmo médio do clã"}.
+            {forecast.basis === "member" ? " neste ritmo" : " no ritmo médio do clã"}.
           </p>
         </div>
       </div>
@@ -97,13 +102,13 @@ export function RankForecastPanel({ points, series, className }: RankForecastPan
       <p className="text-muted-foreground mt-2 text-[11px]">
         {forecast.basis === "member" ? (
           <>
-            Estimado em {formatNumber(Math.round(forecast.rate))} pontos por hora, medidos nas suas
-            leituras.
+            Estimado em {formatNumber(Math.round(forecast.rate))} pontos por hora, medidos nas
+            leituras deste membro.
           </>
         ) : (
           <>
             Estimado em {formatNumber(Math.round(forecast.rate))} pontos por hora, a média do clã.
-            Assim que você tiver mais horas coletadas, a conta passa a usar o seu ritmo.
+            Assim que houver mais horas coletadas, a conta passa a usar o ritmo deste membro.
           </>
         )}
       </p>
