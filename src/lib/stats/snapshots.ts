@@ -139,7 +139,13 @@ export function latestSnapshot<T extends { capturedAt: Date }>(snapshots: T[]): 
   return snapshots.reduce((latest, s) => (s.capturedAt > latest.capturedAt ? s : latest));
 }
 
-function subtractTotals(a: StatTotals, b: StatTotals): StatTotals {
+/**
+ * Counter-by-counter difference. Exported since 2026-07-28 because the career
+ * accumulator (accrueCareerPoints in ./points.ts) needs the same subtraction the
+ * monthly delta uses — two implementations would be two chances to forget a
+ * counter, which STAT_KEYS exists to prevent.
+ */
+export function subtractTotals(a: StatTotals, b: StatTotals): StatTotals {
   const out = emptyTotals();
   for (const key of STAT_KEYS) out[key] = a[key] - b[key];
   return out;

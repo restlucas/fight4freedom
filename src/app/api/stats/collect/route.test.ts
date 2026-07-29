@@ -36,6 +36,7 @@ function report(overrides: Partial<CollectReport> = {}): CollectReport {
     roundsRun: 2,
     retriedBatches: 4,
     recoveredByRetry: 11,
+    pointsAccrued: 0,
     neverRead: [],
     members: [],
     ...overrides,

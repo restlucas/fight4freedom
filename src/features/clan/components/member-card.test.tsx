@@ -1,11 +1,20 @@
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import { RANKS } from "@/lib/ranks";
 import { emptyTotals } from "@/lib/stats/snapshots";
 import { render, screen } from "@/test-utils";
 
 import type { MemberOverview } from "../lib/queries";
 import { MemberCard } from "./member-card";
+
+/** A mid-ladder rank, so the card has both a previous and a next rank. */
+const RANK_UNDER_TEST = RANKS[13];
+
+/** The accessible name the insignia carries, in pt-BR number formatting. */
+function rankLabel() {
+  return `Patente: ${RANK_UNDER_TEST.name} · ${RANK_UNDER_TEST.threshold.toLocaleString("pt-BR")} pts`;
+}
 
 const member: MemberOverview = {
   id: "m1",
@@ -14,7 +23,10 @@ const member: MemberOverview = {
   role: "admin",
   platformId: "RRRRRRRREST",
   avatarUrl: null,
-  rankPoints: 13_000, // General de Divisão
+  // Taken from the ladder, not typed in: the thresholds are calibration output
+  // (recalibrated 2026-07-28) and a literal here would fail the tuning instead of
+  // checking that the insignia follows the points.
+  rankPoints: RANK_UNDER_TEST.threshold,
   medalCount: 7,
   medals: [
     { id: "md1", name: "Clutch King", tier: "legendary", icon: "crown", imageUrl: null },
@@ -79,19 +91,21 @@ describe("MemberCard", () => {
 
   it("shows the rank insignia derived from the points", () => {
     render(<MemberCard member={member} />);
-    expect(screen.getByLabelText("Patente: General de Divisão · 13.000 pts")).toBeInTheDocument();
+    expect(screen.getByLabelText(rankLabel())).toBeInTheDocument();
   });
 
   it("reveals the rank name and points in a tooltip on hover", async () => {
     const user = userEvent.setup();
     render(<MemberCard member={member} />);
 
-    await user.hover(screen.getByLabelText("Patente: General de Divisão · 13.000 pts"));
+    await user.hover(screen.getByLabelText(rankLabel()));
 
     // Radix renders the content in a portal, plus a visually hidden copy.
-    const tooltips = await screen.findAllByText("General de Divisão");
+    const tooltips = await screen.findAllByText(RANK_UNDER_TEST.name);
     expect(tooltips.length).toBeGreaterThan(0);
-    expect(screen.getAllByText("13.000 pts").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(`${RANK_UNDER_TEST.threshold.toLocaleString("pt-BR")} pts`).length,
+    ).toBeGreaterThan(0);
   });
 
   it("crowns only the stats the member leads", () => {

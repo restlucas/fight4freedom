@@ -76,7 +76,10 @@ async function main(): Promise<void> {
       `${report.identityPending} sem identidade, ${report.deferred} adiados ` +
       `(${report.eligible} elegiveis) | ${report.roundsRun} rodada(s), ` +
       `${report.retriedBatches} lote(s) retentado(s), ` +
-      `${report.recoveredByRetry} membro(s) resgatado(s)`,
+      `${report.recoveredByRetry} membro(s) resgatado(s) | ` +
+      // Divided by the calibrated 150 pts/h this is the hours the clan played
+      // since the last cycle, which is the cheapest sanity check on the ladder.
+      `${report.pointsAccrued} ponto(s) de carreira creditado(s)`,
   );
 
   // `deferred > 0` means the 8-minute ceiling was hit with members never asked

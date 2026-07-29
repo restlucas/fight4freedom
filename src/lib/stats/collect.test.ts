@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { STATS_BATCH_SIZE } from "./gametools";
+import { POINT_WEIGHTS } from "./points";
 import type { PlayerIdentity, RawStats, StatsProvider } from "./provider";
+import { emptyTotals, type StatTotals } from "./snapshots";
 
 /**
  * The collector talks to the database, so these tests stub `@/lib/db` rather than
@@ -690,5 +692,131 @@ describe("collectStats batch retry", () => {
 
     expect(provider.fetchStats).toHaveBeenCalledTimes(1);
     expect(report.retriedBatches).toBe(0);
+  });
+});
+
+describe("collectStats career points", () => {
+  /** A previous snapshot row, shaped like the collector's select. */
+  function previousRow(memberId: string, partial: Partial<StatTotals>, nucleus: string | null) {
+    return { memberId, eaNucleusId: nucleus, ...emptyTotals(), ...partial };
+  }
+
+  /** Credits recorded through `member.update`, which is where `increment` lands. */
+  function credits() {
+    return db.member.update.mock.calls
+      .map(([args]) => args)
+      .filter((a) => a?.data?.rankPoints?.increment !== undefined)
+      .map((a) => ({ id: a.where.id as string, points: a.data.rankPoints.increment as number }));
+  }
+
+  it("credits the progress since the previous snapshot", () => {
+    // Expected value spelled out from POINT_WEIGHTS rather than by calling the
+    // accrual again, so this fails if the WIRING is wrong (wrong base row, wrong
+    // member) and also if the weights move without the ladder being revisited.
+    const delta: Partial<StatTotals> = {
+      kills: 50,
+      deaths: 1,
+      wins: 1,
+      losses: 1,
+      assists: 1,
+      revives: 1,
+      headshots: 1,
+      objectivesCaptured: 1,
+      objectivesDefended: 1,
+      objectiveTimeSeconds: 1,
+      spots: 1,
+      healthRestored: 1,
+      timePlayedMinutes: 1,
+    };
+    let expected = 0;
+    for (const [key, value] of Object.entries(delta)) {
+      expected += value * POINT_WEIGHTS[key as keyof StatTotals];
+    }
+
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    // rawStats(100) minus this row is exactly `delta` above.
+    db.statSnapshot.findMany.mockResolvedValue([previousRow("id-Ana", { kills: 50 }, "nucleus-1")]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players) => new Map([[players[0].personaId, rawStats(100)]]),
+    );
+
+    return collectStats(provider).then((report) => {
+      expect(credits()).toEqual([{ id: "id-Ana", points: Math.round(expected) }]);
+      expect(report.pointsAccrued).toBe(Math.round(expected));
+    });
+  });
+
+  it("credits nothing on a first reading, however large the totals", async () => {
+    // No previous row: these are lifetime counters earned before we watched, and
+    // the balance imported from the v1 site already stands for them. Crediting
+    // here would promote a new member to General for signing up.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    db.statSnapshot.findMany.mockResolvedValue([]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players) => new Map([[players[0].personaId, rawStats(40_000)]]),
+    );
+
+    const report = await collectStats(provider);
+
+    expect(credits()).toEqual([]);
+    expect(report.pointsAccrued).toBe(0);
+  });
+
+  it("credits nothing to a member who was read but did not play", async () => {
+    // Same counters as the previous snapshot: no row is written, so no points.
+    // This is what makes the accrual safe against re-reads — it is tied to the
+    // insert, not to the fetch.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    const same = rawStats(100);
+    db.statSnapshot.findMany.mockResolvedValue([previousRow("id-Ana", { ...same }, "nucleus-1")]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async (players) => new Map([[players[0].personaId, same]]));
+
+    const report = await collectStats(provider);
+
+    expect(report.unchanged).toBe(1);
+    expect(credits()).toEqual([]);
+    expect(report.pointsAccrued).toBe(0);
+  });
+
+  it("credits nothing across a rebind", async () => {
+    // The previous snapshot belongs to another EA account, so the difference is a
+    // stranger's career. Measured for real on 2026-07-28: 86.914 points for a
+    // member whose actual activity was 301 minutes.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    db.statSnapshot.findMany.mockResolvedValue([
+      previousRow("id-Ana", { kills: 10 }, "outra-conta"),
+    ]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players) => new Map([[players[0].personaId, rawStats(40_000)]]),
+    );
+
+    const report = await collectStats(provider);
+
+    expect(credits()).toEqual([]);
+    expect(report.pointsAccrued).toBe(0);
+    // The snapshot itself is still written: the reading is valid, only the
+    // comparison with the old account is not.
+    expect(report.updated).toBe(1);
+  });
+
+  it("uses increment, never a computed total", async () => {
+    // A read-modify-write would drop a credit whenever the manual route runs
+    // while the worker is mid cycle.
+    db.member.findMany.mockResolvedValue([member("Ana", null, 1)]);
+    db.statSnapshot.findMany.mockResolvedValue([previousRow("id-Ana", { kills: 50 }, "nucleus-1")]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players) => new Map([[players[0].personaId, rawStats(100)]]),
+    );
+
+    await collectStats(provider);
+
+    const write = db.member.update.mock.calls[0][0];
+    expect(write.data.rankPoints).toHaveProperty("increment");
+    expect(typeof write.data.rankPoints.increment).toBe("number");
   });
 });

@@ -57,7 +57,7 @@
 // would mean 7.76 spots per minute of Recon play — so spotting counts for every
 // class, not just Recon.
 
-import type { StatTotals } from "./snapshots";
+import { subtractTotals, type StatTotals } from "./snapshots";
 
 export const POINT_WEIGHTS: Record<keyof StatTotals, number> = {
   // --- objectives: the team advances on the map (~38% of the score) ---
@@ -144,6 +144,37 @@ export function computePoints(progress: StatTotals): number {
     total += progress[key] * POINT_WEIGHTS[key];
   }
   return Math.max(0, Math.round(total));
+}
+
+/**
+ * Career points earned between two consecutive snapshots — the accumulator behind
+ * the rank ladder (src/lib/ranks.ts), decided with the owner on 2026-07-28:
+ * career points are the SUM OF EVERY COLLECTED DELTA, not the sum of closed
+ * seasons, so the ladder moves within the current month too.
+ *
+ * Three rules, and each one exists because the alternative is a wrong number:
+ *
+ *  - **No previous snapshot means zero.** A member's first reading carries a
+ *    lifetime total (835 matches, 315 h) that we never watched them earn.
+ *    Scoring it would hand out a General's rank for signing up. What stands in
+ *    for that history is the balance imported from the v1 site, which is the
+ *    rank the clan had already recognised.
+ *  - **Different account means zero.** These are lifetime counters of ONE EA
+ *    account, so subtracting across a rebind subtracts a stranger's career. That
+ *    is not hypothetical: on 2026-07-28 it produced 86.914 points for a member
+ *    whose real activity was 301 minutes (see deltaForMonth).
+ *  - **Never negative.** `computePoints` already clamps, which covers the case of
+ *    the source reporting a lower total than it did before.
+ */
+export function accrueCareerPoints(
+  previous: (StatTotals & { eaNucleusId?: string | null }) | null,
+  current: StatTotals & { eaNucleusId?: string | null },
+): number {
+  if (!previous) return 0;
+  // Null on either side means "written before the column existed", which the
+  // backfill assigned to the member's own account — so null compares as equal.
+  if ((previous.eaNucleusId ?? null) !== (current.eaNucleusId ?? null)) return 0;
+  return computePoints(subtractTotals(current, previous));
 }
 
 /**

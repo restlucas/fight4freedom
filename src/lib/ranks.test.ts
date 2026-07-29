@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { FIRST_RANK, insigniaPath, rankForPoints, rankProgress, RANKS, TOP_RANK } from "./ranks";
+import {
+  FIRST_RANK,
+  hoursForPoints,
+  insigniaPath,
+  POINTS_PER_HOUR,
+  rankForPoints,
+  rankProgress,
+  RANKS,
+  TOP_RANK,
+} from "./ranks";
 
 describe("RANKS", () => {
   it("has 16 ranks, levels in order", () => {
@@ -16,10 +25,29 @@ describe("RANKS", () => {
     expect(RANKS.some((r) => r.slug === "recruta")).toBe(false);
   });
 
-  it("starts at zero and the first promotion costs 30 points", () => {
+  it("starts at zero and the first promotion costs about five hours of play", () => {
+    // Deliberately cheap: the only place on the ladder where SPEED matters is
+    // the first promotion, so a new member sees movement in a session or two.
     expect(FIRST_RANK.threshold).toBe(0);
     expect(RANKS[1].name).toBe("Cabo");
-    expect(RANKS[1].threshold).toBe(30);
+    expect(hoursForPoints(RANKS[1].threshold)).toBeCloseTo(5, 1);
+  });
+
+  it("keeps the top rank out of reach of any career the roster has today", () => {
+    // The longest career measured on 2026-07-28 was 814 h. If Marechal cost less
+    // than that, the ladder would be finishable by simply having played the game
+    // since launch, which is not what the top of an army hierarchy means.
+    expect(hoursForPoints(TOP_RANK.threshold)).toBeGreaterThan(1_000);
+  });
+
+  it("spaces promotions so two months of heavy play does not finish the ladder", () => {
+    // The heaviest member measured played 11 h in two days (~165 h/month). Two
+    // months at that pace is 49.500 points, and it has to land mid-ladder — this
+    // is the regression that the old 20.000-point top would fail outright.
+    const twoMonthsOfOutlier = 165 * 2 * POINTS_PER_HOUR;
+    const reached = rankForPoints(twoMonthsOfOutlier);
+    expect(reached.level).toBeGreaterThan(6);
+    expect(reached.level).toBeLessThan(12);
   });
 
   it("has strictly increasing thresholds", () => {
@@ -36,18 +64,23 @@ describe("RANKS", () => {
 describe("rankForPoints", () => {
   it("starts everyone as Soldado", () => {
     expect(rankForPoints(0).name).toBe("Soldado");
-    expect(rankForPoints(29).name).toBe("Soldado");
+    expect(rankForPoints(RANKS[1].threshold - 1).name).toBe("Soldado");
   });
 
   it("promotes exactly at the threshold", () => {
-    expect(rankForPoints(30).name).toBe("Cabo");
-    expect(rankForPoints(89).name).toBe("Cabo");
-    expect(rankForPoints(90).name).toBe("Terceiro-Sargento");
+    // Read from RANKS instead of literals: the thresholds are calibration output
+    // and move when the weights are retuned, but "promotes AT the threshold, not
+    // one point later" is the behaviour under test.
+    const cabo = RANKS[1];
+    const terceiro = RANKS[2];
+    expect(rankForPoints(cabo.threshold).name).toBe("Cabo");
+    expect(rankForPoints(terceiro.threshold - 1).name).toBe("Cabo");
+    expect(rankForPoints(terceiro.threshold).name).toBe("Terceiro-Sargento");
   });
 
   it("caps at the top rank", () => {
-    expect(rankForPoints(20_000).name).toBe("Marechal");
-    expect(rankForPoints(999_999)).toEqual(TOP_RANK);
+    expect(rankForPoints(TOP_RANK.threshold).name).toBe("Marechal");
+    expect(rankForPoints(TOP_RANK.threshold * 10)).toEqual(TOP_RANK);
   });
 
   it("treats negative points as zero", () => {
@@ -63,18 +96,21 @@ describe("rankForPoints", () => {
 
 describe("rankProgress", () => {
   it("measures progress inside the current rank", () => {
-    // Soldado spans 0..30; 15 points is halfway to Cabo.
-    const progress = rankProgress(15);
+    // Halfway from Soldado to Cabo, derived from the ladder so the case survives
+    // a recalibration.
+    const caboAt = RANKS[1].threshold;
+    const halfway = caboAt / 2;
+    const progress = rankProgress(halfway);
     expect(progress.rank.name).toBe("Soldado");
     expect(progress.next?.name).toBe("Cabo");
-    expect(progress.pointsIntoRank).toBe(15);
-    expect(progress.rankSpan).toBe(30);
-    expect(progress.pointsToNext).toBe(15);
+    expect(progress.pointsIntoRank).toBe(halfway);
+    expect(progress.rankSpan).toBe(caboAt);
+    expect(progress.pointsToNext).toBe(halfway);
     expect(progress.fraction).toBeCloseTo(0.5);
   });
 
   it("resets the bar right after a promotion", () => {
-    const progress = rankProgress(30);
+    const progress = rankProgress(RANKS[1].threshold);
     expect(progress.rank.name).toBe("Cabo");
     expect(progress.pointsIntoRank).toBe(0);
     expect(progress.fraction).toBe(0);
@@ -84,11 +120,11 @@ describe("rankProgress", () => {
     const progress = rankProgress(NaN);
     expect(progress.pointsIntoRank).toBe(0);
     expect(progress.fraction).toBe(0);
-    expect(progress.pointsToNext).toBe(30);
+    expect(progress.pointsToNext).toBe(RANKS[1].threshold);
   });
 
   it("reports a full bar and no next rank at the top", () => {
-    const progress = rankProgress(25_000);
+    const progress = rankProgress(TOP_RANK.threshold + 5_000);
     expect(progress.rank).toEqual(TOP_RANK);
     expect(progress.next).toBeNull();
     expect(progress.pointsToNext).toBe(0);

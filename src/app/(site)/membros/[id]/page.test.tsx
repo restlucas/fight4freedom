@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { rankForPoints, rankProgress } from "@/lib/ranks";
 import { render, screen } from "@/test-utils";
 
 vi.mock("@/features/clan/lib/queries", () => ({
@@ -17,7 +18,11 @@ vi.mock("@/features/clan/lib/queries", () => ({
     platformId: "RRRRRRRREST",
     role: "admin",
     avatarUrl: null,
-    rankPoints: 13_000, // General de Divisão, 3.000 short of the next rank
+    // A literal, because vi.mock is hoisted above the imports and cannot read the
+    // ladder. The ASSERTION derives the expected rank from these points instead,
+    // so a recalibration (2026-07-28, and again when the weights are retuned)
+    // changes which rank is expected without touching the fixture.
+    rankPoints: 13_000,
     // The data layer serializes dates as ISO strings (the cache is JSON).
     joinedAt: "2025-10-01T00:00:00.000Z",
     bestClass: "assault",
@@ -64,10 +69,12 @@ describe("MemberProfilePage", () => {
 
   it("shows the rank card with a progress bar and no points on its face", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
-    expect(screen.getByText("General de Divisão")).toBeInTheDocument();
+    expect(screen.getByText(rankForPoints(13_000).name)).toBeInTheDocument();
+    // The bar is named after the NEXT rank, also derived so a recalibration does
+    // not need this file edited.
     expect(
       screen.getByRole("progressbar", {
-        name: "Progresso para General de Exército",
+        name: `Progresso para ${rankProgress(13_000).next?.name}`,
       }),
     ).toBeInTheDocument();
     // The numbers only show on hover, inside the hover card.

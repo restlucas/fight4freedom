@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  accrueCareerPoints,
   computePoints,
   POINT_WEIGHTS,
   SCORED_STATS,
@@ -169,5 +170,69 @@ describe("weight bookkeeping", () => {
     for (const key of TEAMWORK_STATS) {
       expect(POINT_WEIGHTS[key]).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("accrueCareerPoints", () => {
+  it("scores only the progress between two readings", () => {
+    const before = progress({ kills: 100, wins: 10 });
+    const after = progress({ kills: 150, wins: 12 });
+    // 50 kills x 0,3 + 2 wins x 25 = 65.
+    expect(accrueCareerPoints(before, after)).toBe(65);
+  });
+
+  it("gives nothing for a first reading, however big the career", () => {
+    // The whole point of the rule: this member's lifetime totals were earned
+    // before we watched, and the imported v1 balance already stands for them.
+    expect(accrueCareerPoints(null, MELANSIA)).toBe(0);
+  });
+
+  it("refuses to score across a rebind", () => {
+    // Lifetime counters of two different accounts: the subtraction would credit
+    // one member with a stranger's career. Measured for real on 2026-07-28 as
+    // 86.914 points for 301 minutes of play.
+    const stranger = { ...progress({ kills: 100 }), eaNucleusId: "acct-a" };
+    const own = { ...progress({ kills: 40_000 }), eaNucleusId: "acct-b" };
+    expect(accrueCareerPoints(stranger, own)).toBe(0);
+  });
+
+  it("treats a null account id as the member's own", () => {
+    // Rows written before the column existed were backfilled to the member's own
+    // account, so null and the current id are the same thing.
+    const before = { ...progress({ kills: 100 }), eaNucleusId: null };
+    const after = { ...progress({ kills: 200 }), eaNucleusId: null };
+    expect(accrueCareerPoints(before, after)).toBe(30);
+  });
+
+  it("never goes negative when the source reports lower totals", () => {
+    const before = progress({ kills: 500, wins: 30 });
+    const after = progress({ kills: 400, wins: 28 });
+    expect(accrueCareerPoints(before, after)).toBe(0);
+  });
+
+  it("credits a realistic session at the calibrated rate", () => {
+    // Two hours of play should land near 300 points (150 pts/h, measured over the
+    // 66,8 h the roster played on 27-28/07). Loose bounds on purpose: this pins
+    // the ORDER OF MAGNITUDE that the rank thresholds were built on, so retuning
+    // the weights without rescaling the ladder fails here.
+    const before = progress({});
+    const after = progress({
+      kills: 68,
+      deaths: 24,
+      wins: 2,
+      losses: 2,
+      assists: 24,
+      revives: 17,
+      headshots: 16,
+      objectivesCaptured: 9,
+      objectivesDefended: 14,
+      spots: 14,
+      objectiveTimeSeconds: 820,
+      healthRestored: 260,
+      timePlayedMinutes: 120,
+    });
+    const points = accrueCareerPoints(before, after);
+    expect(points).toBeGreaterThan(150);
+    expect(points).toBeLessThan(600);
   });
 });

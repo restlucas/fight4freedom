@@ -33,8 +33,9 @@ import { db } from "@/lib/db";
 
 import { chunk, gametoolsProvider, STATS_BATCH_SIZE } from "./gametools";
 import { eaLookupName } from "./identity";
+import { accrueCareerPoints } from "./points";
 import type { RawStats, StatsProvider } from "./provider";
-import { hasNewActivity } from "./snapshots";
+import { hasNewActivity, STAT_TOTALS_SELECT } from "./snapshots";
 
 /**
  * Upper bound of `searchPlayer` calls per run, one value per profile. Identity
@@ -104,6 +105,15 @@ export type CollectReport = {
   retriedBatches: number;
   /** Members a retry round rescued. The retry's whole justification, measurable. */
   recoveredByRetry: number;
+  /**
+   * Career points credited this run, summed across members (src/lib/ranks.ts).
+   *
+   * In the report so the ladder is auditable from the outside: divide by 150 (the
+   * calibrated points per hour) and it should match the hours the clan played
+   * since the last cycle. A number far off that is the signal that either the
+   * weights or the thresholds drifted.
+   */
+  pointsAccrued: number;
   /**
    * Members who ended the run with no data AND have never been read successfully,
    * not once — `statsReadAt` is null. Nicknames, because this list is meant to be
@@ -271,6 +281,7 @@ export async function collectStats(
     roundsRun: 0,
     retriedBatches: 0,
     recoveredByRetry: 0,
+    pointsAccrued: 0,
     neverRead: [],
     members: [],
   };
@@ -368,18 +379,17 @@ export async function collectStats(
 
   // --- 2. Latest snapshot per member, to diff against -----------------------
   // `distinct` + desc order = the newest snapshot per member, in one query.
+  //
+  // EVERY counter, via STAT_TOTALS_SELECT, not the five the activity check needs:
+  // since 2026-07-28 this row is also the base of the career points accrual, and
+  // a hand-written list that forgets a counter does not fail to compile — it
+  // silently scores that counter as zero forever. `eaNucleusId` rides along
+  // because accrual across a rebind has to be refused (see accrueCareerPoints).
   const latestRows = await db.statSnapshot.findMany({
     where: { memberId: { in: collectable.map((m) => m.id) } },
     orderBy: { capturedAt: "desc" },
     distinct: ["memberId"],
-    select: {
-      memberId: true,
-      kills: true,
-      deaths: true,
-      wins: true,
-      losses: true,
-      timePlayedMinutes: true,
-    },
+    select: { memberId: true, eaNucleusId: true, ...STAT_TOTALS_SELECT },
   });
   const latestByMember = new Map(latestRows.map((row) => [row.memberId, row]));
 
@@ -418,6 +428,8 @@ export async function collectStats(
     // `ok` covers both "counters moved" and "nothing new".
     const okIds: string[] = [];
     const noDataIds: string[] = [];
+    /** Career points to credit, per member. Only members whose counters moved. */
+    const accrued: { id: string; points: number }[] = [];
 
     for (const member of slice) {
       const raw = stats.get(member.eaPersonaId!);
@@ -477,7 +489,18 @@ export async function collectStats(
         repairs: raw.repairs,
         extra: raw.extra,
       });
+      // CAREER POINTS, credited only here — on the same condition that writes a
+      // snapshot. A member read with nothing new earns nothing, which is what
+      // makes this idempotent against re-reads: the accrual is tied to the row
+      // being inserted, not to the member being fetched.
+      const points = accrueCareerPoints(latestByMember.get(member.id) ?? null, {
+        ...raw,
+        eaNucleusId: member.eaNucleusId,
+      });
+      if (points > 0) accrued.push({ id: member.id, points });
+
       report.updated += 1;
+      report.pointsAccrued += points;
       report.members.push({
         id: member.id,
         nickname: member.nickname,
@@ -488,7 +511,17 @@ export async function collectStats(
     if (rows.length > 0) {
       await db.statSnapshot.createMany({ data: rows });
     }
-    await Promise.all([markStatus(okIds, "ok"), markStatus(noDataIds, "no_data")]);
+    // One statement per member rather than a grouped update: `increment` is the
+    // point — reading the balance and writing back a computed total would lose a
+    // concurrent credit, and the manual route can run while the worker is mid
+    // cycle. A batch is three members, so this is three statements at worst.
+    await Promise.all([
+      ...accrued.map(({ id, points }) =>
+        db.member.update({ where: { id }, data: { rankPoints: { increment: points } } }),
+      ),
+      markStatus(okIds, "ok"),
+      markStatus(noDataIds, "no_data"),
+    ]);
     return okIds.length;
   };
 

@@ -115,7 +115,16 @@ model Member {
   bio           String?
   role          MemberRole @default(member)
   /// Cumulative career points driving the rank ladder in src/lib/ranks.ts.
-  /// Seeded with mock values until the scoring rules are defined.
+  ///
+  /// Fed by the collector since 2026-07-28: every snapshot credits the points of
+  /// the progress since the previous one (`accrueCareerPoints`), so the ladder
+  /// moves on its own. Written with `increment`, never as a computed total.
+  ///
+  /// The starting balance came from the v1 site's rank name via
+  /// `pnpm db:import-roster`, and stands in for the career we never watched — a
+  /// member's first reading credits nothing, because those lifetime totals were
+  /// earned before collection existed. `pnpm db:rebase-ranks` converted those
+  /// balances when the ladder was recalibrated.
   rankPoints    Int        @default(0) @map("rank_points")
   joinedAt      DateTime?  @map("joined_at") @db.Date
   active        Boolean    @default(true)

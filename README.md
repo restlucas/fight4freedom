@@ -60,8 +60,14 @@ As convenções de arquitetura estão documentadas nos arquivos `CLAUDE.md` de c
 
 ## Fases
 
-- **Fase 0** — Fundação: template, branding, env, Supabase + Drizzle, schema, seed.
+- **Fase 0** — Fundação: template, branding, env, Supabase + Prisma, schema, seed.
 - **Fase 1** — Vitrine pública (home, membros, medalhas, ranking, melhores jogadas) com dados semeados.
 - **Fase 2** — Auth (Discord) + painel administrativo.
-- **Fase 3** — Worker de scraping do tracker.gg (hora em hora) no Railway/Fly.
-- **Fase 4** — Progressão (gráficos), membro do mês e polimento.
+- **Fase 3** — Coleta de stats pela API do gametools, num worker no Railway (a cada 20 min).
+- **Fase 4** — Ranking por trabalho em equipe, com histórico de temporadas.
+- **Fase 5** — Roster real (98 membros) e ajustes do ranking.
+- **Fase 6** — Diagnóstico de sincronização da coleta no painel.
+- **Fase 7** — Progressão (patente que anda, gráficos), membro do mês e polimento.
+
+As fases 4 a 6 eram 3.5, 3.6 e 3.7 até 28/07; a numeração virou inteira. Detalhes e a tabela de
+tradução estão em `docs/plano.md`.

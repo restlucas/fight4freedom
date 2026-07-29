@@ -180,9 +180,9 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ## Status (atualizado em 2026-07-28)
 
-**Fases 0 a 3.7 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
+**Fases 0 a 6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
 **worker do Railway a cada 20 min** (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
-membros está no banco** (Fase 3.6). O ranking começa a contar do zero: não há histórico, e o
+membros está no banco** (Fase 5). O ranking começa a contar do zero: não há histórico, e o
 primeiro board com pontuação aparece quando os membros acumularem dois snapshots no mesmo mês.
 
 **Primeiro ciclo real no Railway (28/07), e é o número que fecha a Fase 3:** 75 elegíveis varridos
@@ -192,7 +192,7 @@ rodada** — 11 que numa passada só teriam ficado sem leitura. A taxa de falha 
 do orçamento de 8 min.
 
 **O código da coleta está fechado.** O que resta é operacional, e o dono do projeto decidiu em
-28/07 **tratar esses itens conforme o desenvolvimento avança**, sem bloquear a Fase 4:
+28/07 **tratar esses itens conforme o desenvolvimento avança**, sem bloquear a Fase 7:
 
 - **Corrigir os `platformId` pelo painel.** Dois problemas com a mesma causa, ambos com estado
   visível na coluna Stats do painel — o número exato é o que o painel mostrar, não o que está
@@ -242,7 +242,7 @@ Pontas soltas da Fase 0:
 - [x] **Roster real importado (2026-07-27): 98 membros** do export do `fight4freedom.com.br`,
       via `pnpm db:import-roster`. Os 29 de exemplo e todos os snapshots mockados foram apagados
       no mesmo passo — o ranking passa a contar do zero, a partir da primeira coleta.
-      Detalhes na Fase 3.6 abaixo.
+      Detalhes na Fase 5 abaixo.
 - [x] CI corrigido (2026-07-27). Estava **vermelho desde 25/07** em todo push, nas duas jobs, por
       falta de `DATABASE_URL`: o client do Prisma é construído no escopo do módulo
       (`src/lib/db/index.ts`), então o `next build` estourava em "Failed to collect page data for
@@ -322,14 +322,14 @@ Fora de escopo na Fase 2 (ver Backlog): edição manual de stats, upload de melh
       **Ao depurar coleta, olhar `net._http_response`, não `cron.job_run_details`.**
 - [x] **Guarda contra payload parcialmente zerado (2026-07-27):** ver a seção de armadilhas da
       camada de stats abaixo.
-- [x] Roster real no banco: 98 membros importados em 27/07 (Fase 3.6), não pelo painel mas pelo
+- [x] Roster real no banco: 98 membros importados em 27/07 (Fase 5), não pelo painel mas pelo
       `pnpm db:import-roster`.
 - [x] **Coleta fora da Vercel (28/07):** worker no Railway a cada 20 min, cadeia removida da rota,
       `pg_cron` desligado. É o que fechou a fase — 75 elegíveis em 164,9 s, `deferred: 0`.
-- [ ] Teste de fidelidade da §8 com o clã (não bloqueia a Fase 4; bloqueia divulgar as seções de
+- [ ] Teste de fidelidade da §8 com o clã (não bloqueia a Fase 7; bloqueia divulgar as seções de
       stats).
 
-**Próximo passo:** Fase 4. O teste de fidelidade e a correção dos ids seguem em paralelo, conforme
+**Próximo passo:** Fase 7. O teste de fidelidade e a correção dos ids seguem em paralelo, conforme
 o desenvolvimento avança.
 
 ---
@@ -344,7 +344,7 @@ Instalar por projeto (o starter não traz nada disso):
   `prisma/schema.prisma`, aplicado com `pnpm db:push` (schema-first, sem histórico de migrations).
   URLs no `prisma.config.ts`; client com driver adapter em `src/lib/db/index.ts`.
 - **Zod** + `react-hook-form` + `@hookform/resolvers` (forms do painel admin — Fase 2).
-- **Recharts** (gráficos de progressão de stats — Fase 3/4).
+- **Recharts** (gráficos de progressão de stats — Fase 7).
 - **shadcn/ui**: adicionar primitivos conforme necessidade via a skill `add-shadcn-component`
   (`card`, `table`, `avatar`, `badge`, `dialog`, `dropdown-menu`, `form`, `input`, `select`,
   `tabs`, `tooltip`, `sonner`). Nenhum instalado ainda.
@@ -456,6 +456,18 @@ primeira sessão tem zeros coerentes e precisa passar, senão nunca gravamos a e
 
 ## Fases
 
+**Numeração renumerada em 2026-07-28.** As etapas criadas no meio do caminho tinham número
+fracionado (3.5, 3.6, 3.7), o que dava a impressão de improviso. Passaram a ser inteiras e
+sequenciais. O histórico do git usa os números antigos, então a tradução é:
+
+| Antes   | Agora   | Etapa                                    |
+| ------- | ------- | ---------------------------------------- |
+| 0 a 3   | 0 a 3   | inalteradas                              |
+| Fase 3.5 | Fase 4 | Ranking por trabalho em equipe           |
+| Fase 3.6 | Fase 5 | Roster real e ajustes do ranking         |
+| Fase 3.7 | Fase 6 | Diagnóstico de sincronização no painel   |
+| Fase 4  | Fase 7  | Progressão e polimento                   |
+
 ### Fase 0 — Fundação (sem depender do scraper nem da chave de nada)
 
 1. Clonar o starter como `fight4freedom` (padrão do usuário) ou criar a pasta a partir dele.
@@ -538,7 +550,7 @@ _(Reescrita em 2026-07-26; o scraper do tracker.gg foi descartado — ver `docs/
 - **Snapshots `manual` nunca são sobrescritos** — a coleta só insere linhas novas com
   `source: api`, nunca atualiza linhas existentes.
 
-### Fase 3.5 — Ranking por trabalho em equipe: concluída (2026-07-27)
+### Fase 4 — Ranking por trabalho em equipe: concluída (2026-07-27)
 
 Etapa criada entre as Fases 3 e 4 por decisão do dono do clã: o esquema de pontuação passa a
 premiar jogo coletivo acima de abate, e o ranking ganha histórico de temporadas.
@@ -730,7 +742,7 @@ Acompanhamento, sem prazo:
   revelar distorção que dois perfis não mostram — em especial no `revives`, hoje a maior linha
   isolada da pontuação (19% a 22%), e parcialmente dependente de classe.
 
-### Fase 3.6 — Roster real e ajustes do ranking: concluída (2026-07-27)
+### Fase 5 — Roster real e ajustes do ranking: concluída (2026-07-27)
 
 **98 membros importados** do export do site v1, via `pnpm db:import-roster` (dry run por padrão,
 `--apply` para valer, idempotente). Quatro campos aproveitados; o resto do export é a pontuação do
@@ -790,7 +802,7 @@ membros — seria baixável pelo site.
       nasce: ao lado do número que o membro está questionando. O gatilho é um `<button>` de verdade,
       porque o Radix abre o hover card também no **foco**, e é assim que teclado e toque chegam nele.
 
-### Fase 3.7 — Diagnóstico de sincronização no painel: concluída (2026-07-27)
+### Fase 6 — Diagnóstico de sincronização no painel: concluída (2026-07-27)
 
 Uma coluna **Stats** em `/admin/membros` dizendo se a coleta de cada membro está funcionando, e um
 botão para tirar da coleta quem tem cadastro errado.
@@ -818,7 +830,7 @@ que aconteceu", e um timestamp que só anda no sucesso não responde isso.
 | Fora da coleta        | Inativo ou sem vínculo             | —                                             |
 
 Os dois estados de erro são **problemas diferentes com correções diferentes**, e o badge antigo
-"Stats pendentes" juntava os dois — são exatamente os 23 e os 5 diagnosticados na Fase 3.6. Abaixo do
+"Stats pendentes" juntava os dois — são exatamente os 23 e os 5 diagnosticados na Fase 5. Abaixo do
 badge vai o tempo desde a última tentativa, que é o que transforma badge em diagnóstico:
 "Sincronizando" com verificação de dois dias atrás significa coleta parada, e sem o timestamp isso
 parece saudável.
@@ -900,10 +912,112 @@ Lição que vale além deste caso: quando um número do painel contradiz a expec
 painel mede o que promete** antes de caçar o sistema. Aqui o coletor estava a 93% e a leitura dizia
 50%.
 
-### Fase 4 — Progressão e polimento
+### Fase 7 — Progressão e polimento
 
-- Gráficos de progressão (Recharts) no perfil e no ranking (série temporal de `statSnapshot`).
-- "Membro do mês", conquistas automáticas sugeridas a partir de deltas, refino visual/animações.
+**Dividida em duas partes (28/07), e o motivo é dado, não preferência.** O histórico tem dois dias:
+203 snapshots, 73 dos 99 membros com ao menos um, e **só 22 com dois ou mais**, que é o mínimo para
+existir qualquer delta. Gráfico de série temporal desenha um segmento único hoje, e "membro do mês"
+não tem mês para medir. Construir a segunda metade agora seria escrever código só conferível em
+setembro.
+
+#### 7.A — o que independe de histórico
+
+- [x] **Patente viva (28/07).** Era o buraco central da fase: o `rankPoints` só era escrito pelo
+      `import-roster` e pelo seed, então a escada de patentes era uma foto do site v1 e não se movia
+      por mais que o membro jogasse. Agora o coletor credita, a cada snapshot gravado, os pontos do
+      progresso desde o snapshot anterior (`accrueCareerPoints` em `src/lib/stats/points.ts`).
+      Modelo escolhido pelo dono: **soma de todos os deltas coletados**, não soma de temporadas
+      fechadas, para a patente andar dentro do mês corrente também.
+
+      Três regras, cada uma existindo porque a alternativa produz número errado: primeira leitura
+      credita **zero** (os totais de carreira foram ganhos antes de existirmos, e o saldo importado do
+      v1 é o que responde por eles); leitura em conta diferente credita **zero** (subtrair carreiras
+      de contas distintas rendeu 86.914 pontos para 301 minutos de jogo em 28/07); e o crédito usa
+      `increment`, nunca total calculado, porque a rota manual pode rodar no meio do ciclo do worker.
+
+      O crédito está amarrado à **inserção do snapshot**, não à leitura do membro, e é isso que o
+      torna seguro contra releitura: quem foi lido e não jogou não ganha nada.
+
+- [x] **Escada recalibrada (28/07).** Detalhes na seção própria abaixo.
+- [ ] **Gráfico de progressão no perfil.** A query já existe e não é usada: `getMemberProfile` devolve
+      `progression` (`capturedAt`, `kd`, `kills`, `matches`) desde a Fase 1. Falta Recharts (única
+      dependência a instalar), o componente, o estado vazio honesto para quem tem menos de dois pontos
+      e o skeleton espelhando o gráfico, como manda o CLAUDE.md.
+- [ ] **Headshot em percentual** (item 1 do Backlog técnico): mesma camada de exibição, entra junto.
+- [ ] Refino visual e animações.
+
+#### 7.B — depende de um mês real (a partir do fim de agosto)
+
+- [ ] "Membro do mês" e conquistas automáticas sugeridas a partir de deltas.
+- [ ] Tendência mensal no ranking, que só faz sentido com temporadas fechadas em série.
+- [ ] Revisão do `POINT_WEIGHTS` (item 3 do Backlog técnico) — e, junto dela, o reescalonamento da
+      escada, porque as duas coisas estão amarradas.
+
+#### Calibração da escada de patentes (2026-07-28)
+
+**O problema:** os limiares eram provisórios e nunca calibrados. Marechal custava 20.000 pontos.
+
+**A constante:** 150 pontos por hora de jogo, **medida, não estimada**. Nos dois dias coletados o
+roster jogou 66,8 h e ganhou 9.957 pontos, o que dá 149 pts/h; a mediana das carreiras dá 156. A
+unidade que torna a escada auditável é **hora jogada**: todo limiar é `horas × 150`.
+
+**O que a escada antiga produzia**, no ritmo medido:
+
+| Perfil                              | Chegava a Marechal em |
+| ----------------------------------- | --------------------- |
+| Casual, 8 h/mês                     | 16,7 meses            |
+| Regular, 25 h/mês                   | 5,3 meses             |
+| Ativo, 50 h/mês                     | **2,7 meses**         |
+| Hardcore, 100 h/mês                 | **1,3 mês**           |
+| Outlier medido (165 h/mês)          | **24 dias**           |
+
+O outlier não é hipótese: um membro jogou 11 h nos dois dias coletados.
+
+**A escada nova**, aprovada com teto de 240.000 pontos (1.600 h):
+
+| Patente             |   Pontos | Horas | Regular (25 h/mês) | Ativo (50 h/mês) | Hardcore (100 h/mês) |
+| ------------------- | -------: | ----: | ------------------ | ---------------- | -------------------- |
+| Soldado             |        0 |     0 | -                  | -                | -                    |
+| Cabo                |      750 |     5 | 6 d                | 3 d              | 2 d                  |
+| Terceiro-Sargento   |    2.000 |    13 | 16 d               | 8 d              | 4 d                  |
+| Segundo-Sargento    |    4.500 |    30 | 1,2 m              | 18 d             | 9 d                  |
+| Primeiro-Sargento   |    8.000 |    53 | 2,1 m              | 1,1 m            | 16 d                 |
+| Subtenente          |   13.000 |    87 | 3,5 m              | 1,7 m            | 26 d                 |
+| Segundo-Tenente     |   20.000 |   133 | 5,3 m              | 2,7 m            | 1,3 m                |
+| Primeiro-Tenente    |   30.000 |   200 | 8,0 m              | 4,0 m            | 2,0 m                |
+| Capitão             |   42.000 |   280 | 11,2 m             | 5,6 m            | 2,8 m                |
+| Major               |   55.000 |   367 | 14,7 m             | 7,3 m            | 3,7 m                |
+| Tenente-Coronel     |   75.000 |   500 | 20,0 m             | 10,0 m           | 5,0 m                |
+| Coronel             |  100.000 |   667 | 2,2 anos           | 13,3 m           | 6,7 m                |
+| General de Brigada  |  125.000 |   833 | 2,8 anos           | 16,7 m           | 8,3 m                |
+| General de Divisão  |  155.000 | 1.033 | 3,4 anos           | 20,7 m           | 10,3 m               |
+| General de Exército |  190.000 | 1.267 | 4,2 anos           | 2,1 anos         | 12,7 m               |
+| **Marechal**        |  240.000 | 1.600 | **5,3 anos**       | **2,7 anos**     | **16 meses**         |
+
+Três âncoras que sustentam esses números:
+
+1. **Depois de dois meses**, que era o critério do dono, o roster se espalha de Terceiro-Sargento
+   (casual) a Capitão (o outlier). Ninguém perto do topo.
+2. **A carreira inteira do membro mais antigo não chega a Marechal.** O maior total de horas do roster
+   é 814 h, que valeria 122.100 pontos, ou seja General de Brigada. O topo é objetivo de anos.
+3. **A primeira promoção sai em horas.** Cabo a 5 h é o único lugar da escada onde velocidade importa,
+   porque é onde o membro decide se a coisa mede algo.
+
+**Acoplamento a registrar:** os limiares são pontos, então retunar o `POINT_WEIGHTS` muda os pontos
+por hora e **obriga** a reescalar a escada pelo mesmo fator. Sem isso, a dificuldade muda sem ninguém
+tocar em `ranks.ts`. O aviso está no cabeçalho do arquivo e há teste afirmando a ordem de grandeza.
+
+**Migração dos saldos: `pnpm db:rebase-ranks`.** O `rankPoints` importado foi escrito na escala
+antiga (Capitão = 2.500), então subir os limiares novos sem converter rebaixaria 57 dos 99 membros. O
+script lê a patente que o saldo atual sustenta na escada **antiga** (congelada dentro dele, de
+propósito) e grava o limiar novo da **mesma** patente, preservando o excedente já creditado. Ninguém
+sobe, ninguém desce, só a escala muda. Dry run por padrão.
+
+Ordem obrigatória: **deploy primeiro, script depois.** As duas ordens exibem estado errado nos
+minutos intermediários, e essa é a direção inofensiva — a vitrine mostra patente mais baixa por
+alguns minutos. Rodar o script antes mostraria **todo mundo como Marechal** na escada antiga, que é a
+versão que vira captura de tela. O script roda **uma vez**: uma segunda passada leria o saldo já
+convertido contra a escada antiga e inflaria tudo de novo, e é isso que a guarda dele detecta.
 
 ---
 
@@ -1198,7 +1312,7 @@ lembrete no fim.
 
 ## Backlog técnico (pendências pequenas, decidido em 2026-07-28)
 
-Nada aqui bloqueia a Fase 4. São itens fechados em escopo, com o motivo já escrito, para serem
+Nada aqui bloqueia a Fase 7. São itens fechados em escopo, com o motivo já escrito, para serem
 pegos um a um. Os ajustes de "modo desenvolvimento" que existiam nesta seção foram **aplicados** e
 migraram para Deploy > Agendamento: a cadência de 20 min e o cap de identidade por perfil.
 
@@ -1240,6 +1354,10 @@ o backoff não pode ser permanente, porque **corrigir o id no painel tem de volt
 Calibrado com dois membros, ambos Support. Revisar com um mês real de roster completo e classes
 variadas — a série começou em 27/07, então a partir do fim de agosto. Junta com a decisão de
 headshot do item 1.
+
+**Não é uma mudança isolada.** A escada de patentes foi calibrada em 150 pontos por hora (Fase 7),
+então mexer nos pesos muda os pontos por hora e **obriga** a reescalar os 16 limiares de `ranks.ts`
+pelo mesmo fator. Fazer só metade muda a dificuldade de promoção sem ninguém decidir isso.
 
 ### 4. Guarda no `pnpm db:mock-history`
 
