@@ -15,6 +15,7 @@ import { RankCard } from "@/features/clan/components/rank-card";
 import { CLASS_LABEL, memberInitials } from "@/features/clan/lib/format";
 import { getMemberProfile, getStatLeaders } from "@/features/clan/lib/queries";
 import { STAT_KEYS, type StatKey } from "@/features/clan/lib/stat-keys";
+import { MemberBio } from "@/features/profile/components/member-bio";
 import { getSessionProfile } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +67,17 @@ export default async function MemberProfilePage({ params }: Params) {
    * payload — hiding it with CSS would have shipped the data anyway.
    */
   const canSeeProgression = viewer !== null && (viewer.isAdmin || viewer.memberId === member.id);
+
+  /**
+   * Whether the bio turns into a field on click.
+   *
+   * The member themselves and NOBODY else, admins included. Unlike the progression
+   * above, this is a write: an admin editing a member's own words from the public
+   * page would be putting sentences in their mouth, and the panel is where admins
+   * fix data. This flag only decides what renders — the action takes the member from
+   * the session, so it cannot be aimed elsewhere (see features/profile/lib/actions).
+   */
+  const canEditBio = viewer !== null && viewer.memberId === member.id;
 
   return (
     <>
@@ -130,6 +142,15 @@ export default async function MemberProfilePage({ params }: Params) {
                   </span>
                 ) : null}
               </div>
+
+              {/* The member's own words, edited in place. Under the nickname and
+                  platform because that is where a bio belongs: it introduces the
+                  person, so it reads before the numbers do.
+
+                  No wrapper: the component owns its full width, and its text stays
+                  left-aligned even where the header centres on mobile. A field
+                  affordance that centres its text does not read as a field. */}
+              <MemberBio bio={member.bio} canEdit={canEditBio} />
             </div>
 
             {/* Side by side at every width — on mobile they used to stack and

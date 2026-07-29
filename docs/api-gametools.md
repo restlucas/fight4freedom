@@ -225,6 +225,9 @@ Mitigações que devemos adotar:
 
 ### 5.6 Payload grande
 
+> **Número corrigido em 2026-07-29: são 721 KB por jogador, não 100 KB.** Ver §13.1. A conclusão desta
+> seção não muda, só a ordem de grandeza.
+
 100 KB por jogador, cerca de 2,5 MB para 30 membros por coleta. Não é problema para um processo
 servidor, mas guardar isso inteiro no `extra` (jsonb) a cada hora inflaria o banco rápido. Vamos
 extrair o que interessa e descartar o resto.
@@ -627,6 +630,90 @@ simplesmente não aparece — nulo ali significa "não observamos", jamais "nunc
   de quem acabou de se corrigir.
 - **Válvula de escape obrigatória.** Quatro membros não existem em fonte alguma. Sem o "não consegui"
   eles ficariam presos na tela para sempre, e o pedido virou o estado mais urgente do painel.
+
+---
+
+## 13. O que já baixamos e jogamos fora (2026-07-29)
+
+Sondagem feita para dimensionar as Fases 9 a 12 do `plano.md`. Persona `1111751848`, com os mesmos
+parâmetros do coletor (`format_values=false&seperation=true`).
+
+### 13.1 Correção da §5.6: o payload tem 721 KB, não 100 KB
+
+Medido: **721 KB por jogador**, tanto no `GET /bf6/stats/` quanto no `POST /bf6/multiple/`, que foi
+verificado devolvendo **os mesmos arrays** do endpoint individual. A §5.6 fala em 100 KB e está
+desatualizada; a conclusão dela ("extrair o que interessa e descartar o resto") continua certa.
+
+A consequência de produto é a que importa: o worker **já baixa** tudo isso e o parser descarta. Toda
+feature construída sobre esses arrays custa **zero requisição nova**. O que ela custa é linha no banco,
+e é lá que a decisão fica (ver Fase 10 do plano, a aritmética de 1,07 milhão de linhas por dia).
+
+| Array              | Tamanho | Conteúdo                                                             |
+| ------------------ | ------: | -------------------------------------------------------------------- |
+| `weapons`          |      53 | kills, precisão, headshots, tiros, tempo equipado, arte `.webp`      |
+| `gadgets`          |      43 | kills, usos, dano, spots, reparos                                    |
+| `vehicles`         |      22 | kills, dano, distância, tempo dentro                                 |
+| `maps`             |      18 | vitórias, derrotas, partidas, tempo, arte `.webp`. **`[0]` é "All"** |
+| `gameModes`        |      16 | contadores completos por modo, arte **`.svg`**                       |
+| `gameModeGroups`   |       5 | `gm_all`, `gm_mp`, `gm_modbuilder`, `gm_granite`, `gm_granitebr`     |
+| `seasons`/`redsec` |     4/4 | por temporada oficial, com `modes[]` dentro                          |
+| `weaponGroups`     |       9 | soma dos itens. **`[0]` é "All"**                                    |
+| `XP`               |       1 | `{ total, performance, accolades }`                                  |
+
+### 13.2 XP está no endpoint de STATS, não no de profile
+
+`XP: [{ total: 10.308.364, performance: 4.007.831, accolades: 552.450 }]`. Procurar `xp_total` na lista
+plana de `/bf6/profile/` não devolve nada: os nomes lá são outros (`score_total` existe,
+`xp_total` não).
+
+### 13.3 Kills de arma são um TERCEIRO bucket
+
+O achado mais perigoso da sondagem, porque é silencioso:
+
+| Recorte                                     |  Kills |
+| ------------------------------------------- | -----: |
+| `dividedKills.human` (o que o perfil exibe) | 12.320 |
+| `weaponGroups[All].kills`                   | 13.213 |
+| bucket de classes (`kills` top-level)       | 13.695 |
+| `gm_all.kills`                              | 17.587 |
+
+A soma das armas **não fecha** com as kills exibidas no perfil, e a fonte não oferece kill de arma com
+filtro de bot. Mesma natureza do problema de headshots da §10.3 e do item 1 do Backlog técnico. A saída
+adotada na Fase 10 é a mesma de 28/07: rótulo declarando o recorte, com precisão e tempo de uso em
+destaque, em vez de esconder o número.
+
+### 13.4 Badges e dog tags são contadores, e não há como crescer
+
+`/bf6/profile/` devolve `playerCard.badges: 104` e `totalDogTags.intValue: 39` como **números**. Não há
+lista de quais.
+
+Varredura dos **18 endpoints BF6** do `openapi.json` procurando catálogo de badge: `/bf6/progressiontypes/`
+é sobre mutators do Portal (`AiXpFactor`, `MasteryFromAllSourcesXpFactor`), e `/bf6/experience/` responde
+404 no upstream da EA. **Nenhum endpoint lista badge individual.** Uma vitrine de coleção exigiria
+alimentação manual, ou seja o mesmo custo do sistema de medalhas que já existe.
+
+### 13.5 Achado novo: `competitiveRanks[]`
+
+O payload de profile carrega um campo que o anexo não listava e o nosso schema Zod não valida:
+
+```json
+"competitiveRanks": [
+  { "type": "CompetitiveSeason4", "mode": "GraniteSquad0",
+    "modeName": "Redsec Quads", "rankName": "Unranked", "rankImage": null }
+]
+```
+
+Divisão ranked do Redsec, por modo. Entra de graça na Fase 9.2, junto da patente.
+
+### 13.6 `/bf6/gameevents/` é o único lugar da fonte com DATA
+
+A §12 registrou que não existe carimbo de data em lugar nenhum dos dois endpoints de jogador. Esse
+terceiro endpoint tem: devolve os eventos ativos do jogo com epoch real de início e fim (`Season4`,
+o battle pass `BP04`, e as janelas semanais `S04_weekly_group`). Season 4 vai de ~21/07 a meados de
+outubro de 2026.
+
+Não serve para "última partida" (continua impossível), mas serve para alinhar qualquer janela nossa com
+a do jogo. Sem uso hoje: os desafios semanais, que eram o consumidor natural, foram recusados em 29/07.
 
 ---
 

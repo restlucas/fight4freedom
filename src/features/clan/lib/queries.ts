@@ -479,6 +479,13 @@ export type MemberProfile = {
   platformId: string | null;
   role: MemberRole;
   avatarUrl: string | null;
+  /**
+   * The only field on this page the member writes themselves, edited in place on
+   * their own profile (see features/profile/components/member-bio.tsx). Plain text:
+   * rendered with `whitespace-pre-line` so their line breaks survive, never as
+   * markup.
+   */
+  bio: string | null;
   rankPoints: number;
   /** ISO instant (date-only column) — see ProfileMedal.awardedAt. */
   joinedAt: string | null;
@@ -521,6 +528,7 @@ export const getMemberProfile = cachedQuery(
       platformId: member.platformId,
       role: member.role,
       avatarUrl: member.avatarUrl,
+      bio: member.bio,
       rankPoints: member.rankPoints,
       joinedAt: member.joinedAt?.toISOString() ?? null,
       bestClass: latest?.bestClass ?? null,

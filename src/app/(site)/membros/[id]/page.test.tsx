@@ -8,9 +8,15 @@ import { render, screen } from "@/test-utils";
 vi.mock("@/components/refresh-on-focus", () => ({ RefreshOnFocus: () => null }));
 
 // Who is looking at the page, which decides whether the progression section
-// renders at all. Hoisted so the factory below can close over the same spy.
+// renders at all and whether the bio is editable. Hoisted so the factory below can
+// close over the same spy.
 const { getSessionProfile } = vi.hoisted(() => ({ getSessionProfile: vi.fn() }));
 vi.mock("@/lib/auth/session", () => ({ getSessionProfile }));
+
+// MemberBio is rendered inline on this page and imports its Server Action, which
+// pulls in Prisma. The component has its own suite (member-bio.test.tsx); here the
+// action only needs to exist.
+vi.mock("@/features/profile/lib/actions", () => ({ updateBioAction: vi.fn() }));
 
 /** The profile whose page this is — the member reading their own progression. */
 const OWNER = { id: "u-owner", isAdmin: false, memberId: "m1", member: null };
@@ -41,6 +47,7 @@ vi.mock("@/features/clan/lib/queries", () => ({
     rankPoints: 13_000,
     // The data layer serializes dates as ISO strings (the cache is JSON).
     joinedAt: "2025-10-01T00:00:00.000Z",
+    bio: "Jogo de support, quase sempre de noite.",
     bestClass: "assault",
     medalCount: 1,
     totals: {
@@ -194,6 +201,74 @@ describe("MemberProfilePage", () => {
 
       expect(screen.getByText("Progressão")).toBeInTheDocument();
       expect(screen.getByText(/Próxima patente/)).toBeInTheDocument();
+    });
+  });
+
+  // Editing the bio is a WRITE, so the rule is narrower than the progression's: the
+  // member and nobody else, admins included. An admin putting sentences in a
+  // member's mouth from the public page is not a data fix, and data fixes are what
+  // the panel is for.
+  describe("bio editing", () => {
+    it("reads as plain text for a signed-out visitor", async () => {
+      getSessionProfile.mockResolvedValue(null);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByText("Jogo de support, quase sempre de noite.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /bio/i })).not.toBeInTheDocument();
+    });
+
+    it("is not editable by another signed-in member", async () => {
+      getSessionProfile.mockResolvedValue(OTHER_MEMBER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByText("Jogo de support, quase sempre de noite.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /bio/i })).not.toBeInTheDocument();
+    });
+
+    it("is not editable by an admin on someone else's page", async () => {
+      getSessionProfile.mockResolvedValue(ADMIN);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByText("Jogo de support, quase sempre de noite.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /bio/i })).not.toBeInTheDocument();
+    });
+
+    it("is editable by the member themselves", async () => {
+      getSessionProfile.mockResolvedValue(OWNER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByRole("button", { name: "Editar sua bio" })).toBeInTheDocument();
+    });
+
+    it("invites the member to add one when the bio is empty", async () => {
+      const { getMemberProfile } = await import("@/features/clan/lib/queries");
+      const base = await (getMemberProfile as unknown as () => Promise<Record<string, unknown>>)();
+      vi.mocked(
+        getMemberProfile as unknown as (id: string) => Promise<unknown>,
+      ).mockResolvedValueOnce({ ...base, bio: null });
+      getSessionProfile.mockResolvedValue(OWNER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.getByRole("button", { name: "Adicionar uma bio" })).toBeInTheDocument();
+    });
+
+    it("renders nothing where the bio would be when it is empty and not ours", async () => {
+      const { getMemberProfile } = await import("@/features/clan/lib/queries");
+      const base = await (getMemberProfile as unknown as () => Promise<Record<string, unknown>>)();
+      vi.mocked(
+        getMemberProfile as unknown as (id: string) => Promise<unknown>,
+      ).mockResolvedValueOnce({ ...base, bio: null });
+      getSessionProfile.mockResolvedValue(OTHER_MEMBER);
+
+      render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+      expect(screen.queryByText("Adicione uma bio")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /bio/i })).not.toBeInTheDocument();
     });
   });
 });

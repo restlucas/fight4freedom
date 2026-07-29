@@ -178,7 +178,16 @@ Tailwind v4 + shadcn configurado, CI já pronto). App **única** (não monorepo)
 
 ---
 
-## Status (atualizado em 2026-07-28)
+## Status (atualizado em 2026-07-29)
+
+**Fases 9 a 12 planejadas em 29/07**, com escopo fechado pelo dono do projeto: perfil do membro
+(bio editável, patente do jogo, XP), arsenal no perfil (3 armas, modo e mapa mais jogados), operação e
+recrutamento (healthcheck, alerta de inatividade, candidatura no site), e o Discord por último. Três
+ideias foram recusadas com o motivo escrito na abertura dessas fases, para não voltarem do zero:
+arsenal do clã, desafios coletivos semanais e vitrine de badges.
+
+**A 9.1 (bio editável no próprio perfil) está entregue.** É a única das quatro fases com código; o
+resto é plano.
 
 **Fases 0 a 6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
 **worker do Railway a cada 20 min** (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
@@ -1168,6 +1177,543 @@ convertido contra a escada antiga e inflaria tudo de novo, e é isso que a guard
 
 ---
 
+### Fases 9 a 12 — planejadas em 2026-07-29
+
+Levantadas a partir do Backlog de produto, com escopo fechado pelo dono do projeto em 29/07. Quatro
+fases, e a ordem tem motivo: **o Discord é a última** porque é a única que depende de decisão externa
+ao código (canal de fórum ou bot, ver 12.3) e a única que é puro anúncio. Anunciar primeiro e ter
+conteúdo depois é a ordem que produz um canal falando de um site que não mudou.
+
+O que sustenta as três primeiras: uma sondagem da fonte feita em 29/07 e registrada em
+`api-gametools.md` §13. O achado que muda o dimensionamento é que o payload que **já baixamos** tem
+721 KB por jogador e carrega `weapons[53]`, `maps[18]`, `gameModes[16]`, `vehicles[22]`, `gadgets[43]`
+e `XP`. Arsenal e XP no perfil custam **zero requisição nova**.
+
+Escopo recusado na mesma conversa, para não ser rediscutido do zero:
+
+- **Arsenal do clã** (página agregada com a "meta do clã"). Descartado por ora. A tabela da Fase 10
+  suporta, mas ela guarda só o topo de cada membro, então um agregado do clã sairia enviesado para o
+  que já é popular. Se voltar, precisa da coleta completa dos 53 itens, não do recorte da Fase 10.
+- **Desafios coletivos semanais.** Descartado por ora.
+- **Vitrine de badges e dog tags.** Reduzido a três contadores dentro da 9.2, e o motivo é a fonte:
+  ela devolve `badges: 104` e `totalDogTags: 39` como **números**, não como lista. Varremos os 18
+  endpoints BF6 do openapi em 29/07 e nenhum lista badge individual, então esse item não tem como
+  crescer depois sem alimentação manual. Feito com o que existe ou não feito.
+
+### Fase 9 — O perfil como página do membro
+
+O perfil hoje é um retrato gerado por nós: o membro não escreve nada nele e não reconhece nada dele
+como seu. Duas mudanças, uma de cada lado.
+
+#### 9.1 — Bio editável pelo próprio membro: entregue (2026-07-29)
+
+**Escopo, fechado em 29/07: só a `bio`.** Nada além disso. A coluna já existia em
+`prisma/schema.prisma` desde a Fase 0, com comentário escrito, e **não era lida nem escrita em lugar
+nenhum do código**. Esta fase é a leitura e a escrita que faltavam, sem coluna nova.
+
+**Edição no lugar, dentro de `/membros/[id]`.** A bio fica abaixo do nick e da plataforma, no header
+do perfil, ocupando 100% da largura da coluna. Quem é o dono vê borda tracejada no hover, que é o
+convite para clicar; clicar troca por um campo com dois botões de ícone de 32 px (✓ e ✕) à direita. Bio
+vazia mostra "Adicione uma bio" **só para o dono**.
+
+**O desenho é mínimo por exigência, e a exigência tem um número.** O pedido foi "o menor possível" e
+"evite crescer o card header". Isso é atingível porque os cards de patente e classe ao lado têm 153 px
+fixos e são eles que definem a altura do header, então a coluna do meio tem folga embaixo deles.
+Medido a 1280 px num perfil real em 29/07, com a coluna da bio em 526 px:
+
+| Estado                  | Coluna do meio | Header     |
+| ----------------------- | -------------: | ---------- |
+| sem bio                 |          76 px | **219 px** |
+| leitura, 280 caracteres |         146 px | **219 px** |
+| leitura, 10 quebras     |         146 px | **219 px** |
+| edição, 280 caracteres  |         124 px | **219 px** |
+| edição, com erro        |         148 px | **219 px** |
+
+O header **não mexe em estado nenhum**, incluindo o de erro. Três escolhas sustentam isso e não podem
+ser relaxadas sem medir de novo:
+
+- **`line-clamp-3`.** Em `text-sm` dentro de 526 px, 280 caracteres quebram em quatro linhas, e quatro
+  linhas mediram 166 px de coluna, empurrando o header para 232 px. Três linhas dão 146 px e seguram.
+  O clamp também é a única defesa contra bio curta cheia de quebra de linha: 10 quebras mediram 286 px
+  sem clamp. Aparecem ~255 dos 280 caracteres, e clicar mostra o resto.
+- **`text-sm`, e não mais que isso.** A subida de `text-xs` custou 13 px de header sozinha, até o clamp
+  absorver. Não sobrou espaço para outro passo.
+- **Os botões ao lado do campo, em fileira.** A 32 px são mais baixos que os 48 px do campo, então não
+  somam altura. Numa fileira embaixo, somariam.
+
+O contador "5/280 caracteres. Texto simples, sem links" foi removido: o cap virou silencioso e a regra
+de link só aparece como erro depois de tentar salvar.
+
+**Armadilha do método de medição**, para a próxima vez: o Tailwind v4 só emite classe que encontra no
+código, então medir um valor de clamp que não está no arquivo mede **clamp nenhum**, não o valor
+pedido. A primeira tentativa com `line-clamp-3` deu 286 px porque a classe não existia no CSS
+compilado.
+
+A primeira versão era uma rota `/perfil` separada, e foi descartada no mesmo dia pelo dono do
+projeto. O motivo vale registrar porque vale para qualquer autosserviço futuro deste site: uma tela de
+configuração exige que alguém saiba que existe uma segunda URL, e quase todo mundo aqui chega por link
+do Discord direto no perfil. Editar onde se lê elimina esse passo. Custo da troca: o componente virou
+Client Component dentro de uma página pública, então a página passou a receber `canEdit`.
+
+**Decisões:**
+
+- **Só a bio.** `nickname`, `eaName`, `platform` e as duas ids da EA continuam sendo escrita de admin.
+  São chaves de coleta e de identidade: quem confirmou a conta não pode se desvincular sozinho, que é
+  a regra da §12 do estudo da API.
+- **Nem admin edita a bio de outro.** Diferente da progressão, que admin vê no perfil de qualquer um,
+  porque ali é leitura. Aqui é escrita, e admin editando a bio de um membro na página pública está
+  pondo frase na boca dele. Conserto de dado é no painel.
+- **Texto puro, sem markup e sem link.** React já escapa, então o risco não é XSS, é social: campo
+  público de texto livre num clã que recebe membro toda semana é convite a spam. O padrão pega
+  `http://`, `https://` e `www.`, e um `meusite.com` cru passa. É quebra-molas, não filtro: padrão
+  rígido o bastante para pegar todo domínio começa a recusar frase normal. Tem teste travando isso.
+- **Avatar continua vindo do Discord**, capturado no convite. Upload significaria storage, moderação e
+  um caminho de abuso novo para ganhar zero.
+- **`useTransition`, não `useActionState`.** O editor tem que fechar quando o save entra e continuar
+  aberto quando é recusado. Com `useActionState` isso viraria `setState` dentro de efeito, que o ESLint
+  do projeto recusa (`react-hooks/set-state-in-effect`) e que se lê como reação a mudança de estado em
+  vez de reação ao evento que a causou. Aguardar a action dentro da transition põe a decisão no ponto
+  do save.
+
+**Armadilha, e é a que precisa estar escrita:** esta é a **primeira escrita em `member` feita por
+alguém que não é admin**. A RLS está ligada em toda tabela desde 29/07, mas as escritas do app passam
+pelo Prisma com credencial privilegiada, então **a RLS não é a guarda aqui**. A guarda é a Server
+Action, via `requireOwnMemberId()` (`src/lib/auth/session.ts`), que tira o membro da **sessão** e nunca
+de prop nem de form. Quem ler só o schema vai supor o contrário. O `canEdit` da página decide apenas o
+que renderiza.
+
+**Segunda armadilha:** a action tem que chamar `revalidateVitrine(CACHE_TAG.members)`. Sem isso a
+edição espera os 300 s de TTL para aparecer para os outros, que é metade dos "editei e não mudou" do
+item 7 do Backlog técnico. Sem `revalidatePath` junto: `/membros/[id]` é `force-dynamic`, então não há
+cache de página para descartar, e quem editou lê o próprio valor do retorno da action.
+
+**Onde ficou:** `src/features/profile/` (`lib/schemas.ts`, `lib/actions.ts`,
+`components/member-bio.tsx`), mais `bio` em `MemberProfile` e o `canEditBio` na página. O `textarea` do
+shadcn entrou no projeto por causa disto.
+
+**Verificado:** `lint`, `type-check`, `build` e 493 testes passando, 23 deles novos (schema, componente
+nos dois papéis, e as quatro combinações de quem está olhando). **Não verificado:** o ciclo real contra
+o Supabase, só coberto por teste com a action mockada.
+
+#### 9.2 — Patente do jogo, XP, badges e dog tags
+
+O que o membro reconhece como seu vem do jogo, não da nossa escada. As duas convivem, e a nossa
+continua protagonista.
+
+**Duas origens, e é isso que define o desenho:**
+
+| Dado                                                                       | Origem                                  | Custo                       |
+| -------------------------------------------------------------------------- | --------------------------------------- | --------------------------- |
+| `XP.total`, `XP.performance`, `XP.accolades`                               | payload de **stats**, já baixado        | zero requisição             |
+| `rankName`, `playerCard.rank`, `rankImage`, `badges`, `totalDogTags`, `competitiveRanks` | `GET /bf6/profile/`, uma por membro | 1 requisição por membro     |
+
+**Schema:**
+
+```prisma
+// stat_snapshot — contadores monotônicos, mesmo tratamento dos outros
+xpTotal       Int @default(0) @map("xp_total")
+xpPerformance Int @default(0) @map("xp_performance")
+xpAccolades   Int @default(0) @map("xp_accolades")
+
+// member — estado atual, baixa rotatividade
+gameRankName        String?   @map("game_rank_name")
+gameRankLevel       Int?      @map("game_rank_level")
+gameRankImageUrl    String?   @map("game_rank_image_url")
+badgeCount          Int?      @map("badge_count")
+dogTagCount         Int?      @map("dog_tag_count")
+competitiveRankName String?   @map("competitive_rank_name")
+gameProfileReadAt   DateTime? @map("game_profile_read_at") @db.Timestamptz(6)
+```
+
+**Decisões:**
+
+- **XP como coluna do snapshot, não em `extra`.** O perfil lê o snapshot mais recente em toda
+  renderização, e jsonb significaria parsing por linha. De brinde, XP vira um segundo gráfico de
+  progressão sem trabalho novo.
+- **XP nunca pontua.** Só exibe. Nossa escada é calibrada em trabalho em equipe (150 pts/h medidos) e
+  o XP do jogo remunera tempo e desempenho individual. Alimentar `rankPoints` com XP desmontaria a
+  decisão de 27/07 sem ninguém decidir isso.
+- **Patente do jogo em `member`, não em snapshot.** É estado atual e muda a cada dezenas de horas.
+  Série temporal de um valor que quase não anda é linha desperdiçada.
+- **Cadência da chamada de profile: 10 membros por ciclo**, fila por `gameProfileReadAt` ascendente.
+  98 membros dão 10 ciclos, cerca de 3h20 para atualizar todo mundo. Sem cron novo, e reusa
+  exatamente o padrão de fila do `statsCheckedAt`, que é o único que provou rotacionar (ver "Fila da
+  coleta: a armadilha do indicador que não avança").
+- **Falha do profile nunca afeta o snapshot.** `try/catch` próprio e fatia de orçamento própria. Um
+  504 no cosmético não pode custar o dado que pontua.
+- **A patente do clã continua protagonista** e a do jogo entra como selo secundário. São escalas
+  diferentes; lado a lado sem hierarquia visual, a do jogo (nível 141) anula a nossa.
+
+**Armadilha do payload de profile**, já documentada na §12 e que vale repetir porque o código novo
+mora aqui: `stats` é lista plana com nomes repetidos (339 entradas, 268 nomes distintos), então somar
+triplica valor. Usar `profileStat()`, que já pega a primeira ocorrência. E entrada sem a chave `value`
+significa desconhecido, nunca zero.
+
+**Nada a fazer em `next.config.ts`:** `cdn.gametools.network/ranks/**` já está liberado por causa da
+tela de confirmação de identidade.
+
+**Pronto quando:** o perfil mostra a patente do jogo com a insígnia ao lado da patente do clã, e o XP
+total confere com o jogo.
+
+### Fase 10 — Arsenal no perfil
+
+**Escopo, fechado em 29/07:** as **3 melhores armas**, o **modo mais jogado** e o **mapa mais jogado**.
+Cinco itens por membro, nada além.
+
+Esse recorte é o que torna a fase barata, e a aritmética é a decisão. O payload traz 152 linhas de
+detalhe por membro por leitura (53 armas, 43 gadgets, 22 veículos, 18 mapas, 16 modos). Com 98 membros
+e 72 ciclos por dia:
+
+| Estratégia                     | Linhas por dia | Em um ano  |
+| ------------------------------ | -------------: | ---------- |
+| Histórico por leitura          |     ~1.070.000 | inviável   |
+| Estado atual dos 152 itens     |              0 | ~15.000    |
+| **Estado atual do topo (5)**   |              0 | **~490**   |
+
+**Decisão: estado atual do topo, por upsert.** Sem histórico por leitura, mesmo raciocínio do
+`stat_snapshot`, que só grava quando os contadores andam.
+
+**O que torna guardar menos seguro:** a fonte devolve **totais vitalícios idempotentes**. Se um dia o
+clã quiser top 5 em vez de top 3, muda a constante e o ciclo seguinte preenche. Não existe dado
+perdido, porque nunca dependemos de diferença entre leituras aqui.
+
+**Schema:**
+
+```prisma
+enum TopItemKind {
+  weapon
+  gamemode
+  map
+
+  @@map("top_item_kind")
+}
+
+/// O TOPO de cada membro, não o arsenal inteiro.
+///
+/// O nome diz "top" de propósito: são 5 linhas por membro (3 armas, 1 modo, 1 mapa),
+/// e qualquer soma sobre esta tabela é enviesada para o que já é popular. Um
+/// agregado do clã precisa da coleta completa, que esta fase não faz.
+model MemberTopItem {
+  id          String      @id @default(uuid())
+  memberId    String      @map("member_id")
+  kind        TopItemKind
+  /// Posição dentro do tipo, 1-based. Faz o número de linhas por membro ser
+  /// limitado por construção: não existe upsert que faça a tabela crescer.
+  rank        Int
+  /// Id da fonte ("wp_mg_l110", "lvlmpabbasid", "gm_esc").
+  itemId      String      @map("item_id")
+  name        String
+  /// "Machine Guns", "Air Combat". Nulo para mapa e modo.
+  group       String?
+  imageUrl    String?     @map("image_url")
+  /// Qual CONTA EA gerou estes números. Mesmo motivo do stat_snapshot: rebind
+  /// invalida o arsenal inteiro, e um deleteMany por conta resolve.
+  eaNucleusId String?     @map("ea_nucleus_id")
+  kills       Int         @default(0)
+  matches     Int         @default(0)
+  wins        Int         @default(0)
+  losses      Int         @default(0)
+  secondsUsed Int         @default(0) @map("seconds_used")
+  /// O resto por tipo: accuracy, headshotKills, shotsFired.
+  metrics     Json?
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, kind, rank], map: "member_top_item_unique")
+  @@map("member_top_item")
+}
+```
+
+**Decisões:**
+
+- **`@@unique([memberId, kind, rank])` e upsert por essa chave.** A linha significa "a Nª arma
+  favorita deste membro", então o `itemId` muda dentro dela quando o ranking muda. Efeito colateral
+  desejado: a tabela não pode driftar, são 5 linhas por membro para sempre.
+- **Arma ordenada por kills; modo e mapa por tempo jogado.** "Mais jogado" é tempo, não partidas: o
+  mesmo raciocínio do `bestClassByKitTime`, onde o critério é reconhecimento e o membro sabe onde
+  passa as noites.
+- **Pular toda linha `"All"`.** `maps[0]` (`lvlmp`), `weaponGroups[0]` e `classes[0]` são agregados,
+  não itens. Mesma armadilha do `classes[All]`.
+- **Não gravar item com uso zero.** Da maioria das 53 armas o membro nunca tocou.
+- **Escrever no mesmo caminho do snapshot**, e só quando o snapshot foi escrito. Membro que não jogou
+  não gera escrita nenhuma.
+- **`weaponGroups` e `vehicleGroups` não são gravados.** São soma dos itens; derivar na leitura nunca
+  diverge.
+
+**Armadilha nova, e é a mais importante desta fase: as kills de arma estão num TERCEIRO bucket.**
+Medido em 29/07 na persona 1111751848:
+
+| Recorte                         |  Kills |
+| ------------------------------- | -----: |
+| `dividedKills.human` (o que exibimos no perfil) | 12.320 |
+| `weaponGroups[All].kills`       | 13.213 |
+| bucket de classes               | 13.695 |
+| `gm_all.kills`                  | 17.587 |
+
+Ou seja: **a soma das armas não fecha com as kills do próprio perfil**, e é a mesma classe de defeito
+do item 1 do Backlog técnico (a tela mostrando um recorte diferente do que a coleta usa). A fonte não
+oferece kill de arma com filtro de bot. Duas saídas, e a escolhida é a segunda:
+
+1. Não exibir kills por arma. Custa a informação que o membro mais quer ver.
+2. **Exibir com o recorte declarado.** O card destaca **precisão** e **tempo de uso**, que não têm
+   ambiguidade de bucket, e as kills aparecem com a nota "todos os modos, bots incluídos". Mesmo
+   tratamento que o percentual de headshot recebeu em 28/07: rótulo honesto em vez de número escondido.
+
+**Nunca colocar o card de arma imediatamente ao lado do tile de kills do perfil.** Dois números
+próximos com a mesma palavra convidam à subtração, e a subtração dá errado.
+
+**Layout no perfil.** Duas sub-seções, porque são duas perguntas diferentes e o skeleton precisa
+espelhar as duas:
+
+- **"Armas favoritas"** com 3 cards (`grid-cols-1 sm:grid-cols-3`). Cada um: arte, nome, grupo,
+  precisão, tempo de uso, kills com a nota de recorte. A primeira arma recebe destaque (borda de
+  acento), porque "a arma dele" é uma coisa e "as três que ele usa" é outra.
+- **"Onde joga"** com 2 cards (`grid-cols-1 sm:grid-cols-2`): modo mais jogado e mapa mais jogado, com
+  tempo jogado e aproveitamento (`wins`/`matches`).
+
+Skeletons espelhando os dois blocos, como manda o `CLAUDE.md` (nunca spinner nem caixa cinza).
+
+**`next.config.ts` precisa de dois caminhos novos** em `remotePatterns`, narrow como os que já estão:
+`cdn.gametools.network/weapons/**` e `/maps/**`.
+
+**Armadilha de imagem: a arte de MODO é SVG** (`/modes/bf6/escalation.svg`). Servir SVG pelo otimizador
+do Next exige `dangerouslyAllowSVG`, que abre a porta para script dentro do arquivo vindo de um CDN de
+terceiro. **Decisão: não usar a arte de modo.** O card de modo usa ícone nosso. Só armas e mapas, que
+são `.webp`, passam pelo `next/image`.
+
+**Armadilha de latência:** cinco upserts por membro por leitura, dentro do orçamento de 8 min do
+worker. É pouco, mas tem que ser **medido** contra o ciclo real antes de subir, não depois: a Fase 3
+inteira foi reescrita por causa de aritmética de orçamento feita de cabeça.
+
+**Pronto quando:** o perfil mostra as 3 armas com arte e os números conferem com o jogo, e o ciclo do
+worker não perde tempo mensurável.
+
+### Fase 11 — Operação e recrutamento
+
+Nada nesta fase aparece na vitrine. As três são para quem opera o clã.
+
+#### 11.1 — Healthcheck do ciclo
+
+**O problema:** se o container da Railway não subir, ou o processo morrer antes de escrever, ninguém
+sabe. O sintoma aparece dias depois como "o número não muda", e é exatamente o tipo de falha que a
+Fase 6 tornou visível **dentro** de um ciclo e continua invisível **entre** ciclos.
+
+**Desenho:** dead man's switch externo (healthchecks.io serve, plano gratuito). Dois sinais, não um:
+`/start` no começo e o ping de sucesso no fim, **depois** da purga de cache. Ping de falha explícito no
+`catch`.
+
+**Decisões:**
+
+- **Serviço externo, não tabela nossa.** Tabela nossa não avisa quando o problema é o worker não ter
+  subido. Quem detecta ausência tem que estar fora.
+- **Dois sinais** porque "não rodou" e "rodou e quebrou" são diagnósticos diferentes.
+- **Nunca fatal.** Um healthcheck que derruba o ciclo inverte o propósito. Mesmo tratamento do
+  `purgeVitrineCache`.
+- **O payload leva o `CollectReport` resumido**, então o histórico de "quantos atualizados por ciclo"
+  vem de graça e responde "desde quando está ruim".
+
+Env nova: `HEALTHCHECK_URL`, no serviço da Railway. Módulo novo `src/lib/ops/healthcheck.ts`.
+
+**Pronto quando:** desligar o worker de propósito gera alerta em menos de 30 min.
+
+#### 11.2 — Alerta de inatividade no painel
+
+**O problema de definição é a feature.** "Inativo" hoje significa três coisas com três ações
+diferentes, e o painel só conta `active: false`:
+
+| Bucket           | Sinal                                                                    | O que o admin faz                                    |
+| ---------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Não sabemos**  | `statsStatus` em `identity_pending` ou `no_data`, ou `statsPaused`        | Conserta o cadastro. Não é ausência, é dado quebrado |
+| **Sem login**    | `discordId` nulo com `collectWithoutLogin = true`                        | Manda o convite. É o legado dos 98 importados        |
+| **Não joga**     | `statsReadAt` recente e nenhum snapshot novo há N dias                   | Chama a pessoa                                       |
+
+**Decisão que carrega tudo: nunca misturar "não sabemos" com "não jogou".** Um membro cuja identidade
+não resolve aparece como ausente e não é: a gente simplesmente não olhou. É a mesma regra que a §12 já
+aplicou ao card de identidade, onde nulo significa "não observamos", jamais "nunca jogou". Misturar os
+dois produz o admin cobrando presença de quem está esperando conserto de cadastro.
+
+**Por que a idade do snapshot mede jogo, e não coleta:** snapshot só é escrito quando `matches` e
+`secondsPlayed` do `gm_all` andam. Um membro lido com sucesso e sem snapshot novo não jogou. Isso já
+está registrado na Fase 3 e é o que faz a métrica ser honesta.
+
+**Limiares:** 7 dias como risco, 14 como ausente. Constantes num só lugar, ajustáveis sem schema.
+
+Sem schema novo. `getAdminOverview` ganha os três buckets e o painel ganha uma seção com lista
+clicável.
+
+**Pronto quando:** os três buckets mais os ativos fecham com o total de elegíveis, sem sobreposição.
+
+#### 11.3 — Candidatura no site e fila no painel
+
+**Decisão de 29/07: o formulário é nosso, não do Google.** Página pública na aplicação, sem header e
+sem footer, formulário simples. Cai o Apps Script, cai o webhook, cai o segredo de transporte.
+
+**O ganho real não é digitação, é o nome da EA.** A dívida mais cara do projeto (23 de 99 membros com
+id que não corresponde a conta nenhuma, 27 pendentes de identidade em 29/07) nasceu de admin digitando
+o que achava que era o nome. Quem sabe o nome é a própria pessoa, e o formulário é onde perguntar.
+
+**Rota pública:** `src/app/candidatar/page.tsx`, **fora do grupo `(site)`**. Header e footer pertencem
+a `(site)/layout.tsx`, então ficar fora dele já entrega a página limpa, sem `layout` novo. Mesmo
+padrão que `/admin` já usa.
+
+**Campos:** nick no clã, plataforma, **nome de exibição da EA** (obrigatório, é o que resolve a
+identidade), `username` da EA (opcional, desempate entre contas de mesmo nome), handle do Discord, e
+dois opcionais curtos (horário que costuma jogar, como conheceu o clã).
+
+**Schema:**
+
+```prisma
+enum RecruitStatus {
+  pending
+  approved
+  rejected
+
+  @@map("recruit_status")
+}
+
+model Recruit {
+  id             String        @id @default(uuid())
+  nickname       String
+  platform       Platform
+  /// Exatamente o que a pessoa digitou, trimado e nunca normalizado. Mesma regra
+  /// do identity_claim.declaredName: o acento, a tag do clã e a caixa são a
+  /// evidência de que o admin precisa para adivinhar o nome certo.
+  declaredEaName String        @map("declared_ea_name")
+  declaredEaUsername String?   @map("declared_ea_username")
+  discordHandle  String?       @map("discord_handle")
+  answers        Json?
+  status         RecruitStatus @default(pending)
+  /// SHA-256 do IP, para limitar envio em rajada. Hash e não IP: não precisamos
+  /// do endereço, precisamos saber que é o mesmo remetente.
+  ipHash         String?       @map("ip_hash")
+  reviewedBy     String?       @map("reviewed_by")
+  reviewedAt     DateTime?     @map("reviewed_at") @db.Timestamptz(6)
+  /// Preenchido na aprovação.
+  memberId       String?       @map("member_id")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt], map: "recruit_status_created_idx")
+  @@map("recruit")
+}
+```
+
+**Decisões:**
+
+- **Nunca cria membro direto.** Endpoint público que cria membro é qualquer pessoa poluindo o roster e
+  o ranking. Fila de aprovação, e criar continua sendo ação de admin.
+- **Página própria no painel: `/admin/candidaturas`.** Não reusar a tabela de membros. As colunas de lá
+  são diagnóstico de coleta (Stats, sync, identidade) e as de uma fila são outras (o que a pessoa
+  digitou, quando, aprovar ou recusar). É o mesmo motivo pelo qual `identity_claim` é tabela separada
+  em vez de coluna em `member`: uma fila é trabalho a fazer, um roster é estado.
+- **Validar o nome da EA na APROVAÇÃO, não no envio.** `resolveEaIdentity` já existe e é chamado na
+  criação do membro. Validar no envio expõe a fonte comunitária a um endpoint público, que é como se
+  convida abuso. **Melhoria conhecida, não v1:** validar no envio dá ao candidato a chance de se
+  corrigir na hora, que é o que realmente mata o problema na origem; entra se e quando houver rate
+  limit por IP funcionando.
+- **Sem constraint de unicidade.** Não existe id de resposta para dedupe agora. A fila mostra
+  duplicata e a aprovação avisa quando já existe membro com aquele nome de EA. Constraint aqui
+  rejeitaria a segunda tentativa legítima de quem errou na primeira.
+- **Aprovar é um fluxo, não um insert:** cria o `member` com o nome declarado, chama
+  `resolveEaIdentity`, e oferece o link de convite reusando o `invite-dialog` que já existe.
+- **Candidato não é membro.** Nada de `Recruit` entra na vitrine nem no ranking.
+
+**Armadilha: é escrita pública.** Precisa de honeypot, piso de tempo entre carregar e enviar, limite
+por `ipHash` na última hora, tamanho de payload limitado, e mensagem de erro que não ajude a sondar o
+schema. Nada disso é opcional numa rota que qualquer um encontra.
+
+**Pronto quando:** um envio pela página aparece em `/admin/candidaturas`, e aprovar produz membro com
+identidade resolvida mais link de convite.
+
+### Fase 12 — Discord como canal de saída
+
+Última de propósito (ver a abertura das fases 9 a 12). Uma fase e não três features porque as três
+compartilham o módulo novo `src/lib/discord/`, as envs e o gancho de fim de ciclo no worker. O cliente
+de webhook é construído uma vez e serve as três.
+
+Envs, todas no serviço da Railway, com tratamento tolerante em `src/lib/env.ts` (`discordConfigured`,
+igual ao `storageConfigured`) para o build de CI não quebrar sem segredo.
+
+#### 12.1 — Anúncio de promoção
+
+Era o item 1 do Backlog de produto, e o de maior retorno da lista. **O produtor já existe:**
+`recordCollectionEvents` grava `clan_event` com `kind: "promotion"` e `rankSlug` desde a Fase 8.
+
+**Schema:** uma coluna.
+
+```prisma
+announcedAt DateTime? @map("announced_at") @db.Timestamptz(6)
+```
+
+A query é "promoção sem `announcedAt`". Marcar **depois** do POST bem-sucedido.
+
+**Decisões:**
+
+- **Webhook, não bot.** Promoção é saída de mão única. Webhook não precisa de processo ligado, de token
+  com permissão nem de app novo para revisar.
+- **A marca é coluna, não estado em memória.** O worker roda e sai; qualquer coisa em memória some e o
+  ciclo seguinte reanuncia.
+- **Marcar só no sucesso**, nunca em lote otimista. Um 500 do Discord que marcasse como anunciado
+  perderia a promoção para sempre, e promoção é o evento mais raro do sistema.
+- **Agrupar em uma mensagem** quando o ciclo promove vários. Cinco mensagens seguidas viram ruído.
+- **Falha nunca custa o ciclo.** Mesma tolerância da purga de cache.
+- **O link vai para `/membros/[id]`**, que é o que fecha o laço. Combina com o card Open Graph do
+  Backlog de produto, que passa a valer o dobro.
+
+**Armadilha de ordem:** o anúncio roda **depois** da purga de cache. Se o membro clicar antes, cai numa
+página cacheada sem a patente nova, e o anúncio desmente o site. É a mesma armadilha de ordem do item 8
+do Backlog técnico, na direção oposta.
+
+Env: `DISCORD_WEBHOOK_PROMOTIONS`.
+
+#### 12.2 — Digest semanal
+
+Top 5 do mês, promoções da semana, medalhas concedidas, horas jogadas pelo clã, e quem mais subiu
+posições. Tudo derivação do que já existe, sem coleta nova.
+
+**Decisões:**
+
+- **Cron separado na Railway, não dentro do ciclo de 20 min.** O ciclo roda 504 vezes por semana; uma
+  condição "é segunda 9h?" dentro dele é frágil e testa mal. Um segundo cron job é uma linha de
+  configuração.
+- **Reusa `getRanking` e `getActivityFeed`.** O digest tem que dizer o mesmo que o site; query própria
+  é a receita para os dois discordarem.
+- **Idempotente por semana**, com a mesma marca do 12.1 ou uma tabela `digest_run` mínima. Restart da
+  Railway não pode duplicar.
+- **Sem `@everyone` por padrão.** Marcação semanal em canal de clã cansa rápido. Fica como env.
+
+**Aberto, decisão do dono do clã:** dia e horário. A sugestão é segunda de manhã, porque fecha o fim de
+semana, que é quando o clã joga.
+
+Env: `DISCORD_WEBHOOK_DIGEST`.
+
+#### 12.3 — Evento com thread e medalha
+
+O admin cria um torneio no painel, o Discord abre a thread, os membros se inscrevem **no site**, o
+admin fecha e premia os presentes de uma vez com uma medalha `special`.
+
+**O que já existe:** o tier `special` do enum `MedalTier` foi reservado exatamente para isso, e
+`member_medal.note` serve de "Torneio interno 08/2026".
+
+**Schema:** `tournament` (`name`, `description`, `startsAt`, `endsAt`, `discordThreadId`, `medalId?`,
+`status`, `createdBy`) e `tournament_signup` (`tournamentId`, `memberId`, `signedUpAt`, `attended`).
+`attended` é o que vira medalha, não a inscrição: quem se inscreveu e não apareceu não ganha nada.
+
+**Aberto, e bloqueia o início desta sub-fase:** criar thread **não** é possível com webhook comum. Dois
+caminhos:
+
+1. **Canal de fórum.** Executar o webhook com `thread_name` cria um post novo no fórum. Não exige bot,
+   token nem permissão nova. É o caminho recomendado, e precisa de uma verificação no servidor do clã
+   antes de virar plano firme.
+2. **Bot com token** (`DISCORD_BOT_TOKEN` + `DISCORD_GUILD_ID`) chamando a REST API. Funciona em canal
+   de texto normal, e custa um app Discord novo, permissões para revisar e um segredo a mais.
+
+**Decisão: inscrição no site, não no Discord.** Inscrição por reação ou botão exige bot ou endpoint de
+Interactions com verificação de assinatura. Com inscrição no site, esta fase continua sendo saída de
+mão única, igual às outras duas, e o bot fica para quando o clã pedir.
+
+---
+
 ## Backlog (sem fase definida)
 
 Features acordadas como desejáveis, mas **fora de todas as fases planejadas**. Entram quando o
@@ -1641,6 +2187,9 @@ retorno por esforço, e **quase tudo é derivação do dado que já existe** —
 membros já produz mais do que a vitrine mostra. As três primeiras da lista original viraram a Fase 8.
 
 ### 1. Webhook de promoção no Discord — o de maior retorno da lista
+
+> **Promovido à Fase 12.1 em 29/07.** O desenho fechado (coluna `announcedAt`, ordem em relação à purga
+> de cache, agrupamento por ciclo) está lá. O texto abaixo fica como registro do levantamento.
 
 O produtor **já existe**: a Fase 8 grava `clan_event`, então o webhook é ler os eventos novos de um
 ciclo e fazer um POST. Fecha o laço que nenhuma feature interna fecha: o Discord anuncia, o membro
