@@ -28,6 +28,10 @@ function longBoard(size: number): RankingEntry[] {
 const getMonthlyRanking = vi.fn();
 const getRankingMonths = vi.fn();
 
+// Stubbed: it calls useRouter, which needs a router context these tests do not
+// provide, and its behaviour has its own suite (refresh-on-focus.test.tsx).
+vi.mock("@/components/refresh-on-focus", () => ({ RefreshOnFocus: () => null }));
+
 vi.mock("@/features/clan/lib/queries", () => ({
   getMonthlyRanking: (month: string) => getMonthlyRanking(month),
   getRankingMonths: () => getRankingMonths(),

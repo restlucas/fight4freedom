@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 
+import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import { RankingList } from "@/features/clan/components/ranking-list";
 import { RankingMonthPicker } from "@/features/clan/components/ranking-month-picker";
 import { RankingScoringHelp } from "@/features/clan/components/ranking-scoring-help";
@@ -56,6 +57,10 @@ export default async function RankingPage({
 
   return (
     <>
+      {/* The board is only as fresh as the render that produced it, and a collection
+          lands every 20 min. This refetches it when the visitor comes back to the
+          tab, so a page left open does not serve yesterday's positions. */}
+      <RefreshOnFocus />
       {/* Fixed page background: stays put while the board scrolls. */}
       {/* w-screen: see the same background in /membros — 100vw does not change when
           an overlay removes the scrollbar. */}

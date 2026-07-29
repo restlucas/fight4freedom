@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import { rankForPoints, rankProgress } from "@/lib/ranks";
 import { render, screen } from "@/test-utils";
 
+// Stubbed: it calls useRouter, which needs a router context these tests do not
+// provide, and its behaviour has its own suite (refresh-on-focus.test.tsx).
+vi.mock("@/components/refresh-on-focus", () => ({ RefreshOnFocus: () => null }));
+
 vi.mock("@/features/clan/lib/queries", () => ({
   // This member leads the clan in kills, so the Kills tile gets a crown.
   getStatLeaders: vi.fn().mockResolvedValue({

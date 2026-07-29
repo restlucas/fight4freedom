@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MemberMedals } from "@/features/clan/components/member-medals";
 import { MemberProgression } from "@/features/clan/components/member-progression";
@@ -45,6 +46,9 @@ export default async function MemberProfilePage({ params }: Params) {
 
   return (
     <>
+      {/* Same reason as /ranking: stats, career points and the rank forecast all
+          move with the collection, and none of them change on an open page. */}
+      <RefreshOnFocus />
       {/* Page background */}
       {/* w-screen: see the same background in /membros — 100vw does not change when
           an overlay removes the scrollbar. */}

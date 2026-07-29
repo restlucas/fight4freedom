@@ -1080,6 +1080,26 @@ Três decisões que valem registro:
 - [ ] Revisão do `POINT_WEIGHTS` (item 3 do Backlog técnico) — e, junto dela, o reescalonamento da
       escada, porque as duas coisas estão amarradas.
 
+#### 8.4 — Frescor sem recarregar (`RefreshOnFocus`)
+
+As páginas da vitrine são `force-dynamic`, então **toda requisição** recebe dado fresco. O que não
+existia era canal para uma página **já aberta**: o payload RSC é entregue uma vez, então quem deixou
+o `/ranking` aberto durante um ciclo lia um board de vinte minutos atrás, e o único sinal era o
+contador "Encerra em" andando ao lado de números congelados.
+
+`RefreshOnFocus` (em `src/components/`, genérico) chama `router.refresh()` quando o visitante volta
+para a aba. `router.refresh()` e não fetch próprio: ele reexecuta a página no servidor, o que
+recalcula as queries cacheadas que o coletor purgou, e troca o resultado sem perder scroll nem estado
+de cliente. O componente não sabe o que é ranking, então serve qualquer página — está montado em
+`/ranking` e em `/membros/[id]`.
+
+**Não é polling.** Dispara ao voltar para a aba, com piso de 30 s entre execuções, então aba de lado
+não custa nada. Dois eventos porque respondem perguntas diferentes: `visibilitychange` cobre troca de
+aba e `focus` cobre troca de **janela**, onde a aba continua "visible" e o primeiro nunca dispara.
+
+Atualização ao vivo enquanto a pessoa olha é outra feature, e a ferramenta honesta para ela é canal de
+push (item 8 do Backlog técnico).
+
 #### Calibração da escada de patentes (2026-07-28)
 
 **O problema:** os limiares eram provisórios e nunca calibrados. Marechal custava 20.000 pontos.
@@ -1185,6 +1205,38 @@ Decisão de 2026-07-25: **não haverá tela de edição manual.** Stats vêm só
   `/api/stats/collect` continua existindo como **gatilho manual via `curl`** — não há botão
   "coletar agora" no painel (confirmado por busca em 28/07; se um dia existir, ele chama essa rota).
 - CI do starter já roda lint → type-check → test → build + E2E; manter e rodar antes de commitar.
+
+### Segurança: RLS obrigatório em toda tabela (2026-07-29)
+
+**O buraco, medido em produção antes da correção.** O Supabase expõe o schema `public` inteiro via
+PostgREST, autorizado pela `NEXT_PUBLIC_SUPABASE_ANON_KEY` — que vai no bundle do navegador e é
+**pública por projeto**. O que torna isso seguro é o RLS, e o Prisma cria tabela sem RLS. Com a chave
+anônima era possível:
+
+- ler `platform_id`, `ea_persona_id` e `discord_id` de todo membro (exatamente o que o `.gitignore`
+  protege ao manter o export do roster fora de `public/`);
+- ler `token_hash` e `grants_admin` de `member_invite`;
+- ler `profile`, inclusive quem é admin;
+- **escrever e apagar** em qualquer tabela. Um `PATCH /rest/v1/profile` com `is_admin: true`
+  entregaria o painel a qualquer visitante, porque `requireAdmin` lê exatamente essa coluna.
+
+**A correção: `pnpm db:enable-rls`.** Habilita RLS em toda tabela do `public` e **não cria policy
+nenhuma** — isso é o ponto. Nada no app alcança tabela com a chave anônima: ela serve só
+`supabase.auth.*` (`src/lib/supabase/server.ts`), e toda query passa pelo Prisma, que conecta como
+**dono** das tabelas e portanto ignora RLS. Ligar fecha o PostgREST sem tocar no app.
+
+Verificado depois de aplicar: leitura anônima devolve `[]` em todas as tabelas, `PATCH` numa linha que
+existe devolve zero linhas, o Prisma continua lendo, e os números batem (99 membros, 1 profile admin,
+nenhum sinal de alteração).
+
+**Está encadeado no `db:push`**, e isso não é conveniência: um model novo chegaria com RLS desligado e
+reabriria o buraco em silêncio, que foi exatamente como aconteceu na primeira vez. Existe também
+`pnpm db:enable-rls --check`, que só reporta e sai com código diferente de zero — serve para CI se um
+dia quiser travar isso lá.
+
+**Policy só será necessária** se o navegador tiver de ler tabela direto. O primeiro caso provável é o
+Supabase Realtime (item 8 do Backlog técnico), que respeita RLS: sem policy, ele não entrega evento
+nenhum.
 
 ### Convite de admin (bootstrap)
 
@@ -1385,6 +1437,8 @@ vazar por outro caminho, rotacionar significa atualizar a env na Vercel **e** re
   `api` que a guarda de coerência hoje rejeitaria. **Dry run por padrão**; aplica com `--apply`.
   É o caminho para tirar os dados de exemplo quando o roster real entrar pelo painel.
 - `pnpm invite:admin` — reemite o convite de admin (ver Convite de admin acima).
+- `pnpm db:enable-rls` — habilita RLS em toda tabela do schema `public` (ver Segurança acima). Roda
+  automaticamente no fim do `db:push`; `--check` só reporta e falha se achar tabela aberta.
 - `pnpm db:rebase-ranks` — converte os saldos de carreira para a escada recalibrada. **Rodado uma
   vez, em 2026-07-28**, e a guarda dele impede uma segunda passada (ver Deploy > Agendamento).
 
@@ -1541,6 +1595,42 @@ Três saídas possíveis, da mais barata à mais definitiva:
 
 Nada disso é urgente: não afeta número nenhum, só a legenda. Vale resolver junto do item 1, porque os
 dois são a mesma classe de defeito — **a tela mostrando um recorte diferente do que a coleta usa**.
+
+### 8. Push de verdade: Supabase Realtime no lugar do polling
+
+Decidido em 2026-07-29 **ficar de fora por ora**, com o motivo escrito para não ser rediscutido do
+zero. O que existe hoje: o feed do painel consulta a cada 30 s, e `RefreshOnFocus` (Fase 8.4) atualiza
+as páginas quando o visitante volta para a aba. Falta atualização **enquanto a pessoa está olhando**.
+
+**Por que Realtime e não WebSocket nosso.** A Vercel roda funções serverless: não há processo de vida
+longa para segurar conexão, então WebSocket em `/api` está fora por modelo, não por plano. SSE é pior
+que o polling aqui — a função morre no teto de duração e reconecta em loop, e duas invocações não
+compartilham memória, então a função em streaming teria que consultar o banco num laço para saber que a
+coleta rodou (o mesmo polling, movido para o servidor e cobrado pela duração da conexão). WebSocket
+próprio exigiria processo sempre ligado na Railway: funciona, mas é serviço novo para manter e proteger.
+O Realtime do Supabase resolve com servidor de terceiro que já pagamos, e o navegador conecta **direto
+nele**, não na Vercel. `@supabase/supabase-js` já está instalado.
+
+**O desenho certo: empurrar o SINAL, não o dado.** O feed é lista append-only e mesclar no cliente é
+trivial, mas o ranking é lista ordenada, paginada e pesquisável onde `rank`, `points` e `previousRank`
+de toda linha podem mudar — empurrar dados significaria replicar a lógica de ranking no cliente. O
+padrão é: evento chega → `router.refresh()` → o Next reexecuta o render no servidor → as queries
+cacheadas (já purgadas) recalculam. Uma linha de estado no cliente e zero duplicação, igual para
+`/ranking`, `/membros/[id]` e qualquer página futura.
+
+**A armadilha de ordem, que morde na primeira tentativa.** O evento do Realtime nasce do WAL no
+instante do INSERT, que acontece **antes** de o worker purgar o cache. Um cliente que atualizasse
+imediatamente re-renderizaria a partir do board ainda cacheado, não veria novidade e ficaria velho até
+o ciclo seguinte. A correção é o worker gravar um marcador de "ciclo concluído" **depois** da purga e o
+cliente assinar esse marcador em vez dos snapshots. Isso rende de graça algo que o painel vai querer:
+histórico de coletas ("último ciclo: 02:40, 165 s, 3 membros atualizados").
+
+**Pré-requisitos:** RLS já ligado (feito, ver Deploy > Segurança) mais uma policy de SELECT para
+admin em `clan_event`, porque o Realtime respeita RLS e sem policy não entrega evento nenhum; e
+publicar a tabela (`alter publication supabase_realtime add table clan_event`).
+
+**Gatilho para tirar do backlog:** querer o painel realmente ao vivo e eliminar o polling de 30 s, a
+cadência da coleta cair para segundos, ou aparecer mais superfície ao vivo — aí um canal serve todas.
 
 ---
 
