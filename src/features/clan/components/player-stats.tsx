@@ -19,12 +19,26 @@ import type { PlayerClass } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { killsPerMatch, totalMatches, type StatTotals } from "@/lib/stats/snapshots";
 
-import { CLASS_LABEL, formatHours, formatKillsPerMatch, formatNumber } from "../lib/format";
+import {
+  CLASS_LABEL,
+  formatHeadshotRate,
+  formatHours,
+  formatKillsPerMatch,
+  formatNumber,
+} from "../lib/format";
 import { STAT_KEY_LABEL, type StatKey } from "../lib/stat-keys";
 
 interface PlayerStatsProps {
   stats: StatTotals;
   bestClass: PlayerClass | null;
+  /**
+   * Headshots over all-mode kills, 0..1. Null falls back to the absolute count.
+   *
+   * The percentage exists because the absolute number is not comparable with the
+   * Kills tile beside it: headshots include bot kills and `kills` does not, so a
+   * member showed 7.179 kills and 7.720 headshots. See headshotRate.
+   */
+  headshotRate?: number | null;
   /**
    * Sortable stats this member leads in the clan. The matching tiles get a
    * crown. K/D has no tile here, so a K/D lead shows up on /membros only.
@@ -33,7 +47,13 @@ interface PlayerStatsProps {
   className?: string;
 }
 
-export function PlayerStats({ stats, bestClass, leadsIn, className }: PlayerStatsProps) {
+export function PlayerStats({
+  stats,
+  bestClass,
+  headshotRate,
+  leadsIn,
+  className,
+}: PlayerStatsProps) {
   const items: {
     icon: LucideIcon;
     label: string;
@@ -85,8 +105,14 @@ export function PlayerStats({ stats, bestClass, leadsIn, className }: PlayerStat
     },
     {
       icon: Target,
-      label: "Headshots",
-      value: formatNumber(stats.headshots),
+      // Percentage when we can compute it honestly, absolute when we cannot.
+      // The label changes with the unit so the tile never shows "12%" under a
+      // heading that promises a count.
+      label: headshotRate === null || headshotRate === undefined ? "Headshots" : "Headshots %",
+      value:
+        headshotRate === null || headshotRate === undefined
+          ? formatNumber(stats.headshots)
+          : formatHeadshotRate(headshotRate),
       color: "text-rose-500",
     },
     {

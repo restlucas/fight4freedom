@@ -939,12 +939,30 @@ setembro.
       torna seguro contra releitura: quem foi lido e não jogou não ganha nada.
 
 - [x] **Escada recalibrada (28/07).** Detalhes na seção própria abaixo.
-- [ ] **Gráfico de progressão no perfil.** A query já existe e não é usada: `getMemberProfile` devolve
-      `progression` (`capturedAt`, `kd`, `kills`, `matches`) desde a Fase 1. Falta Recharts (única
-      dependência a instalar), o componente, o estado vazio honesto para quem tem menos de dois pontos
-      e o skeleton espelhando o gráfico, como manda o CLAUDE.md.
-- [ ] **Headshot em percentual** (item 1 do Backlog técnico): mesma camada de exibição, entra junto.
-- [ ] Refino visual e animações.
+- [x] **Gráfico de progressão no perfil (28/07).** Recharts via o primitivo `chart` do shadcn,
+      componente em `member-progression.tsx`, seção nova no perfil e skeleton espelhando o gráfico.
+      A série saiu da query para `src/features/clan/lib/progression.ts` (pura, testada), que agora
+      também acumula **pontos de carreira** com a mesma regra do coletor — inclusive as duas recusas
+      (primeira leitura e rebind somam zero).
+
+      **Uma métrica por vez, e isso não é economia.** Pontos e K/D vivem em escalas incomparáveis
+      (30.000 contra 2,99), então plotar juntos exigiria segundo eixo Y, que é a pior coisa que um
+      gráfico pode fazer: o cruzamento das linhas passa a ser artefato das duas escalas. O botão
+      pressionado nomeia a linha, então nem legenda é necessária. Área para contador cumulativo,
+      linha para razão — área lê como volume acumulado, o que é verdade de um total de carreira e
+      falso de uma razão.
+
+      **Três defeitos que só apareceram olhando o gráfico renderizado**, e vale registrar porque
+      nenhum deles falharia em teste: o eixo X repetia "28/07" sete vezes (a coleta roda a cada 20
+      min, então o que distingue as leituras é a hora, não o dia — o formato agora depende do intervalo
+      coberto); o tooltip mostrava "437" sem dizer 437 de quê (um `formatter` custom substitui a linha
+      inteira, inclusive o nome); e o K/D, ajustado automaticamente, virava um precipício porque a
+      variação real de 0,003 ocupava a altura toda do gráfico. Esse último era o pior: o gráfico
+      afirmava um colapso onde o número praticamente não se moveu. Agora a janela mínima é de meio
+      ponto de K/D, então movimento pequeno **parece** pequeno.
+
+- [x] **Headshot em percentual (28/07).** Ver o item 1 do Backlog técnico, resolvido na exibição.
+- [ ] Refino visual e animações. Sem escopo fechado: precisa de direção do dono sobre o que incomoda.
 
 #### 7.B — depende de um mês real (a partir do fim de agosto)
 
@@ -1316,7 +1334,7 @@ Nada aqui bloqueia a Fase 7. São itens fechados em escopo, com o motivo já esc
 pegos um a um. Os ajustes de "modo desenvolvimento" que existiam nesta seção foram **aplicados** e
 migraram para Deploy > Agendamento: a cadência de 20 min e o cap de identidade por perfil.
 
-### 1. Headshots: conferir o valor e exibir em percentual
+### 1. Headshots: exibição CORRIGIDA em 28/07, pontuação ainda aberta
 
 **O problema é real e tem explicação inteira.** Reportado em 28/07: `Wislan Andrade` mostra
 **7.179 kills e 7.720 headshots**, ou seja, mais headshots do que kills. Não é bug de coleta, é
@@ -1332,16 +1350,19 @@ muito contra bots pode passar de 100% se a leitura for "headshots ÷ kills".
 
 **Duas correções, e a segunda depende da primeira:**
 
-1. **Percentual em vez de absoluto** (preferência do dono, 28/07). O denominador tem de ser
-   `extra.allModeKills`, que **já está gravado em todo snapshot** — o mesmo bucket do numerador, então
-   a conta fecha e nunca passa de 100%. Sem migração de dados: hoje `allModeKills` mora no JSON
-   `extra`, e `STAT_TOTALS_SELECT` (`snapshots.ts`) não o seleciona, então é preciso passá-lo às
-   queries ou promovê-lo a coluna própria. A API também pré-calcula `gm_all.headshots` (16,34 no
-   fixture), mas não precisamos dela: é a mesma divisão.
-2. **Decidir o que fazer no ranking.** `POINT_WEIGHTS.headshots = 0.3` pontua um contador de todos os
-   modos enquanto `kills` pontua só humanas, então **farmar bots infla pontos pelo termo de
+1. **[FEITO em 28/07] Percentual em vez de absoluto.** O denominador é `extra.allModeKills`, que já
+   estava gravado em todo snapshot — mesmo bucket do numerador, então a conta fecha e nunca passa de
+   100%. `headshotRate` e `allModeKillsOf` em `snapshots.ts` (essa segunda é o único lugar que estreita
+   o JSON do `extra`, então nenhum call site faz cast às cegas); a query do perfil expõe
+   `headshotRate`, e o tile mostra "Headshots %" com uma decimal, porque as taxas reais se concentram
+   entre 10 e 20% e arredondar para inteiro deixaria metade do clã idêntica. Sem denominador, o tile
+   cai para o número absoluto e o rótulo volta a ser "Headshots" — nunca um percentual errado sob um
+   rótulo que promete contagem.
+2. **[ABERTO] Decidir o que fazer no ranking.** `POINT_WEIGHTS.headshots = 0.3` pontua um contador de
+   todos os modos enquanto `kills` pontua só humanas, então **farmar bots infla pontos pelo termo de
    headshot**. Três saídas: tirar headshot da pontuação, reduzir o peso, ou aceitar e documentar.
-   Não há quarta — a fonte não expõe headshot sem bots. Cabe na revisão do `POINT_WEIGHTS` (item 3).
+   Não há quarta — a fonte não expõe headshot sem bots. Cabe na revisão do `POINT_WEIGHTS` (item 3),
+   e é o que sobrou deste item.
 
 ### 2. Backoff para busca de identidade que sempre falha
 

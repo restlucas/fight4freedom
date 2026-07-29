@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  allModeKillsOf,
   computeKd,
   computeWinRate,
   deltaForMonth,
   emptyTotals,
   withOrdinalRanks,
   hasNewActivity,
+  headshotRate,
   hoursPlayed,
   killsPerMatch,
   latestSnapshot,
@@ -60,6 +62,44 @@ describe("totalMatches / computeWinRate / killsPerMatch", () => {
 describe("hoursPlayed", () => {
   it("converts minutes to hours", () => {
     expect(hoursPlayed(120)).toBe(2);
+  });
+});
+
+describe("headshotRate", () => {
+  it("divides by the ALL-MODE kills, not by the bot-free column", () => {
+    // The real case that exposed this: 7.179 human kills and 7.720 headshots on an
+    // account with 65.533 all-mode kills. Against `kills` the rate would be 107 %;
+    // against the right denominator it is 11,8 %.
+    expect(headshotRate(7_720, 65_533)).toBeCloseTo(0.1178, 4);
+  });
+
+  it("can never exceed 100 %", () => {
+    expect(headshotRate(200, 100)).toBe(1);
+  });
+
+  it("returns null when the all-mode total is missing or zero", () => {
+    // Snapshots written before `allModeKills` was recorded cannot produce a rate.
+    // Null tells the caller to show the absolute count instead of a wrong percent.
+    expect(headshotRate(50, null)).toBeNull();
+    expect(headshotRate(50, 0)).toBeNull();
+  });
+});
+
+describe("allModeKillsOf", () => {
+  it("reads the key out of the extra column", () => {
+    expect(allModeKillsOf({ allModeKills: 65_533 })).toBe(65_533);
+  });
+
+  it("narrows every shape the JSON column can legally hold", () => {
+    // Prisma types this as JsonValue, so null, scalars and arrays all reach here.
+    expect(allModeKillsOf(null)).toBeNull();
+    expect(allModeKillsOf(undefined)).toBeNull();
+    expect(allModeKillsOf(42)).toBeNull();
+    expect(allModeKillsOf("65533")).toBeNull();
+    expect(allModeKillsOf([65_533])).toBeNull();
+    expect(allModeKillsOf({})).toBeNull();
+    expect(allModeKillsOf({ allModeKills: "65533" })).toBeNull();
+    expect(allModeKillsOf({ allModeKills: NaN })).toBeNull();
   });
 });
 

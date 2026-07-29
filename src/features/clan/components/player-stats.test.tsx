@@ -29,6 +29,23 @@ describe("PlayerStats", () => {
     expect(screen.getByText("Assalto")).toBeInTheDocument(); // best class
   });
 
+  it("shows the headshot rate as a percentage when the denominator exists", () => {
+    render(<PlayerStats stats={stats} bestClass="assault" headshotRate={0.118} />);
+    expect(screen.getByText("Headshots %")).toBeInTheDocument();
+    expect(screen.getByText("11,8%")).toBeInTheDocument();
+    // One decimal, not a whole number: real rates cluster between 10 and 20 %, and
+    // rounding would make most of the roster look identical.
+    expect(screen.queryByText("12%")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the absolute count when there is no rate to show", () => {
+    // Snapshots written before `allModeKills` was recorded have no honest
+    // denominator, and an absolute count is better than a wrong percentage.
+    render(<PlayerStats stats={stats} bestClass="assault" headshotRate={null} />);
+    expect(screen.getByText("Headshots")).toBeInTheDocument();
+    expect(screen.getByText("40")).toBeInTheDocument();
+  });
+
   it("renders a dash when there is no best class", () => {
     render(<PlayerStats stats={stats} bestClass={null} />);
     expect(screen.getByText("—")).toBeInTheDocument();

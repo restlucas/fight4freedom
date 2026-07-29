@@ -133,6 +133,41 @@ export function hoursPlayed(timePlayedMinutes: number): number {
   return timePlayedMinutes / 60;
 }
 
+/**
+ * Headshots as a 0..1 fraction of kills — and the denominator is the whole point.
+ *
+ * `headshots` is `gm_all.headshotKills`: every mode, BOTS INCLUDED, because the
+ * class bucket has no headshot field at all (docs/api-gametools.md §10.3). Our
+ * `kills` column is the opposite, `dividedKills.human`, with bots excluded. The two
+ * are therefore NOT comparable, and dividing one by the other produced the report
+ * that opened this: a member showing 7.179 kills and 7.720 headshots, over 100 %.
+ *
+ * So the denominator has to be `extra.allModeKills`, the all-mode total stored
+ * alongside every snapshot. Same bucket on both sides, so the rate is honest and
+ * can never exceed 1.
+ *
+ * Null when the all-mode total is missing or zero: rows written before that key
+ * was recorded cannot produce a rate, and a caller showing the absolute count in
+ * that case is better than showing a wrong percentage.
+ */
+export function headshotRate(headshots: number, allModeKills: number | null): number | null {
+  if (allModeKills === null || allModeKills <= 0) return null;
+  return Math.min(1, headshots / allModeKills);
+}
+
+/**
+ * Reads `allModeKills` out of a snapshot's `extra` JSON column.
+ *
+ * `extra` is `Prisma.JsonValue`, so it is `unknown` in practice — it can be null,
+ * a scalar or an array as far as the type system knows. This is the one place that
+ * narrows it, so callers get a number or null and never an unchecked cast.
+ */
+export function allModeKillsOf(extra: unknown): number | null {
+  if (typeof extra !== "object" || extra === null || Array.isArray(extra)) return null;
+  const value = (extra as Record<string, unknown>).allModeKills;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 /** Most recent snapshot (cumulative totals), or null when there are none. */
 export function latestSnapshot<T extends { capturedAt: Date }>(snapshots: T[]): T | null {
   if (snapshots.length === 0) return null;

@@ -34,6 +34,27 @@ export default function Loading() {
         </div>
       </div>
 
+      {/* Progression (mirror MemberProgression: metric row, then a 260px plot with
+          y-axis labels down the left) */}
+      <div className="mt-10">
+        <Skeleton className="mb-4 h-6 w-32" />
+        <div className="space-y-3 rounded-xl border p-4 sm:p-5">
+          <div className="flex flex-wrap gap-1.5">
+            {["w-20", "w-16", "w-14", "w-20"].map((width) => (
+              <Skeleton key={width} className={`h-8 ${width} rounded-md`} />
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <div className="flex h-[260px] w-[52px] flex-col justify-between py-1">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-3 w-10" />
+              ))}
+            </div>
+            <Skeleton className="h-[260px] flex-1 rounded-md" />
+          </div>
+        </div>
+      </div>
+
       {/* Medals (mirror MemberMedals: circular emblem + text, 2 wide columns) */}
       <div className="mt-10">
         <Skeleton className="mb-4 h-6 w-28" />

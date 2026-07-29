@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MemberMedals } from "@/features/clan/components/member-medals";
+import { MemberProgression } from "@/features/clan/components/member-progression";
 import { PlatformIcon } from "@/features/clan/components/platform-icon";
 import { PlayerStats } from "@/features/clan/components/player-stats";
 import { RankCard } from "@/features/clan/components/rank-card";
@@ -139,7 +140,40 @@ export default async function MemberProfilePage({ params }: Params) {
         {/* Stats */}
         <section className="mt-10">
           <h2 className="font-heading mb-4 text-xl font-semibold">Estatísticas</h2>
-          <PlayerStats stats={member.totals} bestClass={member.bestClass} leadsIn={leadsIn} />
+          <PlayerStats
+            stats={member.totals}
+            bestClass={member.bestClass}
+            headshotRate={member.headshotRate}
+            leadsIn={leadsIn}
+          />
+        </section>
+
+        {/* Progression */}
+        <section className="mt-10">
+          <h2 className="font-heading mb-4 text-xl font-semibold">Progressão</h2>
+          {member.progression.length >= 2 ? (
+            /* Opaque enough to be a chart SURFACE: the page background is a
+               photograph, and a 40 % panel let it read through the plot area. */
+            <div className="bg-secondary/70 rounded-xl border p-4 backdrop-blur-sm sm:p-5">
+              <MemberProgression series={member.progression} />
+            </div>
+          ) : (
+            /* Two readings are the minimum for a line to exist at all, and today
+               most of the roster is below that: collection started on 27/07. The
+               copy says so plainly instead of showing an empty frame that reads as
+               a bug — the same mistake the "Aguardando 1ª leitura" label fixed in
+               the panel. */
+            <div className="bg-secondary/40 text-muted-foreground rounded-xl border p-6 text-sm backdrop-blur-sm">
+              <p className="text-foreground font-medium">Sem histórico suficiente ainda</p>
+              <p className="mt-1">
+                O gráfico aparece a partir da segunda leitura de stats.{" "}
+                {member.progression.length === 1
+                  ? "Este membro tem uma leitura até agora."
+                  : "Este membro ainda não tem nenhuma leitura."}{" "}
+                A coleta roda a cada 20 minutos e só registra uma leitura nova quando o membro joga.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Medals */}

@@ -15,9 +15,11 @@ import { db } from "@/lib/db";
 import { monthKeyToReference } from "@/lib/month";
 import { computePoints } from "@/lib/stats/points";
 import {
+  allModeKillsOf,
   computeKd,
   computeWinRate,
   deltaForMonth,
+  headshotRate,
   pickTotals,
   STAT_TOTALS_SELECT,
   totalMatches,
@@ -25,6 +27,7 @@ import {
   type StatTotals,
 } from "@/lib/stats/snapshots";
 
+import { buildProgression, type ProgressionPoint } from "./progression";
 import { findStatLeaders, type StatLeaders } from "./stat-keys";
 
 /** How many medals the listing shows before collapsing into a "+N" chip. */
@@ -321,14 +324,6 @@ export const getMedalsCatalog = cachedQuery(
   },
 );
 
-export type ProgressionPoint = {
-  /** ISO instant — see ProfileMedal.awardedAt. */
-  capturedAt: string;
-  kd: number;
-  kills: number;
-  matches: number;
-};
-
 export type MemberProfile = {
   id: string;
   nickname: string;
@@ -342,6 +337,15 @@ export type MemberProfile = {
   bestClass: PlayerClass | null;
   medalCount: number;
   totals: StatTotals;
+  /**
+   * Headshots over ALL-MODE kills, as a 0..1 fraction. Null when the snapshot has
+   * no all-mode total to divide by, and the tile falls back to the absolute count.
+   *
+   * Derived here rather than in the component because the denominator lives in the
+   * snapshot's `extra` JSON, which does not belong in the view layer — see
+   * headshotRate for why `totals.kills` is the wrong denominator.
+   */
+  headshotRate: number | null;
   medals: ProfileMedal[];
   progression: ProgressionPoint[];
 };
@@ -374,6 +378,7 @@ export const getMemberProfile = cachedQuery(
       bestClass: latest?.bestClass ?? null,
       medalCount: member.medals.length,
       totals: pickTotals(latest),
+      headshotRate: latest ? headshotRate(latest.headshots, allModeKillsOf(latest.extra)) : null,
       medals: member.medals.map((um) => ({
         id: um.medal.id,
         name: um.medal.name,
@@ -384,12 +389,7 @@ export const getMemberProfile = cachedQuery(
         description: um.medal.description,
         awardedAt: um.awardedAt.toISOString(),
       })),
-      progression: member.snapshots.map((s) => ({
-        capturedAt: s.capturedAt.toISOString(),
-        kd: computeKd(s.kills, s.deaths),
-        kills: s.kills,
-        matches: totalMatches(s),
-      })),
+      progression: buildProgression(member.snapshots),
     };
   },
 );

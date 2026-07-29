@@ -38,6 +38,8 @@ vi.mock("@/features/clan/lib/queries", () => ({
       objectivesCaptured: 15,
       timePlayedMinutes: 120,
     },
+    // 40 headshots over 400 all-mode kills = 10 %.
+    headshotRate: 0.1,
     medals: [
       {
         id: "md1",
@@ -50,6 +52,8 @@ vi.mock("@/features/clan/lib/queries", () => ({
         awardedAt: "2026-07-01T00:00:00.000Z",
       },
     ],
+    // Empty on purpose: most of the roster is here today (collection started on
+    // 27/07), so the empty state is the common case and gets its own test.
     progression: [],
   }),
 }));
@@ -65,6 +69,25 @@ describe("MemberProfilePage", () => {
     // Best class shows in the header badge and in the stats grid.
     expect(screen.getAllByText("Assalto").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/1 de outubro de 2025/)).toBeInTheDocument();
+  });
+
+  it("shows the headshot tile as a percentage, not an absolute count", async () => {
+    // Absolutes here are not comparable with the Kills tile beside them: headshots
+    // include bots, kills do not, which is how a member showed more headshots than
+    // kills. The label carries the unit so the number is never ambiguous.
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+    expect(screen.getByText("Headshots %")).toBeInTheDocument();
+    expect(screen.getByText("10,0%")).toBeInTheDocument();
+    expect(screen.queryByText("Headshots", { exact: true })).not.toBeInTheDocument();
+  });
+
+  it("explains the missing progression chart instead of showing an empty frame", async () => {
+    // A blank plot reads as a bug — the same mistake the panel's "Aguardando 1ª
+    // leitura" label fixed. Two readings are the minimum for a line to exist.
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+    expect(screen.getByText("Progressão")).toBeInTheDocument();
+    expect(screen.getByText("Sem histórico suficiente ainda")).toBeInTheDocument();
+    expect(screen.getByText(/a partir da segunda leitura/)).toBeInTheDocument();
   });
 
   it("shows the rank card with a progress bar and no points on its face", async () => {

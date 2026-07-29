@@ -51,6 +51,15 @@ export function formatKillsPerMatch(value: number): string {
   return value.toFixed(1);
 }
 
+/**
+ * Headshot rate, e.g. "11,8%". One decimal, unlike `formatPercent`: the values
+ * cluster between 10 and 20 %, and rounding to whole numbers would make most of
+ * the roster look identical.
+ */
+export function formatHeadshotRate(fraction: number): string {
+  return `${(fraction * 100).toFixed(1).replace(".", ",")}%`;
+}
+
 /** Ranking score, e.g. "1.240". */
 export function formatPoints(points: number): string {
   return numberFormatter.format(points);
