@@ -17,11 +17,18 @@ export const JOIN_PATH = "/candidatar";
 export const LEGACY_FORM_URL =
   "https://docs.google.com/forms/d/e/1FAIpQLSeBPFiRfVsV_eNloaHeJ4O8UT0CPvW7woRB6CnLDIF_SASwQw/viewform";
 
+/**
+ * Header navigation, in the order it is rendered.
+ *
+ * Ranking sits right after Home (clan owner, 2026-07-29): it is the page the clan
+ * actually competes on, so it comes before the roster and the medals rather than after
+ * them.
+ */
 export const NAV_ITEMS = [
   { href: "/", label: "Home" },
+  { href: "/ranking", label: "Ranking" },
   { href: "/membros", label: "Membros" },
   { href: "/medalhas", label: "Medalhas" },
-  { href: "/ranking", label: "Ranking" },
   { href: "/melhores-jogadas", label: "Melhores jogadas" },
 ] as const;
 
