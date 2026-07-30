@@ -31,6 +31,7 @@ import {
   collectStats,
   WORKER_BUDGET_MS,
   WORKER_IDENTITY_LIMIT,
+  WORKER_PROFILE_LIMIT,
   WORKER_ROUNDS,
 } from "@/lib/stats/collect";
 
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
     budgetMs: WORKER_BUDGET_MS,
     rounds: WORKER_ROUNDS,
     identityLimit: WORKER_IDENTITY_LIMIT,
+    profileLimit: WORKER_PROFILE_LIMIT,
   });
 
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
@@ -79,7 +81,8 @@ async function main(): Promise<void> {
       `${report.recoveredByRetry} membro(s) resgatado(s) | ` +
       // Divided by the calibrated 150 pts/h this is the hours the clan played
       // since the last cycle, which is the cheapest sanity check on the ladder.
-      `${report.pointsAccrued} ponto(s) de carreira creditado(s)`,
+      `${report.pointsAccrued} ponto(s) de carreira creditado(s) | ` +
+      `${report.gameProfilesRead} perfil(is) de jogo lido(s)`,
   );
 
   // `deferred > 0` means the 8-minute ceiling was hit with members never asked

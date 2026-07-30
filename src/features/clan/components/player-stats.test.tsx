@@ -51,3 +51,85 @@ describe("PlayerStats", () => {
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 });
+
+describe("PlayerStats game tiles", () => {
+  const game = {
+    badgeCount: 104,
+    dogTagCount: 39,
+    competitiveRankName: null,
+    competitiveRankMode: null,
+    xpTotal: 10_308_364,
+  };
+
+  it("does not render the game tiles at all when no game data is passed", () => {
+    // The component still serves surfaces that do not collect these.
+    render(<PlayerStats stats={stats} bestClass="assault" />);
+    expect(screen.queryByText("Insígnias")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dog tags")).not.toBeInTheDocument();
+    expect(screen.queryByText("XP total")).not.toBeInTheDocument();
+  });
+
+  it("shows the collectable counts and a compact XP", () => {
+    render(<PlayerStats stats={stats} bestClass="assault" game={game} />);
+
+    expect(screen.getByText("Insígnias")).toBeInTheDocument();
+    expect(screen.getByText("104")).toBeInTheDocument();
+    expect(screen.getByText("Dog tags")).toBeInTheDocument();
+    expect(screen.getByText("39")).toBeInTheDocument();
+    // Compact because the exact figure is 10 monospaced characters and the tile
+    // fits about 8. XP is a magnitude nobody checks digit by digit.
+    expect(screen.getByText("XP total")).toBeInTheDocument();
+    expect(screen.getByText("10,3 mi")).toBeInTheDocument();
+  });
+
+  it("shows a dash for counts not collected yet, rather than hiding the tile", () => {
+    // The pass reads 10 members per cycle, so a new member's tiles fill in within
+    // hours. A tile that disappears and comes back would read as a bug.
+    render(
+      <PlayerStats
+        stats={stats}
+        bestClass="assault"
+        game={{ ...game, badgeCount: null, dogTagCount: null, xpTotal: 0 }}
+      />,
+    );
+
+    expect(screen.getByText("Insígnias")).toBeInTheDocument();
+    expect(screen.getByText("Dog tags")).toBeInTheDocument();
+    expect(screen.getByText("XP total")).toBeInTheDocument();
+    // Zero XP means the snapshot predates the column, not an account with no XP.
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("hides the ranked tile entirely when there is no division", () => {
+    // Unlike the counters above. The source answers "Unranked" for most of the
+    // roster and the collector stores that as null, so a permanent tile would be a
+    // dash on nearly every profile.
+    render(<PlayerStats stats={stats} bestClass="assault" game={game} />);
+    expect(screen.queryByText(/^Ranked/)).not.toBeInTheDocument();
+  });
+
+  it("shows the ranked tile, named after the mode, when there is a division", () => {
+    render(
+      <PlayerStats
+        stats={stats}
+        bestClass="assault"
+        game={{ ...game, competitiveRankName: "Ouro III", competitiveRankMode: "Redsec Duos" }}
+      />,
+    );
+
+    expect(screen.getByText("Ranked Redsec Duos")).toBeInTheDocument();
+    expect(screen.getByText("Ouro III")).toBeInTheDocument();
+  });
+
+  it("falls back to a bare Ranked label when the mode is missing", () => {
+    render(
+      <PlayerStats
+        stats={stats}
+        bestClass="assault"
+        game={{ ...game, competitiveRankName: "Ouro III", competitiveRankMode: null }}
+      />,
+    );
+
+    expect(screen.getByText("Ranked")).toBeInTheDocument();
+  });
+});

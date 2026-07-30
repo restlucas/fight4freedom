@@ -15,6 +15,10 @@ export default function Loading() {
               <Skeleton className="size-5 rounded" />
               <Skeleton className="h-6 w-40" />
             </div>
+            {/* The bio, at its `text-sm` height. Whether a member has one does not
+                move the header — the 153px cards set that — so mirroring the
+                populated column costs nothing when the bio turns out to be empty. */}
+            <Skeleton className="h-6 w-full" />
           </div>
           {/* Both header cards are 118x153 (class and rank). */}
           <div className="flex items-center gap-3">
@@ -24,13 +28,24 @@ export default function Loading() {
         </div>
       </div>
 
-      {/* Stats (12-cell grid) */}
+      {/* Stats, mirroring the two columns: the game panel capped at 20rem on the left
+          (4 rows: level, weapon, mode, map), and 15 tiles in three columns on the
+          right (12 counters plus insígnias, dog tags and XP). The Redsec division
+          would be a 16th and is left out on purpose — it only renders for a member who
+          actually holds one, which is nearly nobody. */}
       <div className="mt-10">
         <Skeleton className="mb-4 h-6 w-32" />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 rounded-md" />
-          ))}
+        <div className="grid items-start gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
+          <div className="grid grid-cols-1 gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-md" />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {Array.from({ length: 15 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 rounded-md" />
+            ))}
+          </div>
         </div>
       </div>
 

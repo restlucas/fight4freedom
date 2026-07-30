@@ -48,6 +48,53 @@ vi.mock("@/features/clan/lib/queries", () => ({
     // The data layer serializes dates as ISO strings (the cache is JSON).
     joinedAt: "2025-10-01T00:00:00.000Z",
     bio: "Jogo de support, quase sempre de noite.",
+    // The GAME's standing, collected on the rotating profile pass (Fase 9.2).
+    gameRankName: "Second Lieutenant V",
+    gameRankLevel: 141,
+    gameRankImageUrl: "https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_sm.png",
+    badgeCount: 104,
+    dogTagCount: 39,
+    // Unranked in the source, which the collector stores as null.
+    competitiveRankName: null,
+    competitiveRankMode: null,
+    xpTotal: 10_308_364,
+    // Fase 10: one of each kind. The mode carries no artwork because its art is SVG
+    // and the collector drops the URL.
+    topItems: [
+      {
+        kind: "weapon",
+        name: "L110",
+        group: "Machine Guns",
+        imageUrl: "https://cdn.gametools.network/weapons/bf6/L110.webp",
+        kills: 3_412,
+        matches: 0,
+        wins: 0,
+        secondsUsed: 21_500,
+        accuracy: 21.91,
+      },
+      {
+        kind: "gamemode",
+        name: "Escalation",
+        group: null,
+        imageUrl: null,
+        kills: 969,
+        matches: 37,
+        wins: 16,
+        secondsUsed: 52_212,
+        accuracy: null,
+      },
+      {
+        kind: "map",
+        name: "Siege of Cairo",
+        group: null,
+        imageUrl: "https://cdn.gametools.network/maps/bf6/Abbasid.webp",
+        kills: 0,
+        matches: 86,
+        wins: 50,
+        secondsUsed: 113_310,
+        accuracy: null,
+      },
+    ],
     bestClass: "assault",
     medalCount: 1,
     totals: {
@@ -119,11 +166,14 @@ describe("MemberProfilePage", () => {
     expect(screen.getByText(/a partir da segunda leitura/)).toBeInTheDocument();
   });
 
-  it("shows the rank card with a progress bar and no points on its face", async () => {
+  it("keeps the CLAN rank in the header card, with its progress bar", async () => {
+    // The clan ladder is what the clan competes on, so it holds the header slot
+    // (clan owner, 2026-07-29). The game's own progression sits above the tiles.
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
     expect(screen.getByText(rankForPoints(13_000).name)).toBeInTheDocument();
-    // The bar is named after the NEXT rank, also derived so a recalibration does
-    // not need this file edited.
+    // The bar is named after the NEXT rank, derived so a recalibration does not
+    // need this file edited.
     expect(
       screen.getByRole("progressbar", {
         name: `Progresso para ${rankProgress(13_000).next?.name}`,
@@ -131,6 +181,54 @@ describe("MemberProfilePage", () => {
     ).toBeInTheDocument();
     // The numbers only show on hover, inside the hover card.
     expect(screen.queryByText(/13\.000/)).not.toBeInTheDocument();
+  });
+
+  it("shows the game's level in the panel above the tiles", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+    expect(screen.getByText("Nível 141")).toBeInTheDocument();
+    expect(screen.getByText("Second Lieutenant V")).toBeInTheDocument();
+  });
+
+  it("shows the best weapon, mode and map in the panel", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+    expect(screen.getByText("Melhor arma")).toBeInTheDocument();
+    expect(screen.getByText("L110")).toBeInTheDocument();
+    expect(screen.getByText("Modo mais jogado")).toBeInTheDocument();
+    expect(screen.getByText("Escalation")).toBeInTheDocument();
+    expect(screen.getByText("Mapa mais jogado")).toBeInTheDocument();
+    expect(screen.getByText("Siege of Cairo")).toBeInTheDocument();
+  });
+
+  it("drops the game panel entirely while nothing has been collected", async () => {
+    // The normal state for a few hours after a member is added: the profile pass
+    // reads 10 per cycle. An empty panel would announce a hole that fills itself.
+    const { getMemberProfile } = await import("@/features/clan/lib/queries");
+    const base = await (getMemberProfile as unknown as () => Promise<Record<string, unknown>>)();
+    vi.mocked(
+      getMemberProfile as unknown as (id: string) => Promise<unknown>,
+    ).mockResolvedValueOnce({ ...base, gameRankName: null, gameRankLevel: null, topItems: [] });
+
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+    expect(screen.queryByText("Nível 141")).not.toBeInTheDocument();
+    // The rest of the section is untouched.
+    expect(screen.getByText("Estatísticas")).toBeInTheDocument();
+    expect(screen.getByText("Insígnias")).toBeInTheDocument();
+  });
+
+  it("shows the collectable counts and XP in the stats grid", async () => {
+    render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
+
+    expect(screen.getByText("Insígnias")).toBeInTheDocument();
+    expect(screen.getByText("104")).toBeInTheDocument();
+    expect(screen.getByText("Dog tags")).toBeInTheDocument();
+    expect(screen.getByText("39")).toBeInTheDocument();
+    expect(screen.getByText("XP total")).toBeInTheDocument();
+    expect(screen.getByText("10,3 mi")).toBeInTheDocument();
+    // Unranked in the source, stored as null, so no tile. See PlayerStats.
+    expect(screen.queryByText(/^Ranked/)).not.toBeInTheDocument();
   });
 
   it("falls back to the default artwork when there is no best class", async () => {

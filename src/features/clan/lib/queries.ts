@@ -8,7 +8,14 @@
 //   - Return values must be JSON-safe, so dates are exposed as ISO strings.
 //   - Arguments become part of the cache key, so no volatile values.
 
-import type { ClanEventKind, MedalTier, MemberRole, Platform, PlayerClass } from "@prisma/client";
+import type {
+  ClanEventKind,
+  MedalTier,
+  MemberRole,
+  Platform,
+  PlayerClass,
+  TopItemKind,
+} from "@prisma/client";
 
 import { cachedQuery, CACHE_TAG } from "@/lib/cache";
 import { db } from "@/lib/db";
@@ -472,6 +479,41 @@ export const getMedalsCatalog = cachedQuery(
   },
 );
 
+/**
+ * Weapon accuracy out of a top item's `metrics` jsonb, or null.
+ *
+ * The ONE place that narrows that JSON, so no call site casts blindly. Same role as
+ * `allModeKillsOf` in src/lib/stats/snapshots.ts, and the same reason it exists: the
+ * value is a percentage the source already computed, and a wrong assumption about its
+ * shape would show a decimal as a percent.
+ */
+function accuracyOf(metrics: unknown): number | null {
+  if (typeof metrics !== "object" || metrics === null) return null;
+  const value = (metrics as Record<string, unknown>).accuracy;
+  return typeof value === "number" && value > 0 ? value : null;
+}
+
+/**
+ * One row of the profile's "top" panel, flattened for the view.
+ *
+ * `accuracy` is lifted out of the row's jsonb here rather than in the component: the
+ * view layer has no business narrowing a `Prisma.JsonValue`, which is the same reason
+ * `headshotRate` is derived in this file (see `allModeKillsOf`).
+ */
+export type ProfileTopItem = {
+  kind: TopItemKind;
+  name: string;
+  /** "Machine Guns" for a weapon; null for a map or a mode. */
+  group: string | null;
+  imageUrl: string | null;
+  kills: number;
+  matches: number;
+  wins: number;
+  secondsUsed: number;
+  /** Already a percentage (21.9), not a fraction. Null for a map or a mode. */
+  accuracy: number | null;
+};
+
 export type MemberProfile = {
   id: string;
   nickname: string;
@@ -487,6 +529,33 @@ export type MemberProfile = {
    */
   bio: string | null;
   rankPoints: number;
+  /**
+   * The account's standing in the GAME, collected on a slow rotating pass (Fase
+   * 9.2). All nullable, and null means "not collected yet" far more often than it
+   * means "does not have one": the pass covers 10 members per cycle, so a fresh
+   * member waits a few hours for it.
+   *
+   * `gameRank` is what the profile header shows IN PLACE OF the clan rank (clan
+   * owner, 2026-07-29), and only there. It never feeds `rankPoints`.
+   */
+  gameRankName: string | null;
+  gameRankLevel: number | null;
+  gameRankImageUrl: string | null;
+  badgeCount: number | null;
+  dogTagCount: number | null;
+  /** Redsec ranked division, already filtered: unranked is stored as null. */
+  competitiveRankName: string | null;
+  competitiveRankMode: string | null;
+  /**
+   * Lifetime account XP from the newest snapshot. Zero means the row predates the
+   * column, which callers render as unknown rather than as an account with no XP.
+   */
+  xpTotal: number;
+  /**
+   * Best weapon, most-played mode and most-played map (Fase 10). At most one of each,
+   * and absent entirely for a member the collector has not read yet.
+   */
+  topItems: ProfileTopItem[];
   /** ISO instant (date-only column) — see ProfileMedal.awardedAt. */
   joinedAt: string | null;
   bestClass: PlayerClass | null;
@@ -515,6 +584,9 @@ export const getMemberProfile = cachedQuery(
       include: {
         snapshots: { orderBy: { capturedAt: "asc" } },
         medals: { include: { medal: true }, orderBy: { awardedAt: "desc" } },
+        // At most three rows, one per kind. Ordered by kind so the panel's rows do
+        // not reshuffle between renders on whatever order Postgres feels like.
+        topItems: { orderBy: { kind: "asc" } },
       },
     });
     if (!member) return null;
@@ -530,6 +602,25 @@ export const getMemberProfile = cachedQuery(
       avatarUrl: member.avatarUrl,
       bio: member.bio,
       rankPoints: member.rankPoints,
+      gameRankName: member.gameRankName,
+      gameRankLevel: member.gameRankLevel,
+      gameRankImageUrl: member.gameRankImageUrl,
+      badgeCount: member.badgeCount,
+      dogTagCount: member.dogTagCount,
+      competitiveRankName: member.competitiveRankName,
+      competitiveRankMode: member.competitiveRankMode,
+      xpTotal: latest?.xpTotal ?? 0,
+      topItems: member.topItems.map((item) => ({
+        kind: item.kind,
+        name: item.name,
+        group: item.group,
+        imageUrl: item.imageUrl,
+        kills: item.kills,
+        matches: item.matches,
+        wins: item.wins,
+        secondsUsed: item.secondsUsed,
+        accuracy: accuracyOf(item.metrics),
+      })),
       joinedAt: member.joinedAt?.toISOString() ?? null,
       bestClass: latest?.bestClass ?? null,
       medalCount: member.medals.length,

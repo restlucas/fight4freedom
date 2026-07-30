@@ -705,7 +705,60 @@ O payload de profile carrega um campo que o anexo não listava e o nosso schema 
 
 Divisão ranked do Redsec, por modo. Entra de graça na Fase 9.2, junto da patente.
 
-### 13.6 `/bf6/gameevents/` é o único lugar da fonte com DATA
+### 13.6 `gameModes[]` mistura agregados, e um deles ganha sempre
+
+**Encontrado rodando um ciclo real em 29/07, não lendo o payload.** A primeira execução da Fase 10
+reportou **"Official" como o modo mais jogado dos 68 membros** que leu, e parecia perfeitamente
+plausível.
+
+`gm_official` carrega **725.434 s** contra os 745.876 s do `gm_all`: é a conta inteira com nome de
+modo. Filtrar o nome literal `"All"` não pega, porque a fonte enfia agregados nas listas de folha com
+nomes diferentes.
+
+Os 16 itens de `gameModes[]` da persona de referência, com os agregados marcados:
+
+| Nome                  | id              |                    Segundos |
+| --------------------- | --------------- | --------------------------: |
+| **Official**          | **gm_official** |                 **725.434** |
+| Conquest              | gm_cq           |                     455.153 |
+| Breakthrough          | gm_bt           |                     146.018 |
+| Escalation            | gm_esc          |                      52.212 |
+| Rush                  | gm_rush         |                      24.459 |
+| Redsec Squad          | gm_brsquad      |                      20.683 |
+| Portal                | gm_modbuilder0  |                      20.442 |
+| Redsec Duo            | gm_graniteDuo   |                       7.689 |
+| King of the Hill      | gm_koth         |                       5.055 |
+| Team deathmatch       | gm_tdm          |                       4.195 |
+| Domination            | gm_dom          |                       3.650 |
+| Gauntlet              | gm_gntgauntlet  |                       2.584 |
+| Squad deathmatch      | gm_sdm          |                       1.707 |
+| _Operations_          | _gm_op_         |        _1.632 (0 partidas)_ |
+| Tactical Obliteration | gm_sqdoblit     |                         397 |
+| _Obliteration_        | _gm_oblitall_   | _397 (idêntico ao de cima)_ |
+
+`gm_oblitall` e `gm_op` também são roll-ups, e ficaram **de fora do filtro de propósito**: são pequenos
+demais para ganhar uma comparação, e excluir `gm_oblitall` pelo nome excluiria junto o modo genérico
+Obliteration, que é legítimo.
+
+**Em `maps[]` só existe um agregado**, o `All` (`lvlmp`) no índice 0. E **"REDSEC" (`lvlftpgranite`) é
+mapa de verdade**, o do battle royale: para um membro do roster ele era honestamente o mais jogado.
+
+### 13.7 No `/bf6/profile/`, até o `name` de `stats[]` pode faltar
+
+A §12 já registrava entrada **sem `value`**. Em 29/07 um ciclo real falhou em **todos** os perfis que
+buscou, em `playerProfiles[0].stats[338].name: expected string, received undefined`: **338 de 339
+entradas estavam boas** e o schema estrito descartou o payload inteiro, levando com ele a patente, as
+insígnias e os tempos de classe.
+
+A lição, e é a segunda vez que este endpoint a ensina: **essa resposta é um saco de linhas
+frouxamente tipadas**, então todo campo dela é opcional até prova em contrário. Entrada sem nome nunca
+casa com uma busca do `profileStat`, então ignorá-la é de graça.
+
+Efeito colateral que vale saber: enquanto o schema era estrito, esse payload derrubava também o card de
+`/confirmar-conta` para qualquer conta com uma linha assim — o membro via um card sem patente e sem
+classe, sem nenhum erro visível.
+
+### 13.8 `/bf6/gameevents/` é o único lugar da fonte com DATA
 
 A §12 registrou que não existe carimbo de data em lugar nenhum dos dois endpoints de jogador. Esse
 terceiro endpoint tem: devolve os eventos ativos do jogo com epoch real de início e fim (`Season4`,

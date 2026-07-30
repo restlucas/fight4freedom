@@ -186,8 +186,12 @@ recrutamento (healthcheck, alerta de inatividade, candidatura no site), e o Disc
 ideias foram recusadas com o motivo escrito na abertura dessas fases, para não voltarem do zero:
 arsenal do clã, desafios coletivos semanais e vitrine de badges.
 
-**A 9.1 (bio editável no próprio perfil) está entregue.** É a única das quatro fases com código; o
-resto é plano.
+**As Fases 9 e 10 estão entregues:** bio editável no próprio perfil, patente do jogo, XP, insígnias e
+dog tags, mais a melhor arma, o modo e o mapa mais jogados. As Fases 11 e 12 seguem como plano.
+
+Duas armadilhas dessas fases só apareceram rodando ciclo real contra a fonte, e as duas parecem
+plausíveis na tela: um roll-up (`gm_official`) sendo eleito "modo mais jogado" de todo o roster, e um
+payload inteiro descartado por uma linha sem `name`. Ver `api-gametools.md` §13.6 e §13.7.
 
 **Fases 0 a 6 concluídas.** O app está no ar em `fight4freedom.vercel.app`, a coleta roda no
 **worker do Railway a cada 20 min** (o `pg_cron` foi desligado em 28/07), e o **roster real de 98
@@ -266,7 +270,8 @@ Pontas soltas da Fase 0:
 - [x] `/membros` + `/membros/[id]` com stats, patentes, medalhas e coroa do líder por estatística.
 - [x] `/medalhas` catálogo com tiers, carrossel e agrupamento.
 - [x] `/ranking` por pontos do mês, com contador de temporada, busca e scroll infinito
-      (`GET /api/ranking`); lógica pura em `src/lib/stats/` e `src/features/clan/lib/ranking.ts`.
+      (board inteiro no render, revelado no cliente); lógica pura em `src/lib/stats/` e
+      `src/features/clan/lib/ranking.ts`.
 - [x] Skeletons por rota, cache (`src/lib/cache.ts`) e testes unitários da lógica derivada.
 - [ ] `/melhores-jogadas` é um placeholder "Em breve" — a rota existe e está linkada em
       `src/lib/site-config.ts`, mas a feature foi movida para o Backlog.
@@ -502,8 +507,10 @@ Rotas via skill `create-route`; UI com componentes shadcn + custom via `create-c
 - `/ranking` — **ranking mensal por pontos** (decidido com o usuário na Fase 1): cada membro
   pontua pelo **progresso dentro do mês** (delta de `statSnapshot`), não pelo acumulado, com
   contador de encerramento da temporada (precisão progressiva: dias+horas, +minutos nos últimos
-  7 dias, +segundos nas últimas 24 h), busca e scroll infinito de 15 em 15 via
-  `GET /api/ranking`. Pesos em `src/lib/stats/points.ts` (`POINT_WEIGHTS`) são **provisórios**
+  7 dias, +segundos nas últimas 24 h), busca e scroll infinito de 15 em 15. O board inteiro
+  vai no render e o cliente só revela por partes: paginar por offset num board que se move a
+  cada coleta duplicava membros na fronteira da página (2026-07-30, ver
+  `src/features/clan/lib/ranking.ts`). Pesos em `src/lib/stats/points.ts` (`POINT_WEIGHTS`) são **provisórios**
   e serão definidos com o clã. Sem toggle "mês vs geral": o acumulado já vive em `/membros`,
   que ordena por K/D, kills, partidas e horas (crescente/decrescente) e **coroa o líder** de
   cada uma dessas quatro estatísticas onde ela aparecer (derivado em query, nada persistido).
@@ -1191,9 +1198,9 @@ e `XP`. Arsenal e XP no perfil custam **zero requisição nova**.
 
 Escopo recusado na mesma conversa, para não ser rediscutido do zero:
 
-- **Arsenal do clã** (página agregada com a "meta do clã"). Descartado por ora. A tabela da Fase 10
-  suporta, mas ela guarda só o topo de cada membro, então um agregado do clã sairia enviesado para o
-  que já é popular. Se voltar, precisa da coleta completa dos 53 itens, não do recorte da Fase 10.
+- **Arsenal do clã** (página agregada com a "meta do clã"). Descartado por ora. A tabela da Fase 10 NÃO
+  serve: ela guarda um item por tipo por membro, então qualquer soma sobre ela é enviesada para o que já
+  é popular. Um agregado do clã precisa da coleta completa dos 152 itens.
 - **Desafios coletivos semanais.** Descartado por ora.
 - **Vitrine de badges e dog tags.** Reduzido a três contadores dentro da 9.2, e o motivo é a fonte:
   ela devolve `badges: 104` e `totalDogTags: 39` como **números**, não como lista. Varremos os 18
@@ -1295,10 +1302,16 @@ shadcn entrou no projeto por causa disto.
 nos dois papéis, e as quatro combinações de quem está olhando). **Não verificado:** o ciclo real contra
 o Supabase, só coberto por teste com a action mockada.
 
-#### 9.2 — Patente do jogo, XP, badges e dog tags
+#### 9.2 — Patente do jogo, XP, badges e dog tags: entregue (2026-07-29)
 
-O que o membro reconhece como seu vem do jogo, não da nossa escada. As duas convivem, e a nossa
-continua protagonista.
+O que o membro reconhece como seu vem do jogo, não da nossa escada.
+
+**Onde cada coisa aparece, fechado com o dono em 29/07:**
+
+- **Patente do jogo:** no painel de uma coluna **acima** dos tiles de estatística, em `/membros/[id]`,
+  e só ali. O card do header segue com a patente do **clã**.
+- **Insígnias, dog tags e XP:** tiles no grid comum de estatísticas.
+- **Divisão ranked do Redsec:** também no grid, mas **só quando existe**.
 
 **Duas origens, e é isso que define o desenho:**
 
@@ -1322,6 +1335,7 @@ gameRankImageUrl    String?   @map("game_rank_image_url")
 badgeCount          Int?      @map("badge_count")
 dogTagCount         Int?      @map("dog_tag_count")
 competitiveRankName String?   @map("competitive_rank_name")
+competitiveRankMode String?   @map("competitive_rank_mode")
 gameProfileReadAt   DateTime? @map("game_profile_read_at") @db.Timestamptz(6)
 ```
 
@@ -1339,155 +1353,155 @@ gameProfileReadAt   DateTime? @map("game_profile_read_at") @db.Timestamptz(6)
   98 membros dão 10 ciclos, cerca de 3h20 para atualizar todo mundo. Sem cron novo, e reusa
   exatamente o padrão de fila do `statsCheckedAt`, que é o único que provou rotacionar (ver "Fila da
   coleta: a armadilha do indicador que não avança").
-- **Falha do profile nunca afeta o snapshot.** `try/catch` próprio e fatia de orçamento própria. Um
-  504 no cosmético não pode custar o dado que pontua.
-- **A patente do clã continua protagonista** e a do jogo entra como selo secundário. São escalas
-  diferentes; lado a lado sem hierarquia visual, a do jogo (nível 141) anula a nossa.
+- **A passada roda por ÚLTIMO no ciclo, com 95% do orçamento como teto.** Ela só gasta o que a
+  varredura deixou. Num ciclo em que a fonte está lenta, o resultado certo é todo mundo com stats
+  lidos e ninguém com insígnia atualizada.
+- **`gameProfileReadAt` é estampado em TODA tentativa, com ou sem sucesso.** É a linha que mantém a
+  fila girando: quem falha sempre ficaria com o timestamp mais antigo para sempre e seria repescado
+  todo ciclo, deixando os outros 88 sem vez. É exatamente a forma do bug que congelou a resolução de
+  identidade por 21 ciclos seguidos em 28/07.
+- **Os campos do perfil, ao contrário, só são escritos no sucesso.** `fetchGameProfile` não distingue
+  "a requisição morreu" de "essa conta não tem patente", então gravar os nulos dele apagaria uma
+  patente boa numa tarde ruim. Um sucesso, sim, é autoritativo: se a divisão sumiu, o tile sai.
+- **"Unranked" é normalizado para nulo em vez de armazenado.** É a resposta para quase todo o roster, e
+  divisão só vale tile quando existe. O que distingue "não tem" de "nunca perguntamos" é o
+  `gameProfileReadAt`.
+- **Falha do profile nunca afeta o snapshot.** `try/catch` próprio, dentro e fora do laço. Os
+  snapshots já estão gravados quando essa passada roda: um refresh cosmético não pode derrubar um
+  ciclo cujo produto já entrou.
+- **O card do header ficou com a patente do CLÃ** (decisão revista em 29/07, depois de ver na tela). A
+  primeira versão trocava uma pela outra ali, e a troca deixava o perfil público sem a única escada em
+  que o clã compete. A patente do jogo passou para o painel acima dos tiles, onde tem largura e não
+  disputa espaço com a nossa.
+- **Tile de ranked só quando há divisão; os outros três aparecem com "—".** A diferença é o tempo de
+  vida do vazio: insígnias e XP entram em horas, então um tile que aparece e desaparece leria como
+  bug; ranked é nicho e provavelmente nunca vai existir para a maioria.
 
-**Armadilha do payload de profile**, já documentada na §12 e que vale repetir porque o código novo
-mora aqui: `stats` é lista plana com nomes repetidos (339 entradas, 268 nomes distintos), então somar
-triplica valor. Usar `profileStat()`, que já pega a primeira ocorrência. E entrada sem a chave `value`
-significa desconhecido, nunca zero.
+**A tolerância que abre exceção no parser, e ela é assimétrica de propósito:** o schema do coletor é
+estrito porque contador faltando significa pular o membro e retentar (snapshot com buraco corrompe o
+delta do mês para sempre). O XP é o **único campo tolerante**: ele não pontua e só é exibido, então
+perder um lote inteiro por um bloco de XP ausente trocaria dado real por cosmético. Ausente cai para
+zero, e zero é lido como "desconhecido", nunca como conta sem XP.
 
-**Nada a fazer em `next.config.ts`:** `cdn.gametools.network/ranks/**` já está liberado por causa da
-tela de confirmação de identidade.
+**Armadilha do payload de profile**, já documentada na §12: `stats` é lista plana com nomes repetidos
+(339 entradas, 268 nomes distintos), então somar triplica valor. Usar `profileStat()`. E entrada sem a
+chave `value` significa desconhecido, nunca zero.
 
-**Pronto quando:** o perfil mostra a patente do jogo com a insígnia ao lado da patente do clã, e o XP
-total confere com o jogo.
+**Segunda armadilha, e essa é nova:** `XP` vem como **array de um elemento**, não como objeto. Parser
+escrito de memória lê `undefined` em produção e passa nos testes. Está fixado no fixture.
 
-### Fase 10 — Arsenal no perfil
+**Nada a fazer em `next.config.ts`:** `cdn.gametools.network/ranks/**` já estava liberado pela tela de
+confirmação de identidade, e a arte da patente vem desse mesmo caminho.
 
-**Escopo, fechado em 29/07:** as **3 melhores armas**, o **modo mais jogado** e o **mapa mais jogado**.
-Cinco itens por membro, nada além.
+**Onde ficou:** `GameProfile` e `fetchGameProfile` no `StatsProvider`; `toGameProfile` em
+`stats/gametools.ts` (fonte única de onde a patente mora, lida também pelo `toIdentityCard`);
+`readGameProfiles` em `stats/collect.ts`; `GameRankCard` em `features/clan/components/`; os tiles em
+`PlayerStats` via a prop `game`; `formatCompactNumber` em `lib/format.ts` (XP tem oito dígitos e não
+cabe num tile).
+
+**Verificado:** `lint`, `type-check`, `build` e 518 testes passando, 24 deles novos. **Não
+verificado:** um ciclo real contra a fonte, e o `pnpm db:push` que cria as colunas.
+
+### Fase 10 — Melhor arma, modo e mapa no perfil: entregue (2026-07-29)
+
+**Escopo, fechado em 29/07:** **uma** arma (a melhor), **um** modo (o mais jogado) e **um** mapa (o mais
+jogado). Três itens por membro, nada além. A versão anterior do plano previa 3 armas, e o corte para uma
+veio na mesma conversa.
+
+Elas aparecem como linhas do painel de uma coluna que a 9.2 abriu acima dos tiles, junto do nível no BF6.
 
 Esse recorte é o que torna a fase barata, e a aritmética é a decisão. O payload traz 152 linhas de
 detalhe por membro por leitura (53 armas, 43 gadgets, 22 veículos, 18 mapas, 16 modos). Com 98 membros
 e 72 ciclos por dia:
 
-| Estratégia                     | Linhas por dia | Em um ano  |
-| ------------------------------ | -------------: | ---------- |
-| Histórico por leitura          |     ~1.070.000 | inviável   |
-| Estado atual dos 152 itens     |              0 | ~15.000    |
-| **Estado atual do topo (5)**   |              0 | **~490**   |
+| Estratégia                   | Linhas por dia | Total estável |
+| ---------------------------- | -------------: | ------------- |
+| Histórico por leitura        |     ~1.070.000 | inviável      |
+| Estado atual dos 152 itens   |              0 | ~15.000       |
+| **Estado atual do topo (3)** |              0 | **~294**      |
 
-**Decisão: estado atual do topo, por upsert.** Sem histórico por leitura, mesmo raciocínio do
-`stat_snapshot`, que só grava quando os contadores andam.
+Medido depois de entregar: **216 linhas** para os 72 membros que a coleta lê hoje.
+
+**Decisão: estado atual, por upsert.** Sem histórico, mesmo raciocínio do `stat_snapshot`.
 
 **O que torna guardar menos seguro:** a fonte devolve **totais vitalícios idempotentes**. Se um dia o
-clã quiser top 5 em vez de top 3, muda a constante e o ciclo seguinte preenche. Não existe dado
-perdido, porque nunca dependemos de diferença entre leituras aqui.
+clã quiser top 3 de armas, volta a coluna `rank`, muda a constante, e o ciclo seguinte preenche. Não
+existe dado perdido, porque nada aqui depende de diferença entre leituras.
 
-**Schema:**
-
-```prisma
-enum TopItemKind {
-  weapon
-  gamemode
-  map
-
-  @@map("top_item_kind")
-}
-
-/// O TOPO de cada membro, não o arsenal inteiro.
-///
-/// O nome diz "top" de propósito: são 5 linhas por membro (3 armas, 1 modo, 1 mapa),
-/// e qualquer soma sobre esta tabela é enviesada para o que já é popular. Um
-/// agregado do clã precisa da coleta completa, que esta fase não faz.
-model MemberTopItem {
-  id          String      @id @default(uuid())
-  memberId    String      @map("member_id")
-  kind        TopItemKind
-  /// Posição dentro do tipo, 1-based. Faz o número de linhas por membro ser
-  /// limitado por construção: não existe upsert que faça a tabela crescer.
-  rank        Int
-  /// Id da fonte ("wp_mg_l110", "lvlmpabbasid", "gm_esc").
-  itemId      String      @map("item_id")
-  name        String
-  /// "Machine Guns", "Air Combat". Nulo para mapa e modo.
-  group       String?
-  imageUrl    String?     @map("image_url")
-  /// Qual CONTA EA gerou estes números. Mesmo motivo do stat_snapshot: rebind
-  /// invalida o arsenal inteiro, e um deleteMany por conta resolve.
-  eaNucleusId String?     @map("ea_nucleus_id")
-  kills       Int         @default(0)
-  matches     Int         @default(0)
-  wins        Int         @default(0)
-  losses      Int         @default(0)
-  secondsUsed Int         @default(0) @map("seconds_used")
-  /// O resto por tipo: accuracy, headshotKills, shotsFired.
-  metrics     Json?
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
-
-  @@unique([memberId, kind, rank], map: "member_top_item_unique")
-  @@map("member_top_item")
-}
-```
+**Schema:** enum `TopItemKind { weapon, gamemode, map }` e o model `MemberTopItem`, com
+`@@unique([memberId, kind])`. **Sem coluna `rank`**, e é isso que o escopo de um item por tipo compra:
+a linha significa "a melhor arma deste membro", então o `itemId` muda dentro dela quando a favorita
+muda, e nenhum upsert consegue fazer a tabela crescer. Querer um top 3 é exatamente o que traria o
+`rank` de volta.
 
 **Decisões:**
 
-- **`@@unique([memberId, kind, rank])` e upsert por essa chave.** A linha significa "a Nª arma
-  favorita deste membro", então o `itemId` muda dentro dela quando o ranking muda. Efeito colateral
-  desejado: a tabela não pode driftar, são 5 linhas por membro para sempre.
-- **Arma ordenada por kills; modo e mapa por tempo jogado.** "Mais jogado" é tempo, não partidas: o
-  mesmo raciocínio do `bestClassByKitTime`, onde o critério é reconhecimento e o membro sabe onde
-  passa as noites.
-- **Pular toda linha `"All"`.** `maps[0]` (`lvlmp`), `weaponGroups[0]` e `classes[0]` são agregados,
-  não itens. Mesma armadilha do `classes[All]`.
-- **Não gravar item com uso zero.** Da maioria das 53 armas o membro nunca tocou.
-- **Escrever no mesmo caminho do snapshot**, e só quando o snapshot foi escrito. Membro que não jogou
-  não gera escrita nenhuma.
-- **`weaponGroups` e `vehicleGroups` não são gravados.** São soma dos itens; derivar na leitura nunca
-  diverge.
+- **Arma ordenada por kills; modo e mapa por tempo jogado.** Arma é escolha de ferramenta, e "aquela com
+  que eu mato" é o que o membro chama de melhor. Mapa e modo são onde ele passa as noites, e escolher
+  por vitórias reportaria aquele em que ele teve uma noite boa. Mesmo raciocínio do `bestClassByKitTime`.
+- **Zero não ganha.** Conta que nunca atirou não gera linha de arma, em vez de uma arbitrária entre 53
+  empates em zero.
+- **Escrito para todo membro LIDO, não só para quem jogou.** Diferente do snapshot: são estado atual, e
+  o membro que não jogou tem os mesmos itens de destaque de ontem. Por isso a tabela se preenche num
+  ciclo, não conforme as pessoas voltam a jogar.
+- **A arte de modo é descartada na coleta.** É SVG (`/modes/bf6/escalation.svg`), e servir SVG de
+  terceiro pelo otimizador do Next exige `dangerouslyAllowSVG`, que aceita script dentro de um arquivo
+  que não controlamos. Descartada na origem, não ignorada no componente, para nada a jusante ser
+  tentado a renderizar. A linha usa ícone nosso. `next.config.ts` liberou só `/weapons/**` e `/maps/**`.
+- **Kind ausente não apaga o que já sabemos.** A fonte às vezes serve payload parcialmente zerado
+  (`isIncoherentPayload`), então lista vazia mantém a linha anterior.
 
-**Armadilha nova, e é a mais importante desta fase: as kills de arma estão num TERCEIRO bucket.**
-Medido em 29/07 na persona 1111751848:
+**A armadilha que CHEGOU EM PRODUÇÃO, e é a lição da fase:** o primeiro ciclo real reportou **"Official"
+como o modo mais jogado dos 68 membros** que leu. `gm_official` é um roll-up de todos os modos oficiais,
+com 725.434 s contra os 745.876 s do `gm_all`: a conta inteira com nome de modo. Filtrar o nome literal
+`"All"` não pegava.
 
-| Recorte                         |  Kills |
-| ------------------------------- | -----: |
-| `dividedKills.human` (o que exibimos no perfil) | 12.320 |
-| `weaponGroups[All].kills`       | 13.213 |
-| bucket de classes               | 13.695 |
-| `gm_all.kills`                  | 17.587 |
+O que isso ensina, além do filtro: **um agregado sempre ganha uma comparação de "mais jogado", e a
+escolha errada é invisível porque parece perfeitamente plausível.** A tabela completa dos 16 modos, com
+os três roll-ups identificados, está em `api-gametools.md` §13.6. As 68 linhas erradas foram apagadas e
+refeitas no ciclo seguinte, porque estado atual é descartável por construção.
 
-Ou seja: **a soma das armas não fecha com as kills do próprio perfil**, e é a mesma classe de defeito
-do item 1 do Backlog técnico (a tela mostrando um recorte diferente do que a coleta usa). A fonte não
-oferece kill de arma com filtro de bot. Duas saídas, e a escolhida é a segunda:
+**Segunda armadilha, também só visível em produção:** o `/bf6/profile/` devolve entrada de `stats[]
+**sem a chave `name`**, e o schema estrito descartava o payload inteiro por causa de 1 linha em 339. Isso
+derrubou os 11 perfis do segundo ciclo e, de quebra, vinha derrubando em silêncio o card de
+`/confirmar-conta`. Detalhes em §13.7.
 
-1. Não exibir kills por arma. Custa a informação que o membro mais quer ver.
-2. **Exibir com o recorte declarado.** O card destaca **precisão** e **tempo de uso**, que não têm
-   ambiguidade de bucket, e as kills aparecem com a nota "todos os modos, bots incluídos". Mesmo
-   tratamento que o percentual de headshot recebeu em 28/07: rótulo honesto em vez de número escondido.
+**Terceira armadilha, essa prevista: as kills de arma estão num quarto recorte.** `weaponGroups[All]` dá
+13.213 contra as 12.320 humanas que o perfil exibe e os 13.695 do bucket de classes. A soma das armas
+não fecha com o tile de Kills ao lado. Saída adotada, a mesma do percentual de headshot de 28/07:
+declarar o recorte em vez de esconder o número, com precisão e tempo de uso em destaque.
 
-**Nunca colocar o card de arma imediatamente ao lado do tile de kills do perfil.** Dois números
-próximos com a mesma palavra convidam à subtração, e a subtração dá errado.
+**Layout, fechado depois de ver na tela (29/07): a seção Estatísticas é um grid de DUAS COLUNAS lado a
+lado.** A da esquerda tem largura máxima de 20rem e leva o que o membro joga (nível no BF6, arma, modo,
+mapa); a da direita leva os contadores num grid de 3 colunas. A divisão vale de `lg` para cima: abaixo
+disso as duas empilham, porque 20rem mais um grid de 3 colunas não cabe num tablet.
 
-**Layout no perfil.** Duas sub-seções, porque são duas perguntas diferentes e o skeleton precisa
-espelhar as duas:
+Cada item é uma linha, com arte à esquerda, nome e rótulo no meio, e os números à direita. Arma reporta
+kills e precisão; mapa e modo reportam horas e aproveitamento, e o aproveitamento só aparece quando há
+partidas para dividir (senão seria "NaN%" ou um 0% plausível). A ordem das linhas é fixa (arma, modo,
+mapa) e não ordenada: elas respondem três perguntas diferentes, então ranquear uma contra a outra não
+significaria nada.
 
-- **"Armas favoritas"** com 3 cards (`grid-cols-1 sm:grid-cols-3`). Cada um: arte, nome, grupo,
-  precisão, tempo de uso, kills com a nota de recorte. A primeira arma recebe destaque (borda de
-  acento), porque "a arma dele" é uma coisa e "as três que ele usa" é outra.
-- **"Onde joga"** com 2 cards (`grid-cols-1 sm:grid-cols-2`): modo mais jogado e mapa mais jogado, com
-  tempo jogado e aproveitamento (`wins`/`matches`).
+**`pnpm db:sync-game-profiles`, e por que ele teve de existir.** O cap de 10 perfis por ciclo é certo no
+regime estável e péssimo no dia em que a feature sobe: três ciclos reais deixaram **9 de 99 membros** com
+patente, então o painel ficava vazio para 90% do roster e parecia defeito. O script varre todos sem
+orçamento, igual ao `db:resolve-identities`, e por isso mora ao lado dele. Três passadas levaram a
+cobertura a **60 de 72 elegíveis**; os 12 restantes seguem em timeout na fonte e o coletor continua
+tentando.
 
-Skeletons espelhando os dois blocos, como manda o `CLAUDE.md` (nunca spinner nem caixa cinza).
+Uma armadilha de relatório que o script trouxe e vale para qualquer script novo: `fetchGameProfile`
+**captura o próprio timeout e devolve null** em vez de lançar, então contar apenas o `catch` reportou
+"0 falhas" numa passada que perdeu 17 membros. O número é o motivo para rodar de novo, então ele tem de
+ser verdadeiro.
 
-**`next.config.ts` precisa de dois caminhos novos** em `remotePatterns`, narrow como os que já estão:
-`cdn.gametools.network/weapons/**` e `/maps/**`.
+**Verificado com dado real, e é o que fechou a fase:** três ciclos reais em 29/07. O último leu 72
+membros, gravou 216 linhas (72 por tipo), zero com id agregado, com modos reais (Conquest, Escalation) e
+patentes reais chegando (nível 187, 109 insígnias). `lint`, `type-check`, `build` e **561 testes**
+passando.
 
-**Armadilha de imagem: a arte de MODO é SVG** (`/modes/bf6/escalation.svg`). Servir SVG pelo otimizador
-do Next exige `dangerouslyAllowSVG`, que abre a porta para script dentro do arquivo vindo de um CDN de
-terceiro. **Decisão: não usar a arte de modo.** O card de modo usa ícone nosso. Só armas e mapas, que
-são `.webp`, passam pelo `next/image`.
-
-**Armadilha de latência:** cinco upserts por membro por leitura, dentro do orçamento de 8 min do
-worker. É pouco, mas tem que ser **medido** contra o ciclo real antes de subir, não depois: a Fase 3
-inteira foi reescrita por causa de aritmética de orçamento feita de cabeça.
-
-**Pronto quando:** o perfil mostra as 3 armas com arte e os números conferem com o jogo, e o ciclo do
-worker não perde tempo mensurável.
+**Não verificado:** o ciclo com a fonte saudável. As três execuções pegaram a API degradada (muitos 504),
+e numa delas a varredura consumiu os 480 s inteiros e a guarda de relógio pulou a passada de perfil, o
+que é o comportamento correto e ainda assim significa que o caminho rápido não foi exercitado.
 
 ### Fase 11 — Operação e recrutamento
 

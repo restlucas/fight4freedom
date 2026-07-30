@@ -48,6 +48,20 @@ enum StatSource {
   @@map("stat_source")
 }
 
+/// What kind of thing a `MemberTopItem` row describes.
+///
+/// Three, because the panel shows three (clan owner, 2026-07-29): the member's best
+/// weapon, most-played mode and most-played map. The source also publishes vehicles
+/// (22), gadgets (43) and melee in the same payload, so adding a kind later costs an
+/// enum value and a selector, not a migration of anything that exists.
+enum TopItemKind {
+  weapon
+  gamemode
+  map
+
+  @@map("top_item_kind")
+}
+
 enum PlayerClass {
   assault
   engineer
@@ -184,6 +198,47 @@ model Member {
   /// (getSessionProfile), where one more column costs nothing and a second query
   /// would cost a round trip per page. The claim rows keep the per-attempt detail.
   identityHelpRequestedAt DateTime?    @map("identity_help_requested_at") @db.Timestamptz(6)
+  /// In-game BF6 rank, as the game words it ("Second Lieutenant V"), plus the
+  /// numeric level behind it and the insignia EA serves.
+  ///
+  /// STATE, NOT HISTORY, which is why these live here and not on `statSnapshot`.
+  /// A level moves every few dozen hours of play, so a per-reading series of it
+  /// would be 72 identical rows a day per member to record a value that changed
+  /// twice a month.
+  ///
+  /// They do NOT feed `rankPoints` and never will. Our ladder is calibrated on
+  /// teamwork (150 pts/h measured, see src/lib/ranks.ts) and the game's rewards
+  /// time and personal performance; wiring one into the other would undo the
+  /// scoring decision of 2026-07-27 without anyone deciding it. This is a badge
+  /// shown beside ours, not an input to it.
+  gameRankName        String?          @map("game_rank_name")
+  gameRankLevel       Int?             @map("game_rank_level")
+  gameRankImageUrl    String?          @map("game_rank_image_url")
+  /// Badges and dog tags the account has collected.
+  ///
+  /// COUNTS ONLY, and that is the source's ceiling rather than a first version:
+  /// `/bf6/profile/` publishes `playerCard.badges` and `totalDogTags.intValue` as
+  /// integers, and the 18 BF6 endpoints were swept on 2026-07-29 looking for a
+  /// catalogue of WHICH ones. There is none (docs/api-gametools.md §13.4), so a
+  /// collection wall here would have to be filled in by hand.
+  badgeCount          Int?             @map("badge_count")
+  dogTagCount         Int?             @map("dog_tag_count")
+  /// Ranked division in Redsec, and which mode it was earned in.
+  ///
+  /// Null covers two different things, told apart by `gameProfileReadAt`: never
+  /// collected, or collected and unranked. Unranked is stored as null on purpose,
+  /// because the profile only earns a tile when there is a division to show and
+  /// most of the roster will never have one.
+  competitiveRankName String?          @map("competitive_rank_name")
+  competitiveRankMode String?          @map("competitive_rank_mode")
+  /// When the profile endpoint was last ATTEMPTED for this member.
+  ///
+  /// Stamped on every attempt, successful or not, and that is load-bearing: it is
+  /// the queue order for the profile pass, and a member whose profile always fails
+  /// would otherwise sit at the front of it forever, starving everyone behind
+  /// them. That exact failure cost 21 consecutive cycles of identity resolution in
+  /// 2026-07-28 (see "Fila da coleta" in docs/plano.md); the fix is the same here.
+  gameProfileReadAt   DateTime?        @map("game_profile_read_at") @db.Timestamptz(6)
   /// Discord snowflake, captured from the verified OAuth identity when the
   /// member claims their invite — never typed by hand. Unique so the login
   /// lookup can never be ambiguous.
@@ -262,6 +317,7 @@ model Member {
   updatedAt           DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   medals          MemberMedal[]
+  topItems        MemberTopItem[]
   snapshots       StatSnapshot[]
   highlights      Highlight[]
   profiles        Profile[]
@@ -436,6 +492,27 @@ model StatSnapshot {
    * later changes its mind.
    */
   repairs              Int          @default(0)
+  /**
+   * Account XP: lifetime total, and the performance and accolade slices of it.
+   *
+   * Free, which is why they are here: they ride in the `XP` array of the stats
+   * payload the collector ALREADY downloads (721 KB per player, see
+   * docs/api-gametools.md §13.1), so no extra request buys them.
+   *
+   * Columns rather than `extra` keys because the profile reads the newest snapshot
+   * on every render, and jsonb would mean parsing per row. Being a monotonic
+   * counter like every other column here, XP is also a progression series for
+   * free.
+   *
+   * NOT scored. See the game rank columns on `member` for why.
+   *
+   * A row with 0 is a row written before these existed, not an account with no
+   * XP: a profile empty enough to have none is refused by `toRawStats` before it
+   * reaches a snapshot. Callers render 0 as "unknown".
+   */
+  xpTotal              Int          @default(0) @map("xp_total")
+  xpPerformance        Int          @default(0) @map("xp_performance")
+  xpAccolades          Int          @default(0) @map("xp_accolades")
   // Extra BF6 metrics without a migration.
   extra                Json?
 
@@ -443,6 +520,64 @@ model StatSnapshot {
 
   @@index([memberId, capturedAt], map: "stat_snapshot_member_captured_idx")
   @@map("stat_snapshot")
+}
+
+/// Fase 10 — the ONE best weapon, most-played mode and most-played map per member.
+///
+/// THE TOP, NOT AN ARSENAL, and the name says so on purpose. Exactly one row per
+/// member per kind, so any sum over this table is biased toward whatever is already
+/// popular: it answers "what does this member play" and can never answer "what does
+/// the clan play". A clan-wide aggregate needs the full 152 items collected, which is
+/// deliberately out of scope (see docs/plano.md, Fases 9 a 12).
+///
+/// STATE, NOT HISTORY. The source publishes lifetime totals, so the row is rewritten
+/// in place on every reading that moved. Keeping a series would mean ~1,07 million
+/// rows a day at 98 members and 72 cycles for a value that changes a few times a
+/// week; this way the table sits at ~294 rows forever.
+///
+/// Storing less is safe here for a reason specific to this data: the source is
+/// idempotent lifetime state, so nothing is ever lost by not keeping it. If the clan
+/// later wants the top three weapons, the constant changes and the next cycle fills
+/// them in — no backfill, because there is no history to reconstruct.
+///
+/// Not columns on `member` (13 of them would be needed) precisely because of item 7
+/// of the Backlog técnico: display-only columns with a single implicit writer are how
+/// the panel and the collector end up disagreeing.
+model MemberTopItem {
+  id       String      @id @default(uuid())
+  memberId String      @map("member_id")
+  kind     TopItemKind
+  /// Id as the source spells it: "wp_mg_l110", "lvlmpabbasid", "gm_esc".
+  itemId   String      @map("item_id")
+  name     String
+  /// "Machine Guns" for a weapon. Null for a map or a mode, which have no grouping.
+  group    String?
+  /// Artwork on the source's CDN. `.webp` for weapons and maps; modes are `.svg` and
+  /// are deliberately NOT rendered through next/image — see the panel component.
+  imageUrl String?     @map("image_url")
+  /// Which EA ACCOUNT these numbers came from. Same reason as `statSnapshot`: a
+  /// rebind makes them somebody else's, and a `deleteMany` by account is the fix.
+  eaNucleusId String?  @map("ea_nucleus_id")
+  // Shared counters, hot because they are what the panel reads and what any future
+  // ordering would sort by. Zero where the kind has no such notion.
+  kills       Int      @default(0)
+  matches     Int      @default(0)
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  /// Seconds equipped (weapon) or played (map, mode).
+  secondsUsed Int      @default(0) @map("seconds_used")
+  /// Per-kind extras: `accuracy` and `headshotKills` for a weapon. Jsonb because
+  /// they exist for one kind out of three and nothing sorts by them.
+  metrics  Json?
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  /// One row per member per kind. With a single item per kind there is no position to
+  /// store, and that is what bounds the table by construction: no upsert can make it
+  /// grow. Wanting a top three is exactly what would bring a `rank` column back.
+  @@unique([memberId, kind], map: "member_top_item_unique")
+  @@map("member_top_item")
 }
 
 model Highlight {

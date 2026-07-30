@@ -1,13 +1,17 @@
 import {
+  Award,
   Clock,
   Crosshair,
   Crown,
+  Dog,
   Flag,
   Gamepad2,
   Handshake,
   HeartPulse,
   Shield,
   Skull,
+  Sparkles,
+  Swords,
   Target,
   TrendingDown,
   Trophy,
@@ -19,6 +23,8 @@ import type { PlayerClass } from "@prisma/client";
 import { cn } from "@/lib/utils";
 import { killsPerMatch, totalMatches, type StatTotals } from "@/lib/stats/snapshots";
 
+import { formatCompactNumber } from "@/lib/format";
+
 import {
   CLASS_LABEL,
   formatHeadshotRate,
@@ -27,6 +33,27 @@ import {
   formatNumber,
 } from "../lib/format";
 import { STAT_KEY_LABEL, type StatKey } from "../lib/stat-keys";
+
+/**
+ * The account's collectables and XP, from the game rather than from our ranking.
+ *
+ * One object instead of five loose props because they arrive together, from the
+ * same rotating pass, and are all null for the same reason: the member has not been
+ * through it yet (Fase 9.2).
+ */
+export type GameProgressTiles = {
+  /**
+   * Badge and dog-tag COUNTS. The source has no catalogue of which ones, so there
+   * is no wall of art to build here — see docs/api-gametools.md §13.4.
+   */
+  badgeCount: number | null;
+  dogTagCount: number | null;
+  /** Redsec ranked division, already filtered: unranked arrives as null. */
+  competitiveRankName: string | null;
+  competitiveRankMode: string | null;
+  /** Lifetime XP. Zero means the snapshot predates the column, not zero XP. */
+  xpTotal: number;
+};
 
 interface PlayerStatsProps {
   stats: StatTotals;
@@ -44,6 +71,11 @@ interface PlayerStatsProps {
    * crown. K/D has no tile here, so a K/D lead shows up on /membros only.
    */
   leadsIn?: StatKey[];
+  /**
+   * Collectables and XP from the game. Omitted entirely on surfaces that do not
+   * collect them, so this component stays usable outside the profile page.
+   */
+  game?: GameProgressTiles;
   className?: string;
 }
 
@@ -52,6 +84,7 @@ export function PlayerStats({
   bestClass,
   headshotRate,
   leadsIn,
+  game,
   className,
 }: PlayerStatsProps) {
   const items: {
@@ -135,8 +168,53 @@ export function PlayerStats({
     },
   ];
 
+  if (game) {
+    // Collectables and XP. Rendered with "—" when null rather than hidden, because
+    // for these the empty state is temporary and expected: the profile pass reads 10
+    // members per cycle, so a new member's tiles fill in within a few hours. A tile
+    // that disappears and comes back would read as a bug.
+    items.push(
+      {
+        icon: Award,
+        label: "Insígnias",
+        value: game.badgeCount === null ? "—" : formatNumber(game.badgeCount),
+        color: "text-yellow-400",
+      },
+      {
+        icon: Dog,
+        label: "Dog tags",
+        value: game.dogTagCount === null ? "—" : formatNumber(game.dogTagCount),
+        color: "text-lime-400",
+      },
+      {
+        icon: Sparkles,
+        label: "XP total",
+        // Zero means the newest snapshot predates the column, not an account with
+        // no XP: a profile empty enough to have none never reaches a snapshot.
+        value: game.xpTotal > 0 ? formatCompactNumber(game.xpTotal) : "—",
+        color: "text-fuchsia-400",
+      },
+    );
+
+    // ONLY WHEN THERE IS A DIVISION, unlike the three above. Ranked Redsec is niche
+    // and the source answers "Unranked" for most of the roster, which the collector
+    // stores as null — so a permanent tile here would be a dash on nearly every
+    // profile, which says nothing and costs a slot in the grid. Present means earned.
+    if (game.competitiveRankName) {
+      items.push({
+        icon: Swords,
+        label: game.competitiveRankMode ? `Ranked ${game.competitiveRankMode}` : "Ranked",
+        value: game.competitiveRankName,
+        color: "text-indigo-400",
+      });
+    }
+  }
+
   return (
-    <div className={cn("grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4", className)}>
+    // Three columns at the top end, not four (clan owner, 2026-07-29): the tiles
+    // stop being a wall of small numbers, and the width matches the single-column
+    // game panel that now sits above it.
+    <div className={cn("grid grid-cols-2 gap-2 sm:grid-cols-3", className)}>
       {items.map(({ icon: Icon, label, value, color, statKey }) => {
         const leadLabel = statKey && leadsIn?.includes(statKey) ? STAT_KEY_LABEL[statKey] : null;
         const leads = leadLabel !== null;

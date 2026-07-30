@@ -21,6 +21,24 @@ const nextConfig: NextConfig = {
         hostname: "cdn.gametools.network",
         pathname: "/ranks/**",
       },
+      // Fase 10: the best weapon and most-played map in the profile panel. Both are
+      // `.webp` on the same CDN. Narrowed per path, like the rank insignia above, so
+      // the optimizer cannot be aimed at anything else there.
+      //
+      // NOT `/modes/**`, and that omission is deliberate: mode artwork is SVG, and
+      // serving third-party SVG through next/image requires `dangerouslyAllowSVG`,
+      // which accepts script inside a file we do not control. The mode row uses our
+      // own icon, and the collector drops that URL at the source.
+      {
+        protocol: "https",
+        hostname: "cdn.gametools.network",
+        pathname: "/weapons/**",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.gametools.network",
+        pathname: "/maps/**",
+      },
     ],
   },
   experimental: {

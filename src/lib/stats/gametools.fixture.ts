@@ -15,6 +15,114 @@ export const gametoolsPlayerFixture = {
   dividedKills: {
     human: 12320,
   },
+  // A ONE-ELEMENT ARRAY, verified live 2026-07-29. Kept in the fixture because the
+  // shape is the surprising part: a bare object here would make the parser look
+  // correct in tests and read undefined in production.
+  XP: [
+    {
+      total: 10308364,
+      performance: 4007831,
+      accolades: 552450,
+    },
+  ],
+  // Per-item detail, trimmed from the live payload (53 weapons, 16 modes, 18 maps).
+  // Kept small but with the two shapes that break a naive selector.
+  weapons: [
+    {
+      type: "Machine Guns",
+      weaponName: "L110",
+      name: "L110",
+      id: "wp_mg_l110",
+      image: "https://cdn.gametools.network/weapons/bf6/T_UI_Minimi_PKG_Factory_MED.webp",
+      kills: 3412,
+      headshotKills: 502,
+      accuracy: 21.91,
+      timeEquipped: 21500,
+    },
+    {
+      type: "Assault Rifles",
+      weaponName: "M433",
+      name: "M433",
+      id: "wp_ar_m433",
+      image: "https://cdn.gametools.network/weapons/bf6/T_UI_M433.webp",
+      // Fewer kills but far more time equipped: the selector must pick by KILLS here,
+      // so this row is what proves it does not fall back to time.
+      kills: 1200,
+      headshotKills: 180,
+      accuracy: 25.4,
+      timeEquipped: 90000,
+    },
+  ],
+  gameModes: [
+    {
+      // THE TRAP THAT REACHED PRODUCTION. `gm_official` is a roll-up of every official
+      // mode, not a mode: 725.434 s against gm_all's 745.876 s. The first live cycle
+      // (2026-07-29) reported it as the most-played mode for all 68 members it read,
+      // and it looked entirely plausible. Real values, kept so the filter is proven
+      // against the thing that actually broke.
+      gamemodeName: "Official",
+      id: "gm_official",
+      secondsPlayed: 725434,
+      matches: 498,
+      kills: 17587,
+      wins: 268,
+      losses: 244,
+    },
+    {
+      gamemodeName: "Escalation",
+      id: "gm_esc",
+      // SVG, which is exactly why the collector drops mode artwork.
+      image: "https://cdn.gametools.network/modes/bf6/escalation.svg",
+      kills: 969,
+      wins: 16,
+      losses: 21,
+      matches: 37,
+      secondsPlayed: 52212,
+    },
+    {
+      gamemodeName: "Conquest",
+      id: "gm_cq",
+      image: "https://cdn.gametools.network/modes/bf6/conquest.svg",
+      kills: 400,
+      wins: 30,
+      losses: 10,
+      matches: 40,
+      secondsPlayed: 20000,
+    },
+  ],
+  maps: [
+    {
+      // THE TRAP: index 0 is the aggregate, and it always wins a "most played"
+      // comparison. Verified live 2026-07-29.
+      mapName: "All",
+      name: "All",
+      id: "lvlmp",
+      wins: 210,
+      losses: 171,
+      matches: 381,
+      secondsPlayed: 604766,
+    },
+    {
+      mapName: "Siege of Cairo",
+      name: "Siege of Cairo",
+      id: "lvlmpabbasid",
+      image: "https://cdn.gametools.network/maps/bf6/T_UI_Abbasid_Large_OPT.webp",
+      wins: 50,
+      losses: 36,
+      matches: 86,
+      secondsPlayed: 113310,
+    },
+    {
+      mapName: "Empire State",
+      name: "Empire State",
+      id: "lvlmpaftermath",
+      image: "https://cdn.gametools.network/maps/bf6/T_UI_Aftermath_Large_OPT.webp",
+      wins: 27,
+      losses: 12,
+      matches: 39,
+      secondsPlayed: 53814,
+    },
+  ],
   gameModeGroups: [
     {
       gamemodeName: "All",
@@ -195,6 +303,19 @@ export const gametoolsProfileFixture = {
         },
       },
       totalDogTags: { intValue: 39 },
+      // Observed live 2026-07-29 and not in the anexo's field list. "Unranked" is
+      // the real answer for this account, and it is the answer for most of the
+      // roster, which is why the parser drops it instead of storing it.
+      competitiveRanks: [
+        {
+          type: "CompetitiveSeason4",
+          mode: "GraniteSquad0",
+          modeName: "Redsec Quads",
+          translationId: "ID_ARRIVAL_RANKED_BR_DIVISIONS_UNRANKED",
+          rankName: "Unranked",
+          rankImage: null,
+        },
+      ],
       stats: [
         { name: "score_total", value: 3713760 },
         { name: "kill_death_ratio" },

@@ -1,18 +1,15 @@
 "use client";
 
 import { Search, Timer } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import { DotsLoader } from "@/components/dots-loader";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import type { RankingEntry } from "../lib/queries";
-import { fetchRankingPage, RANKING_PAGE_SIZE } from "../lib/ranking";
+import { filterBoard, RANKING_PAGE_SIZE } from "../lib/ranking";
 import { RankingCountdown } from "./ranking-countdown";
 import { RankingRow } from "./ranking-row";
-
-const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Members shown above the divider. Four, not three: the clan fields squads of
@@ -21,13 +18,15 @@ const SEARCH_DEBOUNCE_MS = 300;
 export const RANKING_HIGHLIGHT_COUNT = 4;
 
 interface RankingListProps {
-  /** First page, rendered on the server so the list is never empty on arrival. */
-  initialEntries: RankingEntry[];
-  initialTotal: number;
+  /**
+   * The WHOLE board for the season, already capped when it is closed. Not a page:
+   * this list reveals and searches locally, because gluing together pages fetched
+   * at different instants is what put the same member in two places (see
+   * ../lib/ranking.ts).
+   */
+  board: RankingEntry[];
   /** Highest score on the board, for the relative progress bars. */
   topPoints: number;
-  /** Season being shown, so paging and searching stay on it. */
-  month: string;
   /**
    * ISO instant when the season closes; null or absent for a closed one.
    *
@@ -45,101 +44,39 @@ interface RankingListProps {
   limitedToTop?: number | null;
 }
 
-export function RankingList({
-  initialEntries,
-  initialTotal,
-  topPoints,
-  month,
-  endsAt,
-  limitedToTop,
-}: RankingListProps) {
-  const [entries, setEntries] = useState(initialEntries);
-  const [total, setTotal] = useState(initialTotal);
-  const [hasMore, setHasMore] = useState(initialEntries.length < initialTotal);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-
+export function RankingList({ board, topPoints, endsAt, limitedToTop }: RankingListProps) {
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(RANKING_PAGE_SIZE);
 
-  // Every fetch carries the query it was made for; stale replies are dropped.
-  const activeQuery = useRef("");
   const sentinel = useRef<HTMLDivElement | null>(null);
 
-  // Search: debounce, then reload from the first page.
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed === activeQuery.current) return;
+  const filtered = useMemo(() => filterBoard(board, query), [board, query]);
+  const entries = filtered.slice(0, visibleCount);
+  const hasMore = entries.length < filtered.length;
 
-    setSearching(true);
-    const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      try {
-        const page = await fetchRankingPage({
-          offset: 0,
-          month,
-          query: trimmed,
-          signal: controller.signal,
-        });
-        activeQuery.current = trimmed;
-        setEntries(page.entries);
-        setTotal(page.total);
-        setHasMore(page.hasMore);
-        setFailed(false);
-      } catch {
-        if (!controller.signal.aborted) setFailed(true);
-      } finally {
-        if (!controller.signal.aborted) setSearching(false);
-      }
-    }, SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query, month]);
-
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
-    setLoading(true);
-    const requestedFor = activeQuery.current;
-    try {
-      const page = await fetchRankingPage({
-        offset: entries.length,
-        month,
-        query: requestedFor,
-      });
-      // A search may have landed while this was in flight.
-      if (activeQuery.current !== requestedFor) return;
-      setEntries((current) => [...current, ...page.entries]);
-      setTotal(page.total);
-      setHasMore(page.hasMore);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-      setHasMore(false);
-    } finally {
-      setLoading(false);
-    }
-  }, [entries.length, hasMore, loading, month]);
-
-  // Infinite scroll: load the next page as the sentinel comes into view.
+  // Infinite scroll: reveal the next rows as the sentinel comes into view.
+  //
+  // `visibleCount` is a dependency so the observer is rebuilt after each reveal:
+  // an element that is already intersecting never crosses the threshold again, so
+  // without this a long viewport would stop after one batch. A fresh `observe()`
+  // reports the current state, which keeps revealing until the sentinel is pushed
+  // off screen.
   useEffect(() => {
     const node = sentinel.current;
     if (!node || !hasMore) return;
 
     const observer = new IntersectionObserver(
       (records) => {
-        if (records[0]?.isIntersecting) void loadMore();
+        if (records[0]?.isIntersecting) {
+          setVisibleCount((current) => current + RANKING_PAGE_SIZE);
+        }
       },
       { rootMargin: "200px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasMore, loadMore]);
+  }, [hasMore, visibleCount]);
 
-  // `query` (not activeQuery) so the cut disappears as soon as the member types,
-  // instead of lingering for the debounce window.
   const showHighlightDivider =
     !limitedToTop && query.trim() === "" && entries.length > RANKING_HIGHLIGHT_COUNT;
 
@@ -159,21 +96,20 @@ export function RankingList({
           <Input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              // A new search starts at the top of its own result list.
+              setVisibleCount(RANKING_PAGE_SIZE);
+            }}
             placeholder="Buscar membro..."
             aria-label="Buscar membro no ranking"
             className="bg-background/50 pl-9"
           />
-          {searching ? (
-            <DotsLoader
-              size="sm"
-              label="Buscando"
-              className="text-muted-foreground absolute top-1/2 right-3 -translate-y-1/2"
-            />
-          ) : null}
+          {/* No spinner and no debounce here any more: the board is already in
+              memory, so the filter lands on the same keystroke. */}
         </div>
         <p className="text-muted-foreground shrink-0 text-sm" role="status">
-          {entries.length} de {total}
+          {entries.length} de {filtered.length}
         </p>
 
         {/* Pushed to the far edge with ml-auto rather than justify-between on the
@@ -201,7 +137,7 @@ export function RankingList({
         ) : null}
       </div>
 
-      {entries.length === 0 && !searching ? (
+      {entries.length === 0 ? (
         <p className="text-muted-foreground bg-card/60 rounded-lg border border-dashed p-10 text-center backdrop-blur-sm">
           Nenhum membro encontrado.
         </p>
@@ -230,17 +166,13 @@ export function RankingList({
 
       {hasMore ? (
         <div ref={sentinel} className="space-y-2" aria-hidden>
-          {/* Skeleton rows double as the scroll sentinel. */}
+          {/* Skeleton rows double as the scroll sentinel. They stand for rows that
+              exist and are not painted yet, not for a request in flight — there is
+              no request any more, so they are replaced on the same frame. */}
           {Array.from({ length: Math.min(3, RANKING_PAGE_SIZE) }).map((_, i) => (
             <Skeleton key={i} className="h-[58px] rounded-lg" />
           ))}
         </div>
-      ) : null}
-
-      {failed ? (
-        <p className="text-muted-foreground text-center text-sm">
-          Não foi possível carregar o ranking. Tente novamente.
-        </p>
       ) : null}
     </div>
   );

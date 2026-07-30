@@ -18,12 +18,14 @@ import { z } from "zod";
 import type { PlayerClass } from "@prisma/client";
 
 import type {
+  GameProfile,
   IdentityCard,
   IdentityMatch,
   PlayerIdentity,
   RawStats,
   ResolvedIdentity,
   StatsProvider,
+  TopItem,
 } from "./provider";
 
 const BASE_URL = "https://api.gametools.network";
@@ -141,6 +143,56 @@ const classEntrySchema = z
   })
   .loose();
 
+/**
+ * Per-item entries, all three tolerant: every field nullish or defaulted, because a
+ * missing one costs a line of a panel and must never cost a batch of snapshots.
+ *
+ * Field names are the source's, typos and casing included. `weaponName` and
+ * `gamemodeName` and `mapName` all mean the same thing and are all spelled
+ * differently, which is why each kind gets its own schema instead of one shared one.
+ */
+const weaponEntrySchema = z
+  .object({
+    id: z.string().nullish(),
+    name: z.string().nullish(),
+    weaponName: z.string().nullish(),
+    /** Weapon family: "Machine Guns", "Assault Rifles". */
+    type: z.string().nullish(),
+    image: z.string().nullish(),
+    kills: z.number().nullish(),
+    headshotKills: z.number().nullish(),
+    /** Already a percentage number (21.91) thanks to `format_values=false`. */
+    accuracy: z.number().nullish(),
+    /** Seconds the weapon was equipped. */
+    timeEquipped: z.number().nullish(),
+  })
+  .loose();
+
+const gameModeEntrySchema = z
+  .object({
+    id: z.string().nullish(),
+    gamemodeName: z.string().nullish(),
+    kills: z.number().nullish(),
+    wins: z.number().nullish(),
+    losses: z.number().nullish(),
+    matches: z.number().nullish(),
+    secondsPlayed: z.number().nullish(),
+  })
+  .loose();
+
+const mapEntrySchema = z
+  .object({
+    id: z.string().nullish(),
+    name: z.string().nullish(),
+    mapName: z.string().nullish(),
+    image: z.string().nullish(),
+    wins: z.number().nullish(),
+    losses: z.number().nullish(),
+    matches: z.number().nullish(),
+    secondsPlayed: z.number().nullish(),
+  })
+  .loose();
+
 const playerStatsSchema = z
   .object({
     /** personaId, echoed back — how a batch result maps to our member. */
@@ -171,6 +223,39 @@ const playerStatsSchema = z
      * omission is exactly the case the predicate exists to catch.
      */
     secondsPlayed: z.number().default(0),
+    /**
+     * Account XP, verified live on 2026-07-29 as a ONE-ELEMENT ARRAY:
+     * `[{ total: 10308364, performance: 4007831, accolades: 552450 }]`.
+     *
+     * THE ONE TOLERANT FIELD IN A DELIBERATELY STRICT SCHEMA, and the asymmetry is
+     * the point. Everything else here is required because a missing counter must
+     * skip the member and retry — a snapshot with a hole in it corrupts the
+     * month's delta forever. XP scores nothing and is only ever displayed, so
+     * losing a whole batch over an absent XP block would trade real data for a
+     * cosmetic one. Absent degrades to zero, and zero is read as "unknown".
+     */
+    XP: z
+      .array(
+        z
+          .object({
+            total: z.number().nullish(),
+            performance: z.number().nullish(),
+            accolades: z.number().nullish(),
+          })
+          .loose(),
+      )
+      .default([]),
+    /**
+     * Per-item detail, for the member's best weapon, most-played mode and
+     * most-played map (Fase 10). Verified live 2026-07-29: 53 weapons, 16 modes and
+     * 18 maps in the payload the collector already downloads.
+     *
+     * Tolerant for the same reason as `XP`: nothing here scores anything, so an
+     * absent array must cost a panel row and never a whole batch of snapshots.
+     */
+    weapons: z.array(weaponEntrySchema).default([]),
+    gameModes: z.array(gameModeEntrySchema).default([]),
+    maps: z.array(mapEntrySchema).default([]),
   })
   .loose();
 
@@ -376,6 +461,13 @@ export function toRawStats(player: GametoolsPlayer): (RawStats & PlayerIdentity)
     repairs: all.repairs,
     matches: all.matches,
     secondsPlayed: all.secondsPlayed,
+    // Zero when the block is absent, which callers read as unknown rather than as
+    // an account with no XP. See the schema field for why this one degrades instead
+    // of failing the member.
+    xpTotal: player.XP[0]?.total ?? 0,
+    xpPerformance: player.XP[0]?.performance ?? 0,
+    xpAccolades: player.XP[0]?.accolades ?? 0,
+    topItems: pickTopItems(player),
     extra: {
       // Exact play time and round count, for auditing the "played?" signal.
       secondsPlayed: all.secondsPlayed,
@@ -457,14 +549,46 @@ const profileResponseSchema = z.object({
             .nullish(),
           totalDogTags: z.object({ intValue: z.number().nullish() }).nullish(),
           /**
+           * Ranked divisions, one entry per competitive mode and season. Observed
+           * live on 2026-07-29 and NOT in the anexo's field list, which is why the
+           * shape is pinned here:
+           * `[{ type: "CompetitiveSeason4", mode: "GraniteSquad0",
+           *     modeName: "Redsec Quads", rankName: "Unranked", rankImage: null }]`
+           *
+           * `rankImage` is null while unranked, so there is no artwork to lean on
+           * for the common case.
+           */
+          competitiveRanks: z
+            .array(
+              z
+                .object({
+                  modeName: z.string().nullish(),
+                  rankName: z.string().nullish(),
+                })
+                .loose(),
+            )
+            .default([]),
+          /**
            * A flat name/value list, NOT an object, and it contains repeats: the
            * live payload for persona 1111751848 had 339 entries under 268
            * distinct names. Entries also arrive with no `value` at all
            * (`kill_death_ratio`), which is why value is nullish instead of
            * defaulted to 0 — a missing ratio is unknown, not zero.
+           *
+           * `name` IS NULLISH TOO, and that one cost a production cycle. On
+           * 2026-07-29 a live run failed to parse every profile it fetched on
+           * `playerProfiles[0].stats[338].name: expected string, received
+           * undefined` — 338 of 339 entries were fine. A nameless entry can never
+           * match a lookup in `profileStat`, so skipping it is free; requiring the
+           * key threw away the whole payload, and with it the rank, the badges and
+           * the kit times.
+           *
+           * The wider lesson, and it is the second time this endpoint has taught
+           * it: this response is a bag of loosely-typed rows, so every field in it
+           * is optional until proven otherwise.
            */
           stats: z
-            .array(z.object({ name: z.string(), value: z.number().nullish() }).loose())
+            .array(z.object({ name: z.string().nullish(), value: z.number().nullish() }).loose())
             .default([]),
         })
         .loose(),
@@ -557,6 +681,188 @@ function bestClassByKills(stats: CardStats | null): PlayerClass | null {
  * will show them (docs/api-gametools.md §5.3 and §10.3). A card that disagrees
  * with the site by ten hours is a card that makes someone doubt a correct match.
  */
+/** A division worth showing. Everything else the source calls a rank is not one. */
+const UNRANKED = "unranked";
+
+/**
+ * The aggregate row the source mixes into its own item lists.
+ *
+ * `maps[0]` is `{ name: "All", id: "lvlmp" }` and `weaponGroups[0]` is `{ name:
+ * "All" }`, verified live 2026-07-29. It is the same trap as `classes[All]`, and it is
+ * worse here because the aggregate always WINS a "most played" comparison: an
+ * unfiltered pick would report every member's favourite map as "All", forever, and
+ * look perfectly plausible.
+ */
+const AGGREGATE_NAME = "all";
+
+function isAggregate(name: string | null | undefined): boolean {
+  return (name ?? "").trim().toLowerCase() === AGGREGATE_NAME;
+}
+
+/**
+ * Ids inside `gameModes[]` that are ROLL-UPS rather than modes.
+ *
+ * Found by running a real cycle on 2026-07-29, not by reading the payload: the first
+ * live run reported "Official" as the most-played mode for every one of the 68 members
+ * it read. `gm_official` carries 725.434 s against the 745.876 s of `gm_all`, so it is
+ * the whole account under a name that looks exactly like a mode.
+ *
+ * Filtering the literal name "All" was not enough, which is the lesson worth keeping:
+ * the source mixes aggregates into its leaf lists under several different names, and
+ * an aggregate ALWAYS wins a "most played" comparison. A wrong pick here is invisible
+ * because it looks entirely plausible.
+ *
+ * Two lesser roll-ups were seen and deliberately left in: `gm_oblitall`
+ * ("Obliteration", 397 s, identical to `gm_sqdoblit`) and `gm_op` ("Operations",
+ * 1.632 s with 0 matches). Both are far too small to win a comparison, and excluding
+ * `gm_oblitall` by name would also exclude the legitimate generic Obliteration mode.
+ * If either ever surfaces as somebody's top mode, it belongs here.
+ */
+const AGGREGATE_MODE_IDS = new Set(["gm_all", "gm_official"]);
+
+/** Highest scorer by `score`, ignoring anything scoring zero or less. */
+function bestBy<T>(items: readonly T[], score: (item: T) => number): T | null {
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const item of items) {
+    const value = score(item);
+    if (value > bestScore) {
+      best = item;
+      bestScore = value;
+    }
+  }
+  return best;
+}
+
+/**
+ * The member's single best weapon, most-played mode and most-played map.
+ *
+ * Pure, so the real payload can be pinned in tests, and that matters here because
+ * every rule below is a judgement that a future reader will want to re-check.
+ *
+ * WEAPON BY KILLS, the two others BY TIME. A weapon is a choice of tool and "the one
+ * I kill with" is what a member means by their best; a map or a mode is where they
+ * spend evenings, and picking those by wins would report whichever they happened to
+ * have a good night on. It is the same time-over-kills reasoning as
+ * `bestClassByKitTime`.
+ *
+ * ZERO IS NOT A WINNER. `bestBy` refuses scores of zero, so an account that never
+ * fired a shot yields no weapon row rather than an arbitrary one out of 53 ties.
+ *
+ * A NOTE ON THE WEAPON'S KILLS, and it is the same honesty problem as headshots
+ * (§13.3): `weapons[].kills` counts bots. The site's kill count does not, so the
+ * numbers here cannot be added up to match the profile's Kills tile. The panel labels
+ * the bucket instead of hiding the number.
+ */
+export function pickTopItems(player: GametoolsPlayer): TopItem[] {
+  const items: TopItem[] = [];
+
+  const weapon = bestBy(
+    player.weapons.filter((entry) => !isAggregate(entry.name ?? entry.weaponName)),
+    (entry) => entry.kills ?? 0,
+  );
+  if (weapon) {
+    items.push({
+      kind: "weapon",
+      itemId: weapon.id ?? weapon.name ?? weapon.weaponName ?? "unknown",
+      name: weapon.name ?? weapon.weaponName ?? "Desconhecida",
+      group: weapon.type ?? null,
+      imageUrl: weapon.image ?? null,
+      kills: weapon.kills ?? 0,
+      matches: 0,
+      wins: 0,
+      losses: 0,
+      secondsUsed: weapon.timeEquipped ?? 0,
+      metrics: {
+        // Already a percentage number, not a fraction: `format_values=false` is what
+        // makes that true, and it is sent on every call.
+        accuracy: weapon.accuracy ?? 0,
+        headshotKills: weapon.headshotKills ?? 0,
+      },
+    });
+  }
+
+  const mode = bestBy(
+    player.gameModes.filter(
+      (entry) => !isAggregate(entry.gamemodeName) && !AGGREGATE_MODE_IDS.has(entry.id ?? ""),
+    ),
+    (entry) => entry.secondsPlayed ?? 0,
+  );
+  if (mode) {
+    items.push({
+      kind: "gamemode",
+      itemId: mode.id ?? mode.gamemodeName ?? "unknown",
+      name: mode.gamemodeName ?? "Desconhecido",
+      group: null,
+      // The mode artwork is SVG, and serving third-party SVG through next/image
+      // needs `dangerouslyAllowSVG`. Dropped at the source rather than ignored in the
+      // component, so nothing downstream is tempted to render it.
+      imageUrl: null,
+      kills: mode.kills ?? 0,
+      matches: mode.matches ?? 0,
+      wins: mode.wins ?? 0,
+      losses: mode.losses ?? 0,
+      secondsUsed: mode.secondsPlayed ?? 0,
+      metrics: null,
+    });
+  }
+
+  const map = bestBy(
+    player.maps.filter((entry) => !isAggregate(entry.name ?? entry.mapName)),
+    (entry) => entry.secondsPlayed ?? 0,
+  );
+  if (map) {
+    items.push({
+      kind: "map",
+      itemId: map.id ?? map.name ?? map.mapName ?? "unknown",
+      name: map.name ?? map.mapName ?? "Desconhecido",
+      group: null,
+      imageUrl: map.image ?? null,
+      kills: 0,
+      matches: map.matches ?? 0,
+      wins: map.wins ?? 0,
+      losses: map.losses ?? 0,
+      secondsUsed: map.secondsPlayed ?? 0,
+      metrics: null,
+    });
+  }
+
+  return items;
+}
+
+/**
+ * The account's in-game standing, out of a `/bf6/profile/` payload.
+ *
+ * The single place that knows where the game's rank lives, so `toIdentityCard`
+ * reads through it too: two copies of "the rank is under playerProfiles[0]" would
+ * drift the first time the source moves it.
+ */
+export function toGameProfile(profile: GametoolsProfile | null): GameProfile {
+  const player = profile?.playerProfiles?.[0] ?? null;
+  const card = player?.playerCard ?? null;
+
+  /**
+   * The first division that is an actual division. `Unranked` is the answer for
+   * most accounts and is dropped rather than stored, so a null here means "no
+   * division", and whether we ever asked is answered by `gameProfileReadAt`.
+   */
+  const ranked =
+    player?.competitiveRanks?.find(
+      (entry) => entry.rankName && entry.rankName.trim().toLowerCase() !== UNRANKED,
+    ) ?? null;
+
+  return {
+    rankName: player?.rankName ?? null,
+    rankLevel: card?.rank ?? null,
+    rankImageUrl: card?.rankImage?.small ?? card?.rankImage?.large ?? null,
+    badges: card?.badges ?? null,
+    dogTags: player?.totalDogTags?.intValue ?? null,
+    competitive: ranked?.rankName
+      ? { mode: ranked.modeName ?? null, rankName: ranked.rankName }
+      : null,
+  };
+}
+
 export function toIdentityCard(
   identity: ResolvedIdentity,
   stats: CardStats | null,
@@ -564,19 +870,19 @@ export function toIdentityCard(
 ): IdentityCard {
   const all = stats?.gameModeGroups.find((group) => group.id === "gm_all") ?? null;
   const seconds = all?.secondsPlayed ?? null;
-  const card = profile?.playerProfiles?.[0]?.playerCard ?? null;
+  const game = toGameProfile(profile);
 
   return {
     identity,
-    rankName: profile?.playerProfiles?.[0]?.rankName ?? null,
-    rankLevel: card?.rank ?? null,
-    rankImageUrl: card?.rankImage?.small ?? card?.rankImage?.large ?? null,
+    rankName: game.rankName,
+    rankLevel: game.rankLevel,
+    rankImageUrl: game.rankImageUrl,
     hoursPlayed: seconds == null ? null : Math.round(seconds / 3600),
     matches: all?.matches ?? null,
     kills: stats?.dividedKills?.human ?? null,
     bestClass: bestClassByKitTime(profile) ?? bestClassByKills(stats),
-    badges: card?.badges ?? null,
-    dogTags: profile?.playerProfiles?.[0]?.totalDogTags?.intValue ?? null,
+    badges: game.badges,
+    dogTags: game.dogTags,
     // Only the stats call can answer this. When it failed we do NOT claim the
     // account is empty: an unread account and an account with nothing in it are
     // different answers, and guessing here would show a stranger's-account
@@ -772,6 +1078,32 @@ export class GametoolsProvider implements StatsProvider {
     // instead of rendering an all-null card that reads like an empty account.
     if (!stats && !profile) return null;
     return toIdentityCard(identity, stats, profile);
+  }
+
+  /**
+   * The profile endpoint on its own, for the collector's rotating pass.
+   *
+   * One request, 14 KB, measured at 24 ms warm on 2026-07-29. Separate from
+   * `fetchIdentityCard` even though both read `/bf6/profile/`, because that one
+   * also pays for a stats call it needs and this one must not.
+   *
+   * Null when the request failed OR when the payload carried no profile at all.
+   * The caller must not read that as "no rank": those two are indistinguishable
+   * from here, and writing nulls over a rank we already hold would erase good data
+   * on a bad afternoon.
+   */
+  async fetchGameProfile(identity: PlayerIdentity): Promise<GameProfile | null> {
+    const query =
+      `playerid=${encodeURIComponent(identity.personaId)}` +
+      `&nucleus_id=${encodeURIComponent(identity.nucleusId)}&platform=pc`;
+
+    const profile = await this.tryCall(
+      `${this.baseUrl}/bf6/profile/?${query}`,
+      parseProfilePayload,
+      "profile",
+    );
+    if (!profile || profile.playerProfiles.length === 0) return null;
+    return toGameProfile(profile);
   }
 
   /** Fetch + validate one endpoint, degrading to null with a named warning. */

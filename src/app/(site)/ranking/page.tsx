@@ -7,11 +7,7 @@ import { RankingMonthPicker } from "@/features/clan/components/ranking-month-pic
 import { RankingScoringHelp } from "@/features/clan/components/ranking-scoring-help";
 import { formatMonthLabel } from "@/features/clan/lib/format";
 import { getMonthlyRanking, getRankingMonths } from "@/features/clan/lib/queries";
-import {
-  RANKING_HISTORY_LIMIT,
-  RANKING_PAGE_SIZE,
-  visibleBoard,
-} from "@/features/clan/lib/ranking";
+import { RANKING_HISTORY_LIMIT, visibleBoard } from "@/features/clan/lib/ranking";
 import { isMonthKey, monthEndsAt, monthKey, monthKeyToReference } from "@/lib/month";
 
 export const metadata: Metadata = {
@@ -106,11 +102,13 @@ export default async function RankingPage({
           </p>
         ) : (
           <RankingList
+            // Remounts on a season change, so the reveal starts from the top again.
             key={month}
-            initialEntries={board.slice(0, RANKING_PAGE_SIZE)}
-            initialTotal={board.length}
+            // The whole board, not a first page: the list reveals it progressively
+            // on the client. Paging it over the network is what showed the same
+            // member twice (see features/clan/lib/ranking.ts).
+            board={board}
             topPoints={topPoints}
-            month={month}
             // The countdown only means something while the season can still change.
             endsAt={isOpenSeason ? monthEndsAt(now).toISOString() : null}
             limitedToTop={isOpenSeason ? null : RANKING_HISTORY_LIMIT}

@@ -15,6 +15,23 @@ export function formatNumber(value: number): string {
   return numberFormatter.format(value);
 }
 
+const compactFormatter = new Intl.NumberFormat("pt-BR", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/**
+ * Short form for numbers too long to read in a small tile: 10308364 -> "10,3 mi".
+ *
+ * Exists for account XP, which runs to eight digits — "10.308.364" is 10 characters
+ * of monospaced digits and overflows a stat tile that fits about 8. Only for
+ * magnitudes nobody compares digit by digit; anything a member might check against
+ * the game must stay exact via `formatNumber`.
+ */
+export function formatCompactNumber(value: number): string {
+  return compactFormatter.format(value);
+}
+
 export const CLASS_LABEL: Record<PlayerClass, string> = {
   assault: "Assalto",
   engineer: "Engenheiro",

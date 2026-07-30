@@ -13,6 +13,7 @@ import { emptyTotals, type StatTotals } from "./snapshots";
  */
 const db = {
   member: { findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  memberTopItem: { upsert: vi.fn() },
   statSnapshot: { findMany: vi.fn(), createMany: vi.fn() },
   clanEvent: { findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
 };
@@ -25,6 +26,7 @@ const {
   ROUTE_IDENTITY_LIMIT,
   WORKER_BUDGET_MS,
   WORKER_IDENTITY_LIMIT,
+  WORKER_PROFILE_LIMIT,
   WORKER_ROUNDS,
 } = await import("./collect");
 
@@ -47,6 +49,9 @@ function member(nickname: string, checkedAt: string | null, index: number) {
     // tests that mean "never once" have to say so — that is the distinction
     // `neverRead` is built on.
     statsReadAt: new Date("2026-07-28T09:00:00Z"),
+    // Never had their GAME profile read. The profile pass has its own queue, on its
+    // own clock, because it is capped per cycle instead of swept.
+    gameProfileReadAt: null as Date | null,
   };
 }
 
@@ -94,6 +99,12 @@ function rawStats(kills: number): RawStats {
     bestClass: null,
     matches: 2,
     secondsPlayed: 60,
+    xpTotal: 1_000,
+    xpPerformance: 400,
+    xpAccolades: 100,
+    // Empty by default: the top-item write has its own suite below, and every other
+    // test here is about orchestration.
+    topItems: [],
     extra: {},
   };
 }
@@ -119,6 +130,10 @@ function fakeProvider(options: { costMs?: number } = {}): StatsProvider & {
     // would say that louder, but the collector must not depend on it at all, and
     // returning null is what an unread account looks like.
     fetchIdentityCard: vi.fn(async () => null),
+    // The game-profile pass runs at the END of a cycle and is cosmetic, so the
+    // default answer here is "the source told us nothing" — the case that must
+    // leave every rank already stored untouched.
+    fetchGameProfile: vi.fn(async () => null),
     fetchStats: vi.fn(async (players: PlayerIdentity[]) => {
       batches.push(players);
       if (options.costMs) clock += options.costMs;
@@ -135,6 +150,7 @@ beforeEach(() => {
   db.statSnapshot.findMany.mockResolvedValue([]);
   db.statSnapshot.createMany.mockResolvedValue({ count: 0 });
   db.member.updateMany.mockResolvedValue({ count: 0 });
+  db.memberTopItem.upsert.mockResolvedValue({});
   db.clanEvent.findMany.mockResolvedValue([]);
   db.clanEvent.create.mockResolvedValue({});
   db.clanEvent.update.mockResolvedValue({});
@@ -865,5 +881,277 @@ describe("collectStats career points", () => {
     const write = db.member.update.mock.calls[0][0];
     expect(write.data.rankPoints).toHaveProperty("increment");
     expect(typeof write.data.rankPoints.increment).toBe("number");
+  });
+});
+
+describe("collectStats game profile pass", () => {
+  /** Only the `member.update` calls the profile pass makes. */
+  function profileWrites() {
+    return db.member.update.mock.calls
+      .map((call) => call[0])
+      .filter((arg) => arg.data.gameProfileReadAt !== undefined);
+  }
+
+  const GAME_PROFILE = {
+    rankName: "Second Lieutenant V",
+    rankLevel: 141,
+    rankImageUrl: "https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_sm.png",
+    badges: 104,
+    dogTags: 39,
+    competitive: null,
+  };
+
+  it("reads at most `profileLimit` members per cycle", async () => {
+    // A cap and not a sweep: this costs ONE request per member against a free
+    // community API, to refresh a value that moves every few dozen hours of play.
+    db.member.findMany.mockResolvedValue(
+      Array.from({ length: 20 }, (_, i) => member(`M${i}`, "2026-07-28T10:00:00Z", i)),
+    );
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    const report = await collectStats(provider, { profileLimit: 4 });
+
+    expect(provider.fetchGameProfile).toHaveBeenCalledTimes(4);
+    expect(report.gameProfilesRead).toBe(4);
+  });
+
+  it("takes the least-recently-read first, never-read ahead of everyone", async () => {
+    db.member.findMany.mockResolvedValue([
+      {
+        ...member("Fresh", "2026-07-28T10:00:00Z", 0),
+        gameProfileReadAt: new Date("2026-07-29T12:00:00Z"),
+      },
+      {
+        ...member("Stale", "2026-07-28T10:00:00Z", 1),
+        gameProfileReadAt: new Date("2026-07-20T12:00:00Z"),
+      },
+      { ...member("Never", "2026-07-28T10:00:00Z", 2), gameProfileReadAt: null },
+    ]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    await collectStats(provider, { profileLimit: 2 });
+
+    // Never-read sorts first (null reads as 0), then the oldest timestamp.
+    expect(provider.fetchGameProfile).toHaveBeenCalledTimes(2);
+    const asked = vi
+      .mocked(provider.fetchGameProfile)
+      .mock.calls.map(([identity]) => identity.personaId);
+    expect(asked).toEqual(["persona-2", "persona-1"]);
+  });
+
+  it("stamps the attempt even when the source answers nothing, so the queue rotates", async () => {
+    // THE REGRESSION THIS PASS EXISTS TO AVOID. Stamping only on success leaves a
+    // member whose profile always fails holding the oldest timestamp forever, and
+    // they get re-picked every cycle while everyone behind them starves. That exact
+    // shape froze identity resolution for 21 consecutive cycles on 2026-07-28.
+    db.member.findMany.mockResolvedValue([member("Broken", "2026-07-28T10:00:00Z", 0)]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => null);
+
+    const report = await collectStats(provider, { profileLimit: 1 });
+
+    const writes = profileWrites();
+    expect(writes).toHaveLength(1);
+    expect(writes[0].data.gameProfileReadAt).toBeInstanceOf(Date);
+    // Nothing was learned, so nothing about the rank is written: `fetchGameProfile`
+    // cannot tell "the request died" from "this account has no rank", so writing
+    // its nulls would erase a good rank on a bad afternoon.
+    expect(writes[0].data).not.toHaveProperty("gameRankName");
+    expect(writes[0].data).not.toHaveProperty("badgeCount");
+    expect(report.gameProfilesRead).toBe(0);
+  });
+
+  it("stores the whole profile when the source answers", async () => {
+    db.member.findMany.mockResolvedValue([member("Ok", "2026-07-28T10:00:00Z", 0)]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => ({
+      ...GAME_PROFILE,
+      competitive: { mode: "Redsec Duos", rankName: "Ouro III" },
+    }));
+
+    await collectStats(provider, { profileLimit: 1 });
+
+    const write = profileWrites()[0];
+    expect(write.data.gameRankName).toBe("Second Lieutenant V");
+    expect(write.data.gameRankLevel).toBe(141);
+    expect(write.data.badgeCount).toBe(104);
+    expect(write.data.dogTagCount).toBe(39);
+    expect(write.data.competitiveRankName).toBe("Ouro III");
+    expect(write.data.competitiveRankMode).toBe("Redsec Duos");
+  });
+
+  it("clears a division that is gone, rather than leaving a stale one", async () => {
+    // A successful read is authoritative: the member dropped out of ranked, so the
+    // tile has to go. Only a FAILED read leaves the old value alone.
+    db.member.findMany.mockResolvedValue([member("Ok", "2026-07-28T10:00:00Z", 0)]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    await collectStats(provider, { profileLimit: 1 });
+
+    expect(profileWrites()[0].data.competitiveRankName).toBeNull();
+  });
+
+  it("never lets a thrown profile call cost the cycle's stats", async () => {
+    // The snapshots are already written by the time this runs. A cosmetic refresh
+    // must not be able to fail a cycle whose product already landed.
+    db.member.findMany.mockResolvedValue([member("Boom", "2026-07-28T10:00:00Z", 0)]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => {
+      throw new Error("504");
+    });
+
+    const report = await collectStats(provider, { profileLimit: 1 });
+
+    expect(report.updated).toBe(1);
+    expect(report.gameProfilesRead).toBe(0);
+    // Still stamped: a member who always throws must not hold the front of the queue.
+    expect(profileWrites()[0].data.gameProfileReadAt).toBeInstanceOf(Date);
+  });
+
+  it("does not run at all when the limit is zero", async () => {
+    db.member.findMany.mockResolvedValue([member("Ok", "2026-07-28T10:00:00Z", 0)]);
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    await collectStats(provider, { profileLimit: 0 });
+
+    expect(provider.fetchGameProfile).not.toHaveBeenCalled();
+  });
+
+  it("skips the pass when the sweep already spent the budget", async () => {
+    // The profile is cosmetic and the snapshot is the product, so on a slow cycle
+    // the right outcome is every member's stats read and nobody's badges refreshed.
+    db.member.findMany.mockResolvedValue([
+      member("A", "2026-07-28T10:00:00Z", 0),
+      member("B", "2026-07-28T10:00:00Z", 1),
+    ]);
+    // Each batch burns the whole budget, so the deadline is long past by the time
+    // the pass starts.
+    const provider = fakeProvider({ costMs: WORKER_BUDGET_MS });
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    const report = await collectStats(provider, {
+      budgetMs: WORKER_BUDGET_MS,
+      rounds: WORKER_ROUNDS,
+      profileLimit: WORKER_PROFILE_LIMIT,
+    });
+
+    expect(provider.fetchGameProfile).not.toHaveBeenCalled();
+    expect(report.gameProfilesRead).toBe(0);
+  });
+
+  it("skips members with no EA identity bound", async () => {
+    // Nothing to ask the source about: the profile endpoint is keyed by persona id.
+    db.member.findMany.mockResolvedValue(pendingMembers(3));
+    const provider = fakeProvider();
+    provider.fetchGameProfile = vi.fn(async () => GAME_PROFILE);
+
+    await collectStats(provider, { profileLimit: 3 });
+
+    expect(provider.fetchGameProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe("collectStats top items", () => {
+  const weapon = {
+    kind: "weapon" as const,
+    itemId: "wp_mg_l110",
+    name: "L110",
+    group: "Machine Guns",
+    imageUrl: "https://cdn.gametools.network/weapons/bf6/L110.webp",
+    kills: 3_412,
+    matches: 0,
+    wins: 0,
+    losses: 0,
+    secondsUsed: 21_500,
+    metrics: { accuracy: 21.91, headshotKills: 502 },
+  };
+  const map = {
+    kind: "map" as const,
+    itemId: "lvlmpabbasid",
+    name: "Siege of Cairo",
+    group: null,
+    imageUrl: "https://cdn.gametools.network/maps/bf6/Abbasid.webp",
+    kills: 0,
+    matches: 86,
+    wins: 50,
+    losses: 36,
+    secondsUsed: 113_310,
+    metrics: null,
+  };
+
+  /** A provider whose reads carry the given top items. */
+  function providerWith(topItems: RawStats["topItems"]) {
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(
+      async (players: PlayerIdentity[]) =>
+        new Map(players.map((p) => [p.personaId, { ...rawStats(100), topItems }])),
+    );
+    return provider;
+  }
+
+  it("upserts one row per kind, keyed so the table cannot grow", async () => {
+    // The row means "this member's best weapon", so the item inside it changes when
+    // their favourite does. That is what bounds the table at three rows per member.
+    db.member.findMany.mockResolvedValue([member("Solo", null, 0)]);
+
+    await collectStats(providerWith([weapon, map]));
+
+    expect(db.memberTopItem.upsert).toHaveBeenCalledTimes(2);
+    const [first] = db.memberTopItem.upsert.mock.calls[0];
+    expect(first.where).toEqual({ memberId_kind: { memberId: "id-Solo", kind: "weapon" } });
+    expect(first.create.name).toBe("L110");
+    expect(first.update.name).toBe("L110");
+    // Stamped so a rebind can discard the previous account's items in one delete.
+    expect(first.create.eaNucleusId).toBe("nucleus-0");
+  });
+
+  it("carries the per-kind extras into metrics", async () => {
+    db.member.findMany.mockResolvedValue([member("Solo", null, 0)]);
+
+    await collectStats(providerWith([weapon]));
+
+    expect(db.memberTopItem.upsert.mock.calls[0][0].create.metrics).toEqual({
+      accuracy: 21.91,
+      headshotKills: 502,
+    });
+  });
+
+  it("leaves a kind alone when the payload did not answer for it", async () => {
+    // The source occasionally serves a partially zeroed payload, so an absent list
+    // must not delete a weapon we already knew about.
+    db.member.findMany.mockResolvedValue([member("Solo", null, 0)]);
+
+    await collectStats(providerWith([map]));
+
+    const kinds = db.memberTopItem.upsert.mock.calls.map(
+      (call) => call[0].where.memberId_kind.kind,
+    );
+    expect(kinds).toEqual(["map"]);
+  });
+
+  it("writes nothing for a member the source did not return", async () => {
+    db.member.findMany.mockResolvedValue([member("Solo", null, 0)]);
+    const provider = fakeProvider();
+    provider.fetchStats = vi.fn(async () => new Map());
+
+    await collectStats(provider);
+
+    expect(db.memberTopItem.upsert).not.toHaveBeenCalled();
+  });
+
+  it("never lets a failed item write cost the cycle's snapshots", async () => {
+    // Three rows are a panel; the snapshot is the product, and it is already written
+    // by the time this runs.
+    db.member.findMany.mockResolvedValue([member("Solo", null, 0)]);
+    db.memberTopItem.upsert.mockRejectedValue(new Error("constraint"));
+
+    const report = await collectStats(providerWith([weapon]));
+
+    expect(report.updated).toBe(1);
+    expect(db.statSnapshot.createMany).toHaveBeenCalled();
   });
 });

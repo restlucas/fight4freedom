@@ -70,6 +70,35 @@ export const WORKER_IDENTITY_LIMIT = 25;
  */
 export const IDENTITY_PHASE_SHARE = 0.25;
 
+/**
+ * How many members get their GAME PROFILE read per cycle (rank, badges, dog tags,
+ * ranked division — see `fetchGameProfile`).
+ *
+ * A cap and not a sweep, because unlike stats this costs one request per member:
+ * reading all 98 every cycle would be 98 requests every 20 minutes against a free
+ * community API, to refresh a value that moves every few dozen hours of play.
+ *
+ * 10 per cycle covers the roster in 10 cycles, about 3 h 20 at the 20-minute
+ * cadence, for ~10 requests of 14 KB each (measured 2026-07-29). Nothing here is
+ * urgent: a member who levels up sees it on the site within a few hours, and the
+ * numbers score nothing.
+ *
+ * The route profile reads fewer because its whole budget is 45 s.
+ */
+export const ROUTE_PROFILE_LIMIT = 3;
+export const WORKER_PROFILE_LIMIT = 10;
+
+/**
+ * Clock guard for the profile pass: it never starts a new request past this share
+ * of the budget.
+ *
+ * 95 %, so the pass only runs on what the sweep left over. That ordering is the
+ * whole design — the profile is cosmetic and the snapshot is the product, so on a
+ * cycle where the source is slow the right outcome is every member's stats read
+ * and nobody's badge count refreshed.
+ */
+export const PROFILE_PHASE_DEADLINE_SHARE = 0.95;
+
 export type MemberOutcome =
   /** Counters moved since the last snapshot — a new row was written. */
   | "updated"
@@ -85,6 +114,12 @@ export type CollectReport = {
   eligible: number;
   /** Identities resolved (and persisted) during this run. */
   identitiesResolved: number;
+  /**
+   * Members whose GAME profile was read and stored this run (rank, badges, dog
+   * tags, division). Bounded by `profileLimit`, so on a healthy worker cycle this
+   * is exactly that number and a smaller one means the clock guard fired.
+   */
+  gameProfilesRead: number;
   updated: number;
   unchanged: number;
   noData: number;
@@ -146,6 +181,11 @@ export type CollectOptions = {
    * clock guard applies on top of whatever is passed here.
    */
   identityLimit?: number;
+  /**
+   * How many GAME profiles this run may read. One request each, so this is a
+   * request budget; see the two limits above.
+   */
+  profileLimit?: number;
 };
 
 /**
@@ -218,6 +258,7 @@ export async function collectStats(
     budgetMs = ROUTE_BUDGET_MS,
     rounds = ROUTE_ROUNDS,
     identityLimit = ROUTE_IDENTITY_LIMIT,
+    profileLimit = ROUTE_PROFILE_LIMIT,
   }: CollectOptions = {},
 ): Promise<CollectReport> {
   const startedAt = Date.now();
@@ -247,6 +288,9 @@ export async function collectStats(
       // When we last TRIED this member — the queue order. See the sort below for
       // why this is not the snapshot date.
       statsCheckedAt: true,
+      // Queue order for the profile pass, which rotates on its own clock because
+      // it is capped per cycle rather than swept.
+      gameProfileReadAt: true,
       // When a read last WORKED. Null after a run that failed means "never once",
       // which is the signal for `neverRead` — see its field in CollectReport.
       statsReadAt: true,
@@ -277,6 +321,7 @@ export async function collectStats(
   const report: CollectReport = {
     eligible: members.length,
     identitiesResolved: 0,
+    gameProfilesRead: 0,
     updated: 0,
     unchanged: 0,
     noData: 0,
@@ -493,6 +538,11 @@ export async function collectStats(
         spots: raw.spots,
         healthRestored: raw.healthRestored,
         repairs: raw.repairs,
+        // Free of charge: they ride in the payload this batch already downloaded.
+        // Never scored — see the columns' own comments in the schema.
+        xpTotal: raw.xpTotal,
+        xpPerformance: raw.xpPerformance,
+        xpAccolades: raw.xpAccolades,
         extra: raw.extra,
       });
       // CAREER POINTS, credited only here — on the same condition that writes a
@@ -531,6 +581,7 @@ export async function collectStats(
     if (rows.length > 0) {
       await db.statSnapshot.createMany({ data: rows });
     }
+    await writeTopItems(slice, stats);
     // One statement per member rather than a grouped update: `increment` is the
     // point — reading the balance and writing back a computed total would lose a
     // concurrent credit, and the manual route can run while the worker is mid
@@ -617,5 +668,166 @@ export async function collectStats(
     );
   }
 
+  await readGameProfiles(provider, collectable, report, {
+    limit: profileLimit,
+    deadline: startedAt + budgetMs * PROFILE_PHASE_DEADLINE_SHARE,
+  });
+
   return report;
+}
+
+/**
+ * Rewrites each member's best weapon, most-played mode and most-played map.
+ *
+ * UPSERT BY (member, kind), which is what keeps this table at three rows per member
+ * for good: the row means "this member's best weapon", so the item inside it changes
+ * when their favourite does, and no write can make the table grow.
+ *
+ * Only the kinds the payload actually answered are touched. A member whose weapons
+ * list came back empty keeps the weapon we already knew about instead of having it
+ * deleted, which matters because the source occasionally serves a partially zeroed
+ * payload (see `isIncoherentPayload`).
+ *
+ * NEVER THROWS. These three rows are a panel; the snapshot is the product, and it is
+ * already written by the time this runs.
+ */
+async function writeTopItems(
+  slice: { id: string; eaPersonaId: string | null; eaNucleusId: string | null }[],
+  stats: Map<string, RawStats>,
+): Promise<void> {
+  try {
+    const writes = [];
+    for (const member of slice) {
+      const raw = stats.get(member.eaPersonaId!);
+      if (!raw) continue;
+
+      for (const item of raw.topItems) {
+        const data = {
+          itemId: item.itemId,
+          name: item.name,
+          group: item.group,
+          imageUrl: item.imageUrl,
+          // Stamped so a rebind can discard the previous account's items with a
+          // single delete, exactly like the snapshots.
+          eaNucleusId: member.eaNucleusId,
+          kills: item.kills,
+          matches: item.matches,
+          wins: item.wins,
+          losses: item.losses,
+          secondsUsed: item.secondsUsed,
+          metrics: item.metrics ?? undefined,
+        };
+        writes.push(
+          db.memberTopItem.upsert({
+            where: { memberId_kind: { memberId: member.id, kind: item.kind } },
+            create: { memberId: member.id, kind: item.kind, ...data },
+            update: data,
+          }),
+        );
+      }
+    }
+    // At most three per member, so nine for a batch of three.
+    if (writes.length > 0) await Promise.all(writes);
+  } catch (error) {
+    console.warn(
+      "[stats] nao foi possivel gravar os itens de destaque:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
+/** What the profile pass needs from a member, and nothing more. */
+type ProfileCandidate = {
+  id: string;
+  nickname: string;
+  eaPersonaId: string | null;
+  eaNucleusId: string | null;
+  gameProfileReadAt: Date | null;
+};
+
+/**
+ * Refreshes the GAME profile of a few members: in-game rank, badge and dog-tag
+ * counts, ranked division.
+ *
+ * LAST IN THE CYCLE AND CAPPED, which are the two things that keep it honest. It
+ * costs one request per member against a free community API, and none of what it
+ * reads scores anything, so it may only spend what the sweep left over. On a cycle
+ * where the source is slow the right outcome is every member's stats read and
+ * nobody's badge count refreshed.
+ *
+ * NEVER THROWS. The snapshots are already written by the time this runs, and a
+ * cosmetic refresh must not be able to fail a cycle whose product already landed.
+ */
+async function readGameProfiles(
+  provider: StatsProvider,
+  collectable: ProfileCandidate[],
+  report: CollectReport,
+  { limit, deadline }: { limit: number; deadline: number },
+): Promise<void> {
+  if (limit <= 0) return;
+
+  try {
+    // Least-recently-read first, never-read ahead of everyone. Same ordering rule
+    // as the stats queue, for the same reason: it is the only one that rotates.
+    const queue = [...collectable]
+      .filter((member) => member.eaPersonaId && member.eaNucleusId)
+      .sort((a, b) => {
+        const at = a.gameProfileReadAt?.getTime() ?? 0;
+        const bt = b.gameProfileReadAt?.getTime() ?? 0;
+        return at - bt || a.nickname.localeCompare(b.nickname, "pt-BR");
+      })
+      .slice(0, limit);
+
+    for (const member of queue) {
+      if (Date.now() > deadline) break;
+
+      let profile = null;
+      try {
+        profile = await provider.fetchGameProfile({
+          personaId: member.eaPersonaId!,
+          nucleusId: member.eaNucleusId!,
+        });
+      } catch (error) {
+        console.warn(
+          `[stats] perfil de jogo falhou para ${member.nickname}:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+
+      // STAMPED ON EVERY ATTEMPT, success or not, and this is the line that keeps
+      // the queue moving. A member whose profile always fails would otherwise keep
+      // the oldest timestamp forever and be re-picked every cycle, starving the 88
+      // behind them. That is not hypothetical: stamping only on success is what
+      // froze identity resolution for 21 consecutive cycles on 2026-07-28 (see
+      // "Fila da coleta" in docs/plano.md), and the shape of the bug is identical.
+      //
+      // The profile FIELDS are written only on success, so a bad afternoon never
+      // erases a rank we already hold — `fetchGameProfile` cannot tell "the request
+      // died" from "this account has no rank", so its null is not an answer.
+      await db.member.update({
+        where: { id: member.id },
+        data: {
+          gameProfileReadAt: new Date(),
+          ...(profile
+            ? {
+                gameRankName: profile.rankName,
+                gameRankLevel: profile.rankLevel,
+                gameRankImageUrl: profile.rankImageUrl,
+                badgeCount: profile.badges,
+                dogTagCount: profile.dogTags,
+                competitiveRankName: profile.competitive?.rankName ?? null,
+                competitiveRankMode: profile.competitive?.mode ?? null,
+              }
+            : {}),
+        },
+      });
+
+      if (profile) report.gameProfilesRead += 1;
+    }
+  } catch (error) {
+    console.warn(
+      "[stats] passada de perfis de jogo abortada:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }

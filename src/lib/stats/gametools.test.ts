@@ -8,7 +8,9 @@ import {
   parsePlayersPayload,
   parseProfilePayload,
   pickIdentity,
+  pickTopItems,
   profileStat,
+  toGameProfile,
   toIdentityCard,
   toRawStats,
 } from "./gametools";
@@ -58,6 +60,29 @@ describe("toRawStats", () => {
     // 12320 / 4126 = 2.99, exactly the `infantryKillDeath` the API publishes;
     // pairing with gm_all's 4955 would give 2.49, a ratio it never reports.
     expect(raw!.deaths).toBe(4_126);
+  });
+
+  it("reads XP out of the one-element array the source uses", () => {
+    // Free of charge: the batch payload already carries this. Verified live
+    // 2026-07-29 as `XP: [{ total, performance, accolades }]` — an array, which is
+    // the part a parser written from memory gets wrong.
+    const raw = toRawStats(player)!;
+    expect(raw.xpTotal).toBe(10_308_364);
+    expect(raw.xpPerformance).toBe(4_007_831);
+    expect(raw.xpAccolades).toBe(552_450);
+  });
+
+  it("degrades XP to zero instead of losing the member when the block is absent", () => {
+    // The ONE tolerant field in a deliberately strict parser. Everything else
+    // missing means "skip and retry", because a snapshot with a hole corrupts the
+    // month's delta; XP only ever gets displayed, so failing a whole batch over it
+    // would trade real data for a cosmetic one.
+    const withoutXp = { ...gametoolsPlayerFixture, XP: undefined };
+    const raw = toRawStats(parsePlayersPayload(withoutXp)[0])!;
+    expect(raw).not.toBeNull();
+    expect(raw.xpTotal).toBe(0);
+    // The counters that matter are untouched.
+    expect(raw.kills).toBe(12_320);
   });
 
   it("reads player-versus-player counters from the class bucket", () => {
@@ -453,6 +478,31 @@ describe("profileStat", () => {
   });
 });
 
+describe("parseProfilePayload tolerance", () => {
+  it("accepts an entry with no name, which cost a production cycle", () => {
+    // Live failure on 2026-07-29: `stats[338].name` arrived undefined and the strict
+    // schema threw away the ENTIRE payload — rank, badges and kit times included —
+    // over 1 bad row out of 339. A nameless entry can never match a lookup, so
+    // skipping it is free.
+    const payload = {
+      playerProfiles: [
+        {
+          rankName: "Colonel I",
+          playerCard: { rank: 150, badges: 12 },
+          stats: [{ value: 42 }, { name: "score_total", value: 99 }, { name: "tp_kit_recon" }],
+        },
+      ],
+    };
+
+    const profile = parseProfilePayload(payload);
+    expect(profileStat(profile, "score_total")).toBe(99);
+    // The nameless row is simply invisible, and so is a named one with no value.
+    expect(profileStat(profile, "tp_kit_recon")).toBeNull();
+    expect(toGameProfile(profile).rankName).toBe("Colonel I");
+    expect(toGameProfile(profile).badges).toBe(12);
+  });
+});
+
 describe("bestClassByKitTime", () => {
   it("picks the class with the most TIME played", () => {
     expect(bestClassByKitTime(profileFixture)).toBe("support");
@@ -481,6 +531,171 @@ describe("bestClassByKitTime", () => {
 
   it("survives a missing profile", () => {
     expect(bestClassByKitTime(null)).toBeNull();
+  });
+});
+
+describe("pickTopItems", () => {
+  const player = parsePlayersPayload(gametoolsPlayerFixture)[0];
+
+  it("picks the weapon with the most KILLS, not the most time equipped", () => {
+    // A weapon is a choice of tool, and "the one I kill with" is what a member means
+    // by their best. The fixture's M433 has 4x the time and a third of the kills, so
+    // it is what proves the criterion.
+    const weapon = pickTopItems(player).find((item) => item.kind === "weapon")!;
+    expect(weapon.name).toBe("L110");
+    expect(weapon.kills).toBe(3_412);
+    expect(weapon.group).toBe("Machine Guns");
+    expect(weapon.metrics).toEqual({ accuracy: 21.91, headshotKills: 502 });
+  });
+
+  it("picks the mode and the map by TIME, not by wins", () => {
+    // A place is where the member spends evenings. Picking by wins would report
+    // whichever they happened to have a good night on: the fixture's Conquest has
+    // nearly double Escalation's win rate and 40 % of its time.
+    const items = pickTopItems(player);
+    const mode = items.find((item) => item.kind === "gamemode")!;
+    const map = items.find((item) => item.kind === "map")!;
+
+    expect(mode.name).toBe("Escalation");
+    expect(mode.secondsUsed).toBe(52_212);
+    expect(map.name).toBe("Siege of Cairo");
+    expect(map.secondsUsed).toBe(113_310);
+  });
+
+  it('never picks the "All" aggregate row out of maps', () => {
+    // `maps[0]` is the aggregate and it always wins a "most played" comparison, so an
+    // unfiltered pick would report every member's favourite map as "All" forever, and
+    // look perfectly plausible.
+    const map = pickTopItems(player).find((item) => item.kind === "map")!;
+    expect(map.name).not.toBe("All");
+    expect(map.secondsUsed).toBeLessThan(604_766);
+  });
+
+  it("never picks a mode roll-up, which is the bug that reached production", () => {
+    // The first live cycle (2026-07-29) reported "Official" as the most-played mode
+    // for all 68 members it read: `gm_official` is 725.434 s against gm_all's
+    // 745.876 s. Filtering the literal name "All" did not catch it, because the
+    // source mixes aggregates into its leaf lists under several different names.
+    const mode = pickTopItems(player).find((item) => item.kind === "gamemode")!;
+    expect(mode.name).toBe("Escalation");
+    expect(mode.name).not.toBe("Official");
+  });
+
+  it("picks nothing rather than a roll-up when only aggregates are present", () => {
+    // The dangerous direction: better no row than a row that says "Official".
+    const onlyAggregates = {
+      ...gametoolsPlayerFixture,
+      gameModes: [{ gamemodeName: "Official", id: "gm_official", secondsPlayed: 725_434 }],
+    };
+    const kinds = pickTopItems(parsePlayersPayload(onlyAggregates)[0]).map((item) => item.kind);
+    expect(kinds).not.toContain("gamemode");
+  });
+
+  it("drops mode artwork, because it is SVG", () => {
+    // Serving third-party SVG through next/image needs `dangerouslyAllowSVG`. Dropped
+    // at the source so nothing downstream is tempted to render it.
+    const mode = pickTopItems(player).find((item) => item.kind === "gamemode")!;
+    expect(mode.imageUrl).toBeNull();
+    // The two kinds that ARE webp keep theirs.
+    const map = pickTopItems(player).find((item) => item.kind === "map")!;
+    expect(map.imageUrl).toContain(".webp");
+  });
+
+  it("returns nothing for a kind whose list is empty", () => {
+    // A member who never fired a weapon gets no weapon row, rather than an arbitrary
+    // one out of 53 zero-kill ties.
+    const noWeapons = { ...gametoolsPlayerFixture, weapons: [] };
+    const kinds = pickTopItems(parsePlayersPayload(noWeapons)[0]).map((item) => item.kind);
+    expect(kinds).toEqual(["gamemode", "map"]);
+  });
+
+  it("refuses a zero score, so an untouched account yields no rows", () => {
+    const zeroed = {
+      ...gametoolsPlayerFixture,
+      weapons: [{ name: "L110", id: "wp_mg_l110", kills: 0, timeEquipped: 0 }],
+      gameModes: [{ gamemodeName: "Escalation", id: "gm_esc", secondsPlayed: 0 }],
+      maps: [{ name: "Siege of Cairo", id: "lvlmpabbasid", secondsPlayed: 0 }],
+    };
+    expect(pickTopItems(parsePlayersPayload(zeroed)[0])).toEqual([]);
+  });
+
+  it("survives a payload with no item arrays at all", () => {
+    // Tolerant for the same reason XP is: these cost a panel row, never a batch of
+    // snapshots.
+    const bare = {
+      ...gametoolsPlayerFixture,
+      weapons: undefined,
+      gameModes: undefined,
+      maps: undefined,
+    };
+    const raw = toRawStats(parsePlayersPayload(bare)[0])!;
+    expect(raw.topItems).toEqual([]);
+    // The counters that matter are untouched.
+    expect(raw.kills).toBe(12_320);
+  });
+});
+
+describe("toGameProfile", () => {
+  it("reads the rank, the insignia and both collectable counts", () => {
+    const game = toGameProfile(profileFixture);
+
+    expect(game.rankName).toBe("Second Lieutenant V");
+    expect(game.rankLevel).toBe(141);
+    expect(game.rankImageUrl).toBe("https://cdn.gametools.network/ranks/bf6/t_ui_rank_140_sm.png");
+    expect(game.badges).toBe(104);
+    expect(game.dogTags).toBe(39);
+  });
+
+  it("drops an Unranked division instead of storing it", () => {
+    // The fixture's real value. Most of the roster answers this, and a stored
+    // "Unranked" would put a meaningless tile on nearly every profile. Null here
+    // means "no division"; whether we ever asked is `member.gameProfileReadAt`.
+    expect(toGameProfile(profileFixture).competitive).toBeNull();
+  });
+
+  it("keeps a real division, with the mode it was earned in", () => {
+    const ranked = {
+      playerProfiles: [
+        {
+          rankName: "Colonel I",
+          competitiveRanks: [
+            { modeName: "Redsec Quads", rankName: "Unranked" },
+            { modeName: "Redsec Duos", rankName: "Ouro III" },
+          ],
+          stats: [],
+        },
+      ],
+    };
+
+    // The first entry that is an actual division, so an unranked mode listed ahead
+    // of a ranked one does not hide it.
+    expect(toGameProfile(parseProfilePayload(ranked)).competitive).toEqual({
+      mode: "Redsec Duos",
+      rankName: "Ouro III",
+    });
+  });
+
+  it("treats casing and padding around Unranked as unranked", () => {
+    const messy = {
+      playerProfiles: [
+        { competitiveRanks: [{ modeName: "Redsec Quads", rankName: " UNRANKED " }], stats: [] },
+      ],
+    };
+    expect(toGameProfile(parseProfilePayload(messy)).competitive).toBeNull();
+  });
+
+  it("is all nulls for a payload with no profile, never a throw", () => {
+    // The collector writes these fields only when the call succeeded, so this
+    // shape must be safe to build and safe to discard.
+    const game = toGameProfile(null);
+    expect(game).toEqual({
+      rankName: null,
+      rankLevel: null,
+      rankImageUrl: null,
+      badges: null,
+      dogTags: null,
+      competitive: null,
+    });
   });
 });
 

@@ -5,7 +5,7 @@
 // touches the rest of the app. See docs/api-gametools.md for why gametools is
 // the source and which data bucket we read (gm_all — section 10.3).
 
-import type { PlayerClass } from "@prisma/client";
+import type { PlayerClass, TopItemKind } from "@prisma/client";
 
 /**
  * Stable identity of a player on EA's side. Nicknames change, these ids do
@@ -111,8 +111,54 @@ export type RawStats = {
    */
   matches: number;
   secondsPlayed: number;
+  /**
+   * Account XP: lifetime total, plus the performance and accolade slices.
+   *
+   * Free of charge — it rides in the payload the batch call already returns. Zero
+   * means the source omitted the block, which callers read as unknown, never as an
+   * account with no XP. Displayed only; see `member.gameRankName` for why nothing
+   * from the game's own progression feeds our ladder.
+   */
+  xpTotal: number;
+  xpPerformance: number;
+  xpAccolades: number;
+  /**
+   * The member's single best weapon, most-played mode and most-played map.
+   *
+   * At most one entry per kind, and fewer when the account has nothing to show for
+   * one — a member who never fired a weapon produces no weapon entry rather than a
+   * zeroed one. Free of charge, like XP: these ride in the payload the batch call
+   * already returns.
+   */
+  topItems: TopItem[];
   /** Curated extra metrics persisted in `statSnapshot.extra` (jsonb). */
   extra: Record<string, number | string | null>;
+};
+
+/**
+ * One row of the member's "top" panel, already in OUR vocabulary.
+ *
+ * Deliberately one shape for three kinds. Everything the panel reads is shared
+ * (name, art, a count and a duration), and the two fields that are not — a weapon's
+ * accuracy and headshots — go in `metrics` rather than forcing a union that every
+ * call site would have to narrow.
+ */
+export type TopItem = {
+  kind: TopItemKind;
+  /** Id as the source spells it: "wp_mg_l110", "lvlmpabbasid", "gm_esc". */
+  itemId: string;
+  name: string;
+  /** "Machine Guns" for a weapon; null for a map or a mode. */
+  group: string | null;
+  imageUrl: string | null;
+  kills: number;
+  matches: number;
+  wins: number;
+  losses: number;
+  /** Seconds equipped (weapon) or played (map, mode). */
+  secondsUsed: number;
+  /** `accuracy` and `headshotKills` for a weapon. Null for the other kinds. */
+  metrics: Record<string, number> | null;
 };
 
 /**
@@ -159,6 +205,39 @@ export type IdentityCard = {
   empty: boolean;
 };
 
+/**
+ * The account's standing in the GAME, as opposed to its standing in our clan.
+ *
+ * Everything here comes from `/bf6/profile/`, one request per member, which is why
+ * it is collected on a slow rotating pass instead of every cycle (see the profile
+ * phase in ./collect.ts). None of it scores anything.
+ *
+ * Every field is nullable because the endpoint answers partially: an account can
+ * carry a rank and no competitive division, and a request that half-fails must
+ * still be able to store what it did learn.
+ */
+export type GameProfile = {
+  /** In-game rank, as the game words it ("Second Lieutenant V"). */
+  rankName: string | null;
+  /** Numeric level behind that rank (141), and the insignia artwork EA serves. */
+  rankLevel: number | null;
+  rankImageUrl: string | null;
+  /**
+   * How many badges and dog tags the account holds. Counts only: the source has
+   * no catalogue of which ones (docs/api-gametools.md §13.4).
+   */
+  badges: number | null;
+  dogTags: number | null;
+  /**
+   * Ranked division in Redsec, or null when the account has none.
+   *
+   * "Unranked" is normalised to null rather than stored as a value, because it is
+   * the answer for most of the roster and a division is only worth showing when
+   * there is one. The distinction from "never collected" is `gameProfileReadAt`.
+   */
+  competitive: { mode: string | null; rankName: string } | null;
+};
+
 export interface StatsProvider {
   /**
    * Resolves an EA display name to the stable identity. Null when nobody carries
@@ -192,4 +271,15 @@ export interface StatsProvider {
    * Null only when the source told us nothing at all.
    */
   fetchIdentityCard(identity: ResolvedIdentity): Promise<IdentityCard | null>;
+
+  /**
+   * The account's in-game standing: rank, insignia, badge and dog-tag counts, and
+   * any ranked division.
+   *
+   * One request per member, so callers must bound how many they ask for per cycle.
+   * Null when the request failed or the payload carried no profile — and the
+   * caller must NOT treat that as "this account has no rank", because the two are
+   * indistinguishable from here.
+   */
+  fetchGameProfile(identity: PlayerIdentity): Promise<GameProfile | null>;
 }

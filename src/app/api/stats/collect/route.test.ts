@@ -28,6 +28,7 @@ function report(overrides: Partial<CollectReport> = {}): CollectReport {
   return {
     eligible: 75,
     identitiesResolved: 0,
+    gameProfilesRead: 0,
     updated: 1,
     unchanged: 70,
     noData: 4,

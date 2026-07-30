@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 
 import { RefreshOnFocus } from "@/components/refresh-on-focus";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { GameProfilePanel } from "@/features/clan/components/game-profile-panel";
 import { MemberMedals } from "@/features/clan/components/member-medals";
 import { MemberProgression } from "@/features/clan/components/member-progression";
 import { PlatformIcon } from "@/features/clan/components/platform-icon";
@@ -181,20 +182,49 @@ export default async function MemberProfilePage({ params }: Params) {
                 </div>
               ) : null}
 
+              {/* The CLAN's rank stays here (clan owner, 2026-07-29). The game's own
+                  progression lives in the panel above the stat tiles instead, so the
+                  two ladders never compete for the same slot. */}
               <RankCard points={member.rankPoints} />
             </div>
           </div>
         </header>
 
-        {/* Stats */}
+        {/* Stats, as TWO COLUMNS side by side (clan owner, 2026-07-29). Left is
+            capped at 20rem and holds what the member plays: level, weapon, mode,
+            map. Right takes the rest, with the counters in three columns.
+
+            The split only applies from `lg` up. Below that the two stack, because
+            20rem plus a three-column grid does not fit a tablet and the panel is the
+            half that reads fine full width. Both use the same tile styling so they
+            read as one system rather than two designs. */}
         <section className="mt-10">
           <h2 className="font-heading mb-4 text-xl font-semibold">Estatísticas</h2>
-          <PlayerStats
-            stats={member.totals}
-            bestClass={member.bestClass}
-            headshotRate={member.headshotRate}
-            leadsIn={leadsIn}
-          />
+
+          <div className="grid items-start gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
+            <GameProfilePanel
+              game={{
+                rankName: member.gameRankName,
+                rankLevel: member.gameRankLevel,
+                rankImageUrl: member.gameRankImageUrl,
+              }}
+              topItems={member.topItems}
+            />
+
+            <PlayerStats
+              stats={member.totals}
+              bestClass={member.bestClass}
+              headshotRate={member.headshotRate}
+              leadsIn={leadsIn}
+              game={{
+                badgeCount: member.badgeCount,
+                dogTagCount: member.dogTagCount,
+                competitiveRankName: member.competitiveRankName,
+                competitiveRankMode: member.competitiveRankMode,
+                xpTotal: member.xpTotal,
+              }}
+            />
+          </div>
         </section>
 
         {/* Progression — private, see canSeeProgression above. No placeholder for
