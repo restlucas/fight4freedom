@@ -183,11 +183,13 @@ describe("MemberProfilePage", () => {
     expect(screen.queryByText(/13\.000/)).not.toBeInTheDocument();
   });
 
-  it("shows the game's level in the panel above the tiles", async () => {
+  it("shows the game's rank in the panel beside the tiles", async () => {
     render(await MemberProfilePage({ params: Promise.resolve({ id: "m1" }) }));
 
-    expect(screen.getByText("Nível 141")).toBeInTheDocument();
+    // The rank name is the identity; the level is the figure beside it.
+    expect(screen.getByText("Battlefield 6")).toBeInTheDocument();
     expect(screen.getByText("Second Lieutenant V")).toBeInTheDocument();
+    expect(screen.getByText("141")).toBeInTheDocument();
   });
 
   it("shows the best weapon, mode and map in the panel", async () => {

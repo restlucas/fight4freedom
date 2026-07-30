@@ -35,10 +35,11 @@ export default function Loading() {
           actually holds one, which is nearly nobody. */}
       <div className="mt-10">
         <Skeleton className="mb-4 h-6 w-32" />
-        <div className="grid items-start gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
-          <div className="grid grid-cols-1 gap-2">
+        <div className="grid gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
+          {/* Four cards splitting the column height, so `flex-1` here too. */}
+          <div className="flex flex-col gap-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 rounded-md" />
+              <Skeleton key={i} className="min-h-16 flex-1 rounded-lg" />
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

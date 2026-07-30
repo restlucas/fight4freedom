@@ -201,7 +201,9 @@ export default async function MemberProfilePage({ params }: Params) {
         <section className="mt-10">
           <h2 className="font-heading mb-4 text-xl font-semibold">Estatísticas</h2>
 
-          <div className="grid items-start gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
+          {/* No `items-start`: the left column has to STRETCH to the tile grid's
+              height, which is what lets its four cards split it evenly. */}
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,20rem)_1fr]">
             <GameProfilePanel
               game={{
                 rankName: member.gameRankName,

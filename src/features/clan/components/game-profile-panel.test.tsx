@@ -49,12 +49,16 @@ const map: ProfileTopItem = {
   accuracy: null,
 };
 
-describe("GameProfilePanel rank row", () => {
-  it("leads with the level and names the rank under it", () => {
+describe("GameProfilePanel rank card", () => {
+  it("leads with the rank NAME and puts the level as the figure", () => {
+    // The name is the identity — "Second Lieutenant V" is what the member calls
+    // themselves — and the level is how much of it there is.
     render(<GameProfilePanel game={game} topItems={[]} />);
 
-    expect(screen.getByText("Nível 141")).toBeInTheDocument();
     expect(screen.getByText("Second Lieutenant V")).toBeInTheDocument();
+    expect(screen.getByText("141")).toBeInTheDocument();
+    expect(screen.getByText("nível")).toBeInTheDocument();
+    expect(screen.getByText("Battlefield 6")).toBeInTheDocument();
   });
 
   it("renders the insignia the source points at, decoratively", () => {
@@ -67,19 +71,19 @@ describe("GameProfilePanel rank row", () => {
     expect(image?.getAttribute("src")).toContain("t_ui_rank_140_sm.png");
   });
 
-  it("promotes the rank name when the source sent no level", () => {
-    // Never a row reading "Nível null": the two fields fail independently.
+  it("drops the figure when the source sent no level", () => {
+    // Never a card reading "null": the two fields fail independently.
     render(<GameProfilePanel game={{ ...game, rankLevel: null }} topItems={[]} />);
 
     expect(screen.getByText("Second Lieutenant V")).toBeInTheDocument();
-    expect(screen.getByText("Patente no Battlefield 6")).toBeInTheDocument();
-    expect(screen.queryByText(/Nível/)).not.toBeInTheDocument();
+    expect(screen.getByText("Battlefield 6")).toBeInTheDocument();
+    expect(screen.queryByText("nível")).not.toBeInTheDocument();
   });
 
   it("survives a rank with no artwork", () => {
     render(<GameProfilePanel game={{ ...game, rankImageUrl: null }} topItems={[]} />);
 
-    expect(screen.getByText("Nível 141")).toBeInTheDocument();
+    expect(screen.getByText("Second Lieutenant V")).toBeInTheDocument();
     expect(document.querySelector("img")).toBeNull();
   });
 });
@@ -96,23 +100,27 @@ describe("GameProfilePanel top items", () => {
     expect(labels).toEqual(["Melhor arma", "Modo mais jogado", "Mapa mais jogado"]);
   });
 
-  it("reports a weapon in kills and accuracy", () => {
+  it("reports a weapon with kills as the figure and accuracy under the name", () => {
     render(<GameProfilePanel game={NO_GAME} topItems={[weapon]} />);
 
     expect(screen.getByText("L110")).toBeInTheDocument();
+    expect(screen.getByText("3.412")).toBeInTheDocument();
+    expect(screen.getByText("kills")).toBeInTheDocument();
     // Accuracy arrives as a percentage number (21.91), never a fraction, because
     // every call sends `format_values=false`.
-    expect(screen.getByText("3.412 kills · 21,9% precisão")).toBeInTheDocument();
+    expect(screen.getByText("21,9% de precisão")).toBeInTheDocument();
   });
 
-  it("reports a map and a mode in hours and win rate", () => {
+  it("reports a map and a mode with time as the figure and win rate under it", () => {
     render(<GameProfilePanel game={NO_GAME} topItems={[mode, map]} />);
 
     // A place is measured in time spent, not in kills.
     expect(screen.getByText("Escalation")).toBeInTheDocument();
-    expect(screen.getByText("15 h · 43% vitórias")).toBeInTheDocument();
+    expect(screen.getByText("15 h")).toBeInTheDocument();
+    expect(screen.getByText("43% de vitórias")).toBeInTheDocument();
     expect(screen.getByText("Siege of Cairo")).toBeInTheDocument();
-    expect(screen.getByText("31 h · 58% vitórias")).toBeInTheDocument();
+    expect(screen.getByText("31 h")).toBeInTheDocument();
+    expect(screen.getByText("58% de vitórias")).toBeInTheDocument();
   });
 
   it("omits the win rate when there are no matches to divide by", () => {
@@ -126,8 +134,37 @@ describe("GameProfilePanel top items", () => {
   it("omits accuracy the source did not report", () => {
     render(<GameProfilePanel game={NO_GAME} topItems={[{ ...weapon, accuracy: null }]} />);
 
-    expect(screen.getByText("3.412 kills")).toBeInTheDocument();
+    expect(screen.getByText("3.412")).toBeInTheDocument();
     expect(screen.queryByText(/precisão/)).not.toBeInTheDocument();
+  });
+
+  it("gives every card the same slots, so the column reads as a spec sheet", () => {
+    // Four different subjects, one shape. The eyebrow is what makes a NAME legible:
+    // "L110" means nothing until you know it is a weapon.
+    render(<GameProfilePanel game={game} topItems={[weapon, mode, map]} />);
+
+    for (const eyebrow of [
+      "Battlefield 6",
+      "Melhor arma",
+      "Modo mais jogado",
+      "Mapa mais jogado",
+    ]) {
+      expect(screen.getByText(eyebrow)).toBeInTheDocument();
+    }
+  });
+
+  it("fills the frame with the map photo and insets the weapon render", () => {
+    // Different objects want different fits: a landscape inset in a 40px box reads as
+    // a thumbnail of nothing, while a rifle stretched edge to edge is distorted.
+    render(<GameProfilePanel game={NO_GAME} topItems={[weapon, map]} />);
+
+    const images = [...document.querySelectorAll("img")];
+    const weaponArt = images.find((img) => img.src.includes("Minimi"));
+    const mapArt = images.find((img) => img.src.includes("Abbasid"));
+
+    expect(weaponArt?.className).toContain("object-contain");
+    expect(mapArt?.className).toContain("object-cover");
+    expect(mapArt?.className).toContain("size-full");
   });
 
   it("falls back to an icon for a row with no artwork", () => {
@@ -144,7 +181,7 @@ describe("GameProfilePanel top items", () => {
     render(<GameProfilePanel game={NO_GAME} topItems={[weapon]} />);
 
     expect(screen.getByText("L110")).toBeInTheDocument();
-    expect(screen.queryByText(/Nível/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Battlefield 6")).not.toBeInTheDocument();
   });
 
   it("renders nothing at all when there is neither a rank nor an item", () => {

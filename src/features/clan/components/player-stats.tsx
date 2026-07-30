@@ -223,10 +223,22 @@ export function PlayerStats({
             key={label}
             className={cn(
               "bg-secondary/80 flex items-center gap-2.5 rounded-md border px-3 py-2 backdrop-blur-sm",
+              // Hover matching the game panel beside it, so the two columns respond
+              // the same way: colour only, no cursor change, no lift, nothing that
+              // promises a click on a tile that does not take one.
+              "hover:bg-secondary transition-colors",
               // Border only: a yellow tint here would replace bg-secondary/80 in
               // the class merge and leave the tile transparent over the page
               // background image. The crown already carries the signal.
-              leads && "border-yellow-500/50",
+              //
+              // A LEADER HOVERS YELLOW, not grey, and that is the whole reason this is
+              // a ternary. A shared `hover:border-muted-foreground/30` outranks the
+              // base yellow at runtime (same property, `:hover` wins), so the crown's
+              // border would vanish on the one interaction most likely to happen over
+              // it. Brightening the same yellow keeps the signal and still responds.
+              leads
+                ? "border-yellow-500/50 hover:border-yellow-500/80"
+                : "hover:border-muted-foreground/30",
             )}
           >
             <Icon className={cn("size-4 shrink-0", color)} />

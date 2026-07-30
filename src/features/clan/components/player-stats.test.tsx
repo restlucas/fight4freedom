@@ -52,6 +52,29 @@ describe("PlayerStats", () => {
   });
 });
 
+describe("PlayerStats hover", () => {
+  it("keeps a leader's yellow border on hover instead of greying it out", () => {
+    // The regression this guards: a shared `hover:border-muted-foreground/30` outranks
+    // the base yellow at runtime, so the crown's border would disappear on the one
+    // interaction most likely to happen over it.
+    render(<PlayerStats stats={stats} bestClass="assault" leadsIn={["kills"]} />);
+
+    const crown = screen.getByLabelText("Líder do clã em Kills");
+    const tile = crown.closest("div.bg-secondary\\/80");
+    expect(tile?.className).toContain("border-yellow-500/50");
+    expect(tile?.className).toContain("hover:border-yellow-500/80");
+    expect(tile?.className).not.toContain("hover:border-muted-foreground");
+  });
+
+  it("gives an ordinary tile the neutral hover", () => {
+    render(<PlayerStats stats={stats} bestClass="assault" />);
+
+    const tile = screen.getByText("Deaths").closest("div.bg-secondary\\/80");
+    expect(tile?.className).toContain("hover:border-muted-foreground/30");
+    expect(tile?.className).toContain("hover:bg-secondary");
+  });
+});
+
 describe("PlayerStats game tiles", () => {
   const game = {
     badgeCount: 104,
