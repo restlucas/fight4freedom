@@ -25,6 +25,13 @@ interface RankingListProps {
    * ../lib/ranking.ts).
    */
   board: RankingEntry[];
+  /**
+   * The signed-in member's id, when there is one, so their own row can be marked.
+   *
+   * Null for a visitor and for a signed-in user whose login is not linked to a
+   * member — both cases simply get no highlight.
+   */
+  viewerMemberId?: string | null;
   /** Highest score on the board, for the relative progress bars. */
   topPoints: number;
   /**
@@ -44,9 +51,27 @@ interface RankingListProps {
   limitedToTop?: number | null;
 }
 
-export function RankingList({ board, topPoints, endsAt, limitedToTop }: RankingListProps) {
+export function RankingList({
+  board,
+  topPoints,
+  endsAt,
+  limitedToTop,
+  viewerMemberId = null,
+}: RankingListProps) {
   const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(RANKING_PAGE_SIZE);
+  /**
+   * Starts wide enough to include the viewer's own row.
+   *
+   * Without this the highlight is a promise the page does not keep: the board reveals
+   * RANKING_PAGE_SIZE rows at a time, so a member in 60th place would have to scroll past
+   * everyone else to find the mark that exists to save them the scrolling. Rendering
+   * further down costs nothing here — the whole board is already in the client, by the
+   * design decision in lib/ranking.ts.
+   */
+  const [visibleCount, setVisibleCount] = useState(() => {
+    const own = viewerMemberId ? board.findIndex((entry) => entry.memberId === viewerMemberId) : -1;
+    return own === -1 ? RANKING_PAGE_SIZE : Math.max(RANKING_PAGE_SIZE, own + 1);
+  });
 
   const sentinel = useRef<HTMLDivElement | null>(null);
 
@@ -145,7 +170,11 @@ export function RankingList({ board, topPoints, endsAt, limitedToTop }: RankingL
         <div className="space-y-2">
           {entries.map((entry, index) => (
             <Fragment key={entry.memberId}>
-              <RankingRow entry={entry} topPoints={topPoints} />
+              <RankingRow
+                entry={entry}
+                topPoints={topPoints}
+                isViewer={entry.memberId === viewerMemberId}
+              />
               {/* Divider after the top squad. Suppressed while searching: a
                   filtered list is not a board, so a cut at the 4th result would
                   mark an arbitrary row. Also suppressed when the board is not

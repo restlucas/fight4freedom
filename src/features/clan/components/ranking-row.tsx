@@ -24,10 +24,17 @@ interface RankingRowProps {
   entry: RankingEntry;
   /** Highest score on the board, used for the relative progress bar. */
   topPoints: number;
+  /**
+   * Whether this row is the signed-in member's own.
+   *
+   * Passed down rather than resolved here because the session is a server read and this
+   * is a Client Component — and because a row should not know how identity works.
+   */
+  isViewer?: boolean;
   className?: string;
 }
 
-export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
+export function RankingRow({ entry, topPoints, isViewer = false, className }: RankingRowProps) {
   const share = topPoints > 0 ? Math.max(2, (entry.points / topPoints) * 100) : 0;
   const isLeader = entry.rank === 1 && entry.points > 0;
 
@@ -38,6 +45,20 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
       href={`/membros/${entry.memberId}`}
       className={cn(
         "group bg-card/80 hover:border-primary/60 hover:bg-card/95 focus-visible:ring-ring flex items-center gap-3 rounded-lg border px-3 py-2.5 shadow-lg shadow-black/20 backdrop-blur-md transition-colors focus-visible:ring-2 focus-visible:outline-none",
+        // THE VIEWER'S OWN ROW, as an OUTLINE — the third border-ish property, and the
+        // only one still free.
+        //
+        // `border` is the leader's gold left edge and the hover state; `ring` is the
+        // leader's inset gold glow AND the focus indicator. Using either would have made
+        // one of those unsayable, and tailwind-merge settles the collision by dropping
+        // whichever comes first in the class list, so it would have failed silently
+        // depending on the order. `outline` collides with nothing and follows the
+        // `rounded-lg` radius, which is what makes it read as a circle around the card.
+        //
+        // 2px at 50%: light, as asked, but the point of the mark is being findable while
+        // scanning 99 rows, so 1px lost that argument. Focus still wins on top of it —
+        // `focus-visible:outline-none` drops this one and the 2px ring takes over.
+        isViewer && "outline-primary/50 outline-2",
         // The leader's surface is the PLAIN card colour at full opacity, and the
         // gold lives entirely in the border and the accents. No tint, no wash.
         //
@@ -100,6 +121,10 @@ export function RankingRow({ entry, topPoints, className }: RankingRowProps) {
             that changes between visits. */}
         <p className="font-heading flex items-center gap-1.5 text-base leading-none font-semibold">
           <span className="truncate">{entry.nickname}</span>
+          {/* The ring is invisible to a screen reader, so the same fact is stated in
+              text. Hidden visually because the ring already says it on screen, and two
+              markers would be noise. */}
+          {isViewer ? <span className="sr-only">(você)</span> : null}
           {isLeader ? (
             <Crown className="size-3.5 shrink-0 text-yellow-400" aria-label="Líder do mês" />
           ) : null}

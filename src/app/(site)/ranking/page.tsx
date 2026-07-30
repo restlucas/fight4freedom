@@ -8,6 +8,7 @@ import { RankingScoringHelp } from "@/features/clan/components/ranking-scoring-h
 import { formatMonthLabel } from "@/features/clan/lib/format";
 import { getMonthlyRanking, getRankingMonths } from "@/features/clan/lib/queries";
 import { RANKING_HISTORY_LIMIT, visibleBoard } from "@/features/clan/lib/ranking";
+import { getSessionProfile } from "@/lib/auth/session";
 import { isMonthKey, monthEndsAt, monthKey, monthKeyToReference } from "@/lib/month";
 
 export const metadata: Metadata = {
@@ -32,6 +33,11 @@ export default async function RankingPage({
   // months that really have a board. An unknown or malformed `?mes=` falls back
   // to the open season instead of 404-ing: a stale shared link should still land
   // somewhere useful.
+  // Who is reading, so their own row can be marked on the board. Memoised per request
+  // by `getSessionProfile`, and the page is already `force-dynamic`, so this costs
+  // nothing the header was not already paying.
+  const viewer = await getSessionProfile();
+
   const availableMonths = await getRankingMonths();
   const months = availableMonths.includes(currentSeason)
     ? availableMonths
@@ -112,6 +118,7 @@ export default async function RankingPage({
             // The countdown only means something while the season can still change.
             endsAt={isOpenSeason ? monthEndsAt(now).toISOString() : null}
             limitedToTop={isOpenSeason ? null : RANKING_HISTORY_LIMIT}
+            viewerMemberId={viewer?.memberId ?? null}
           />
         )}
       </main>

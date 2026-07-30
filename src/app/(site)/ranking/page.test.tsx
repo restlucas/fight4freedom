@@ -27,6 +27,9 @@ function longBoard(size: number): RankingEntry[] {
 
 const getMonthlyRanking = vi.fn();
 const getRankingMonths = vi.fn();
+// Who is reading the board. Hoisted because the factory below closes over the same spy,
+// and mocked at all because `@/lib/auth/session` imports Prisma.
+const { getSessionProfile } = vi.hoisted(() => ({ getSessionProfile: vi.fn() }));
 
 // Stubbed: it calls useRouter, which needs a router context these tests do not
 // provide, and its behaviour has its own suite (refresh-on-focus.test.tsx).
@@ -36,6 +39,8 @@ vi.mock("@/features/clan/lib/queries", () => ({
   getMonthlyRanking: (month: string) => getMonthlyRanking(month),
   getRankingMonths: () => getRankingMonths(),
 }));
+
+vi.mock("@/lib/auth/session", () => ({ getSessionProfile }));
 
 import RankingPage from "./page";
 
@@ -49,6 +54,8 @@ function renderPage(searchParams: { mes?: string } = {}) {
 beforeEach(() => {
   getMonthlyRanking.mockReset().mockResolvedValue(BOARD);
   getRankingMonths.mockReset().mockResolvedValue([CURRENT]);
+  // A visitor by default, so the existing tests describe the page as anyone sees it.
+  getSessionProfile.mockReset().mockResolvedValue(null);
 });
 
 // IntersectionObserver (used by the infinite scroll sentinel) is stubbed in
@@ -196,5 +203,80 @@ describe("season history", () => {
     // Well-formed but with no board — a stale shared link must still land somewhere.
     render(await renderPage({ mes: "2019-01" }));
     expect(getMonthlyRanking).toHaveBeenCalledWith(CURRENT);
+  });
+});
+
+describe("RankingPage — a própria linha do visitante logado", () => {
+  /** The row element for a nickname, which is the <a> the whole card lives in. */
+  function rowOf(nickname: string) {
+    return screen.getByText(nickname).closest("a")!;
+  }
+
+  it("circles the signed-in member's own row", async () => {
+    getSessionProfile.mockResolvedValue({ id: "u1", isAdmin: false, memberId: "m2", member: null });
+
+    render(await renderPage());
+
+    expect(rowOf("Vortex").className).toContain("outline-primary/50");
+    // And only theirs.
+    expect(rowOf("RRRRRRRREST").className).not.toContain("outline-primary/50");
+  });
+
+  it("says it in text too, since a ring is invisible to a screen reader", async () => {
+    getSessionProfile.mockResolvedValue({ id: "u1", isAdmin: false, memberId: "m2", member: null });
+
+    render(await renderPage());
+
+    expect(rowOf("Vortex")).toHaveTextContent("(você)");
+  });
+
+  it("marks nobody for a visitor", async () => {
+    getSessionProfile.mockResolvedValue(null);
+
+    render(await renderPage());
+
+    for (const nickname of ["RRRRRRRREST", "Vortex", "Reaper"]) {
+      expect(rowOf(nickname).className).not.toContain("outline-primary/50");
+    }
+  });
+
+  it("marks nobody when the login is not linked to a member", async () => {
+    // Signed in, part of no clan member: there is no row to be theirs.
+    getSessionProfile.mockResolvedValue({ id: "u1", isAdmin: false, memberId: null, member: null });
+
+    render(await renderPage());
+
+    expect(rowOf("Vortex").className).not.toContain("outline-primary/50");
+  });
+
+  it("keeps the leader's gold AND the ring when the reader is first", async () => {
+    // Two different facts, on two different properties. Recolouring the border would have
+    // made one of them unsayable.
+    getSessionProfile.mockResolvedValue({ id: "u1", isAdmin: false, memberId: "m1", member: null });
+
+    render(await renderPage());
+
+    const leader = rowOf("RRRRRRRREST");
+    expect(leader.className).toContain("outline-primary/50");
+    expect(leader.className).toContain("border-yellow");
+  });
+
+  it("renders far enough down the board to actually show the mark", async () => {
+    // The board reveals in batches, so a member in 40th would otherwise have to scroll
+    // past everyone else to find the mark that exists to save them the scrolling.
+    getMonthlyRanking.mockResolvedValue(longBoard(60));
+    getSessionProfile.mockResolvedValue({
+      id: "u1",
+      isAdmin: false,
+      memberId: "m40",
+      member: null,
+    });
+
+    render(await renderPage());
+
+    expect(screen.getByText("Membro40")).toBeInTheDocument();
+    expect(rowOf("Membro40").className).toContain("outline-primary/50");
+    // Still not the whole board: only as far as it had to go.
+    expect(screen.queryByText("Membro60")).not.toBeInTheDocument();
   });
 });
