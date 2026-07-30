@@ -64,8 +64,13 @@ function member(awards: AdminMember["awards"] = []): AdminMember {
       helpRequestedAt: null,
       pausedReason: null,
     },
+    // Playing, so the tests about other columns are not distracted by an activity
+    // warning. The activity states have their own suite.
+    activity: { state: "playing", lastPlayedAt: "2026-07-29T12:00:00.000Z", daysSince: 0 },
+    history: { snapshots: 4, events: 2, medals: 0 },
     role: "member",
     active: true,
+    joinedAt: "2025-10-01T00:00:00.000Z",
     avatarUrl: null,
     discordId: null,
     hasAccount: true,

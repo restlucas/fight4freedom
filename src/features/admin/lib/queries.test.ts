@@ -37,7 +37,11 @@ function row(overrides: Record<string, unknown> = {}) {
     // A read that WORKED. Null here is what separates "never once" from "not this
     // round", so the healthy fixture has to carry a real one.
     statsReadAt: new Date("2026-07-28T12:00:00Z"),
-    _count: { snapshots: 3 },
+    _count: { snapshots: 3, events: 1 },
+    // Newest snapshot: the last time the member PLAYED. Recent by default so the
+    // activity column reads "Jogando" and the sync tests below are not distracted
+    // by an absence warning.
+    snapshots: [{ capturedAt: new Date() }],
     profiles: [],
     medals: [],
     invites: [],
@@ -56,7 +60,7 @@ describe("a failed attempt", () => {
     // Measured 2026-07-28: 24 of 29 members marked no_data had earlier
     // snapshots. The source 504s on about half the batches and the whole batch
     // comes back empty — that is a bad round, not a broken member.
-    const sync = await syncOf({ statsStatus: "no_data", _count: { snapshots: 4 } });
+    const sync = await syncOf({ statsStatus: "no_data", _count: { snapshots: 4, events: 0 } });
 
     expect(sync.state).toBe("ok");
     expect(sync.lastAttemptFailed).toBe(true);
@@ -70,7 +74,7 @@ describe("a failed attempt", () => {
     // EA account with no BF6 data. One was fixed by the name alone.
     const sync = await syncOf({
       statsStatus: "no_data",
-      _count: { snapshots: 0 },
+      _count: { snapshots: 0, events: 0 },
       statsReadAt: null,
     });
 
@@ -86,7 +90,7 @@ describe("a failed attempt", () => {
     // must not send an admin hunting an id.
     const sync = await syncOf({
       statsStatus: "no_data",
-      _count: { snapshots: 0 },
+      _count: { snapshots: 0, events: 0 },
       statsReadAt: new Date("2026-07-28T09:00:00Z"),
     });
 
@@ -158,7 +162,7 @@ describe("a member who asked for help identifying their EA account", () => {
       statsPausedReason: "O membro não conseguiu identificar a própria conta da EA",
       statsStatus: "no_data",
       statsReadAt: null,
-      _count: { snapshots: 0 },
+      _count: { snapshots: 0, events: 0 },
     });
 
     expect(sync.state).toBe("help_requested");
@@ -180,5 +184,115 @@ describe("a member who asked for help identifying their EA account", () => {
   it("is the most urgent state in the column's sort order", async () => {
     expect(syncUrgency("help_requested")).toBe(0);
     expect(SYNC_STATES_BY_URGENCY[0]).toBe("help_requested");
+  });
+});
+
+/**
+ * Activity is a DIFFERENT question from sync, and every case below exists because
+ * the two look interchangeable and are not.
+ */
+describe("member activity", () => {
+  const ACTIVITY_AT_RISK_DAYS = 7;
+  const ACTIVITY_ABSENT_DAYS = 14;
+
+  function daysAgo(days: number) {
+    return new Date(Date.now() - days * 86_400_000);
+  }
+
+  async function activityOf(overrides: Record<string, unknown> = {}) {
+    db.member.findMany.mockResolvedValue([row(overrides)]);
+    const [member] = await getAdminMembers();
+    return member.activity;
+  }
+
+  it("reads playing from the newest SNAPSHOT, not from the last successful read", async () => {
+    // THE distinction the column exists for. This member is read successfully every
+    // cycle — `statsReadAt` is minutes old and the sync badge is green — and has not
+    // played in three weeks. Using `statsReadAt` would call them active.
+    const activity = await activityOf({
+      statsStatus: "ok",
+      statsReadAt: new Date(),
+      snapshots: [{ capturedAt: daysAgo(21) }],
+    });
+
+    expect(activity.state).toBe("absent");
+    expect(activity.daysSince).toBe(21);
+  });
+
+  it("is playing inside the risk threshold", async () => {
+    const activity = await activityOf({ snapshots: [{ capturedAt: daysAgo(2) }] });
+    expect(activity.state).toBe("playing");
+  });
+
+  it("crosses to at_risk exactly on the threshold, not a day later", async () => {
+    expect((await activityOf({ snapshots: [{ capturedAt: daysAgo(6) }] })).state).toBe("playing");
+    expect(
+      (await activityOf({ snapshots: [{ capturedAt: daysAgo(ACTIVITY_AT_RISK_DAYS) }] })).state,
+    ).toBe("at_risk");
+  });
+
+  it("crosses to absent exactly on the threshold", async () => {
+    expect((await activityOf({ snapshots: [{ capturedAt: daysAgo(13) }] })).state).toBe("at_risk");
+    expect(
+      (await activityOf({ snapshots: [{ capturedAt: daysAgo(ACTIVITY_ABSENT_DAYS) }] })).state,
+    ).toBe("absent");
+  });
+
+  it("says never_seen, not absent, when no snapshot exists at all", async () => {
+    // Ambiguous on purpose: they may not play, or may have stopped before collection
+    // existed. Calling it "absent" would assert something we cannot know.
+    const activity = await activityOf({ _count: { snapshots: 0, events: 0 }, snapshots: [] });
+
+    expect(activity.state).toBe("never_seen");
+    expect(activity.lastPlayedAt).toBeNull();
+    expect(activity.daysSince).toBeNull();
+  });
+
+  // The four states where the answer is about the RECORD, not the person. Reporting
+  // any of these as "does not play" is what would send an admin to chase somebody who
+  // is waiting on a fix.
+  it.each([
+    ["inactive", { active: false }],
+    ["paused", { statsPaused: true }],
+    ["identity pending", { statsStatus: "identity_pending", eaPersonaId: null }],
+    [
+      "never read successfully",
+      {
+        statsStatus: "no_data",
+        statsReadAt: null,
+        _count: { snapshots: 0, events: 0 },
+        snapshots: [],
+      },
+    ],
+    ["asked for help", { identityHelpRequestedAt: new Date() }],
+  ])("reports unknown for a member who is %s", async (_case, overrides) => {
+    const activity = await activityOf(overrides);
+
+    expect(activity.state).toBe("unknown");
+    // No date either: claiming a last-played for a member we cannot read would be
+    // presenting an absence of information as information.
+    expect(activity.lastPlayedAt).toBeNull();
+  });
+
+  it("reports unknown even when the member HAS an old snapshot", async () => {
+    // The trap: an inactive member with history looks answerable and is not — we
+    // stopped collecting, so the silence since then is ours, not theirs.
+    const activity = await activityOf({
+      active: false,
+      snapshots: [{ capturedAt: daysAgo(30) }],
+    });
+
+    expect(activity.state).toBe("unknown");
+  });
+
+  it("counts the history a delete would destroy", async () => {
+    const db_row = {
+      _count: { snapshots: 412, events: 37 },
+      medals: [{ medalId: "md1", awardedAt: new Date(), note: null }],
+    };
+    db.member.findMany.mockResolvedValue([row(db_row)]);
+    const [member] = await getAdminMembers();
+
+    expect(member.history).toEqual({ snapshots: 412, events: 37, medals: 1 });
   });
 });

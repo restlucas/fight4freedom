@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { FORM_URL, NAV_ITEMS } from "@/lib/site-config";
+import { JOIN_PATH, NAV_ITEMS } from "@/lib/site-config";
 
 interface SiteHeaderProps {
   /** Rendered by the layout: the login button or the signed-in menu. */
@@ -67,9 +67,7 @@ export function SiteHeader({ account }: SiteHeaderProps) {
 
         <div className="flex items-center gap-2">
           <Button asChild className="hidden md:inline-flex">
-            <a href={FORM_URL} target="_blank" rel="noreferrer">
-              Faça parte
-            </a>
+            <Link href={JOIN_PATH}>Faça parte</Link>
           </Button>
 
           <Separator orientation="vertical" className="hidden !h-6 md:block" decorative />
@@ -105,9 +103,7 @@ export function SiteHeader({ account }: SiteHeaderProps) {
                   </Link>
                 ))}
                 <Button asChild className="mt-4">
-                  <a href={FORM_URL} target="_blank" rel="noreferrer">
-                    Faça parte
-                  </a>
+                  <Link href={JOIN_PATH}>Faça parte</Link>
                 </Button>
                 <Separator className="my-4" />
                 {account}

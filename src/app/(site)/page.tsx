@@ -9,7 +9,7 @@ import { JoinChannels } from "@/features/clan/components/join-channels";
 import { MedalsCarousel } from "@/features/clan/components/medals-carousel";
 import { formatKd, formatNumber, formatPercent } from "@/features/clan/lib/format";
 import { getClanStats, getMedalsCatalog } from "@/features/clan/lib/queries";
-import { FORM_URL } from "@/lib/site-config";
+import { JOIN_PATH } from "@/lib/site-config";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +60,7 @@ export default async function Home() {
             acima de tudo, diversão.
           </p>
           <Button asChild size="lg" className="mt-8">
-            <a href={FORM_URL} target="_blank" rel="noreferrer">
-              Quero ser membro
-            </a>
+            <Link href={JOIN_PATH}>Quero ser membro</Link>
           </Button>
         </div>
       </section>

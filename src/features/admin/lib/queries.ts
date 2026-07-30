@@ -5,6 +5,13 @@ import type { MedalTier, MemberRole, Platform, StatsSyncStatus } from "@prisma/c
 
 import { db } from "@/lib/db";
 
+// Thresholds live in ./member-activity.ts, not here, and the direction of that import
+// is load-bearing: this module imports the db, so anything a CLIENT component reads as
+// a VALUE from here drags Prisma into the browser bundle. The labels module needs the
+// numbers to write "7+ dias" on a badge, so the numbers have to live on the side that
+// is safe to import. It only takes a TYPE back from here, which the compiler erases.
+import { ACTIVITY_ABSENT_DAYS, ACTIVITY_AT_RISK_DAYS } from "./member-activity";
+
 /**
  * What the panel shows in the "Stats" column, already resolved to ONE state.
  *
@@ -125,6 +132,94 @@ function lastAttemptFailed(m: SyncInput): boolean {
   return syncState(m) === "ok" && m.statsStatus === "no_data";
 }
 
+/**
+ * Whether a member is still playing, as far as we can see.
+ *
+ * A DIFFERENT QUESTION FROM `MemberSyncState`, and keeping them apart is the whole
+ * point of this type. That one answers "did our reading work"; this one answers "is
+ * this person still here". They come apart constantly: a member read successfully
+ * every single cycle for three weeks without playing once shows a healthy green sync
+ * badge, because the collection is working perfectly and there is simply nothing new
+ * to record.
+ *
+ * The signal for playing is the age of the newest SNAPSHOT, never `statsReadAt`: a
+ * snapshot is only written when the counters moved, so its date is the last time the
+ * member actually played. `statsReadAt` moves on every successful fetch, idle member
+ * or not.
+ */
+export type MemberActivityState =
+  /**
+   * The collector cannot answer for this member: not eligible, paused, or bound to
+   * an EA account it has never managed to read. Action is on the RECORD, not on the
+   * person, and mixing this with "does not play" is what would make an admin chase
+   * someone who is waiting on a fix. Same rule as the identity card's null in
+   * docs/api-gametools.md §12: null means "we did not observe", never "never played".
+   */
+  | "unknown"
+  /**
+   * Read fine, and we have never once recorded them playing. Distinct from `absent`
+   * because the cause is ambiguous: they may not play, or they may have stopped
+   * before collection existed (27/07). Resolves itself the moment they play.
+   */
+  | "never_seen"
+  /** Played within the risk threshold. Nothing to do. */
+  | "playing"
+  /** Quiet for a week. Worth a message before it becomes a departure. */
+  | "at_risk"
+  /** Quiet for two weeks. */
+  | "absent";
+
+export type MemberActivity = {
+  state: MemberActivityState;
+  /**
+   * ISO instant of the newest snapshot: the last time we saw this member play. Null
+   * when we never have.
+   */
+  lastPlayedAt: string | null;
+  /** Whole days since then. Null when there is no snapshot to count from. */
+  daysSince: number | null;
+};
+
+/** How much history a delete would take with it. Read by the confirmation dialog. */
+export type MemberHistory = {
+  snapshots: number;
+  events: number;
+  medals: number;
+};
+
+type ActivityInput = SyncInput & {
+  /** Newest snapshot, or null. */
+  lastPlayedAt: Date | null;
+};
+
+function memberActivity(m: ActivityInput, now: Date): MemberActivity {
+  const state = syncState(m);
+  // Everything the collector cannot see through: an inactive or ineligible member, a
+  // paused one, a missing identity, or an account no read has ever worked on.
+  if (state === "off" || state === "paused" || state === "identity_pending") {
+    return { state: "unknown", lastPlayedAt: null, daysSince: null };
+  }
+  if (state === "never_read" || state === "help_requested") {
+    return { state: "unknown", lastPlayedAt: null, daysSince: null };
+  }
+
+  if (m.lastPlayedAt === null) {
+    return { state: "never_seen", lastPlayedAt: null, daysSince: null };
+  }
+
+  const daysSince = Math.floor((now.getTime() - m.lastPlayedAt.getTime()) / 86_400_000);
+  return {
+    state:
+      daysSince >= ACTIVITY_ABSENT_DAYS
+        ? "absent"
+        : daysSince >= ACTIVITY_AT_RISK_DAYS
+          ? "at_risk"
+          : "playing",
+    lastPlayedAt: m.lastPlayedAt.toISOString(),
+    daysSince,
+  };
+}
+
 export type AdminInvite = {
   id: string;
   grantsAdmin: boolean;
@@ -158,8 +253,23 @@ export type AdminMember = {
   statsLinked: boolean;
   /** Everything the panel needs to say whether stats are syncing. */
   sync: MemberSync;
+  /**
+   * Whether the member is still playing. NOT the same question as `sync`, which is
+   * about whether our reading works — see MemberActivityState.
+   */
+  activity: MemberActivity;
+  /** How much history a delete would destroy. Read by the confirmation dialog. */
+  history: MemberHistory;
   role: MemberRole;
   active: boolean;
+  /**
+   * When the member joined the clan, as an ISO instant.
+   *
+   * A DATE-ONLY column (`@db.Date`), so it must be formatted in UTC: rendering it in
+   * a negative timezone shows the day before, and this is the one field in the table
+   * an admin might cross-check against a spreadsheet.
+   */
+  joinedAt: string | null;
   avatarUrl: string | null;
   discordId: string | null;
   /** Whether a Discord account is already linked. */
@@ -185,6 +295,7 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       eaNucleusId: true,
       role: true,
       active: true,
+      joinedAt: true,
       avatarUrl: true,
       discordId: true,
       collectWithoutLogin: true,
@@ -194,9 +305,14 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       statsCheckedAt: true,
       statsReadAt: true,
       identityHelpRequestedAt: true,
-      // Only the count: "has this member ever had stats" is what separates a
-      // transient failure from a member the collector genuinely cannot read.
-      _count: { select: { snapshots: true } },
+      // Counts, for two different jobs. `snapshots` answers "has this member ever
+      // had stats", which separates a transient failure from a member the collector
+      // genuinely cannot read. Both feed the delete dialog, which has to say what it
+      // is about to destroy.
+      _count: { select: { snapshots: true, events: true } },
+      // Newest snapshot only: its date is the last time the member PLAYED, because a
+      // snapshot is written only when the counters moved. One row per member.
+      snapshots: { orderBy: { capturedAt: "desc" }, take: 1, select: { capturedAt: true } },
       profiles: { select: { isAdmin: true } },
       medals: {
         orderBy: { awardedAt: "desc" },
@@ -216,6 +332,11 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
       },
     },
   });
+
+  // One instant for the whole page, so two rows can never disagree about what "today"
+  // is. This query is deliberately uncached (see the file header), so reading the
+  // clock here is safe — a cached query would freeze it.
+  const now = new Date();
 
   return members.map((m) => {
     const input: SyncInput = { ...m, hasStats: m._count.snapshots > 0 };
@@ -237,8 +358,15 @@ export async function getAdminMembers(): Promise<AdminMember[]> {
         helpRequestedAt: m.identityHelpRequestedAt?.toISOString() ?? null,
         pausedReason: m.statsPausedReason,
       },
+      activity: memberActivity({ ...input, lastPlayedAt: m.snapshots[0]?.capturedAt ?? null }, now),
+      history: {
+        snapshots: m._count.snapshots,
+        events: m._count.events,
+        medals: m.medals.length,
+      },
       role: m.role,
       active: m.active,
+      joinedAt: m.joinedAt?.toISOString() ?? null,
       avatarUrl: m.avatarUrl,
       discordId: m.discordId,
       hasAccount: m.profiles.length > 0,

@@ -51,8 +51,13 @@ function member(
       helpRequestedAt: null,
       pausedReason: null,
     },
+    // Playing, so the tests about other columns are not distracted by an activity
+    // warning. The activity states have their own suite.
+    activity: { state: "playing", lastPlayedAt: "2026-07-29T12:00:00.000Z", daysSince: 0 },
+    history: { snapshots: 4, events: 2, medals: 0 },
     role,
     active: true,
+    joinedAt: "2025-10-01T00:00:00.000Z",
     avatarUrl: null,
     discordId: null,
     hasAccount: true,
@@ -320,5 +325,76 @@ describe("MembersTable — relógio da coleta", () => {
   it("says so plainly when nothing was ever collected", () => {
     render(<MembersTable members={[read("Panzer", null)]} medals={[]} />);
     expect(screen.getByText("A coleta ainda não rodou")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The Ações column lives under `md:table-fixed`, so its width is a hard budget: a cell
+ * does not grow for its content, it clips and the content spills over the next column.
+ * That is how the delete trigger ended up rendering outside the column on 2026-07-29.
+ * These lock what the column actually contains, so the width can be reasoned about.
+ */
+describe("MembersTable — coluna Ações", () => {
+  function actionsOf(nickname: string) {
+    const row = screen
+      .getAllByRole("row")
+      .find((candidate) => candidate.textContent?.includes(nickname))!;
+    return {
+      edit: row.querySelector(`[aria-label="Editar ${nickname}"]`),
+      remove: row.querySelector(`[aria-label="Excluir ${nickname}"]`),
+      medals: row.querySelector(`[aria-label="Medalhas de ${nickname}"]`),
+      invite: row.querySelector(`[aria-label="Gerar convite para ${nickname}"]`),
+    };
+  }
+
+  it("gives every row edit, delete and medals", () => {
+    renderTable();
+    const actions = actionsOf("Panzer");
+
+    expect(actions.edit).not.toBeNull();
+    expect(actions.remove).not.toBeNull();
+    expect(actions.medals).not.toBeNull();
+  });
+
+  it("names the icon-only controls, since the labels were dropped", () => {
+    // The words went away for width; the accessible names carry the meaning they
+    // carried, so the buttons stay reachable by screen reader and show a tooltip.
+    renderTable();
+
+    expect(screen.getByRole("button", { name: "Editar Panzer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Excluir Panzer" })).toBeInTheDocument();
+  });
+
+  it("offers the invite only to a member with no account", () => {
+    renderTable([
+      { ...member("ComConta", "member", "ea"), hasAccount: true },
+      { ...member("SemConta", "member", "ea"), hasAccount: false },
+    ]);
+
+    expect(actionsOf("ComConta").invite).toBeNull();
+    expect(actionsOf("SemConta").invite).not.toBeNull();
+    // And the other controls are there either way: the slot is reserved, not skipped,
+    // so the rows still line up.
+    expect(actionsOf("ComConta").edit).not.toBeNull();
+    expect(actionsOf("ComConta").remove).not.toBeNull();
+  });
+});
+
+describe("MembersTable — coluna Entrou", () => {
+  it("formats the join date in UTC, never shifting it a day back", () => {
+    // `joinedAt` is a date-only column, so Postgres returns midnight UTC. Formatting
+    // in any Brazilian timezone would render 30/09 for a member who joined on 01/10 —
+    // and this is the column an admin cross-checks against the import spreadsheet.
+    renderTable([{ ...member("Panzer", "member", "ea"), joinedAt: "2025-10-01T00:00:00.000Z" }]);
+
+    expect(screen.getByText("01/10/2025")).toBeInTheDocument();
+    expect(screen.queryByText("30/09/2025")).not.toBeInTheDocument();
+  });
+
+  it("shows a dash when the member has no join date", () => {
+    // Real case: the v1 import did not carry one for every member. A blank cell would
+    // read as a rendering bug.
+    renderTable([{ ...member("SemData", "member", "ea"), joinedAt: null }]);
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

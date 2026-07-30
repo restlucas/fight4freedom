@@ -57,9 +57,19 @@ export function InviteDialog({ member }: InviteDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        {/* Icon-only and 32px, matching Editar and Excluir: the Ações column is under
+            `table-fixed`, so its width is a hard budget and a labelled button here was
+            what pushed the group past the cell. `outline` keeps it visually distinct as
+            the one action that grants access. */}
+        <Button
+          // `ghost`, like the other three in the row: four bordered boxes per line
+          // was a toolbar competing with the data across 99 rows.
+          variant="ghost"
+          size="icon-sm"
+          title={`Gerar convite para ${member.nickname}`}
+          aria-label={`Gerar convite para ${member.nickname}`}
+        >
           <KeyRound className="size-3.5" />
-          Convite
         </Button>
       </DialogTrigger>
 

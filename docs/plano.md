@@ -1507,56 +1507,134 @@ que é o comportamento correto e ainda assim significa que o caminho rápido nã
 
 Nada nesta fase aparece na vitrine. As três são para quem opera o clã.
 
-#### 11.1 — Healthcheck do ciclo
+**11.1 e 11.2 estão entregues.** A 11.2 saiu primeiro, fora de ordem, porque o dono do projeto foi
+procurar a informação no painel e ela não estava lá. Falta a 11.3.
 
-**O problema:** se o container da Railway não subir, ou o processo morrer antes de escrever, ninguém
-sabe. O sintoma aparece dias depois como "o número não muda", e é exatamente o tipo de falha que a
-Fase 6 tornou visível **dentro** de um ciclo e continua invisível **entre** ciclos.
+#### 11.1 — Healthcheck do ciclo: entregue (2026-07-29)
 
-**Desenho:** dead man's switch externo (healthchecks.io serve, plano gratuito). Dois sinais, não um:
-`/start` no começo e o ping de sucesso no fim, **depois** da purga de cache. Ping de falha explícito no
-`catch`.
+**O que isto pega e nada mais pegava.** A Fase 6 tornou a falha visível **dentro** de um ciclo: o painel
+diz quem não foi lido e por quê. Ninguém vigiava **entre** ciclos. Se o container da Railway não subir, ou
+o processo morrer antes de escrever, não há log para ler nem linha para notar, e o sintoma aparece dias
+depois como "os números pararam de andar".
+
+**Por que serviço de fora, e não tabela nossa.** Tabela só registra execução que aconteceu. A falha que
+vale pegar é a que **não** aconteceu, e nada dentro do processo consegue reportar a própria ausência. Quem
+detecta silêncio tem de estar fora do que está silencioso.
+
+**Três pings, na convenção que healthchecks.io, Better Stack e cron-job.org entendem sem adaptador:**
+
+| Momento | Path      | Por quê                                                            |
+| ------- | --------- | ------------------------------------------------------------------ |
+| início  | `/start`  | abre a janela que o monitor mede, antes de qualquer trabalho       |
+| sucesso | (raiz)    | **depois da purga de cache**, ver abaixo                           |
+| falha   | `/fail`   | separa "rodou e quebrou" de "não rodou", que têm correções diferentes |
 
 **Decisões:**
 
-- **Serviço externo, não tabela nossa.** Tabela nossa não avisa quando o problema é o worker não ter
-  subido. Quem detecta ausência tem que estar fora.
-- **Dois sinais** porque "não rodou" e "rodou e quebrou" são diagnósticos diferentes.
-- **Nunca fatal.** Um healthcheck que derruba o ciclo inverte o propósito. Mesmo tratamento do
-  `purgeVitrineCache`.
-- **O payload leva o `CollectReport` resumido**, então o histórico de "quantos atualizados por ciclo"
-  vem de graça e responde "desde quando está ruim".
+- **O ping de sucesso é a ÚLTIMA coisa do ciclo**, depois da purga. Antes dela, reportaria sucesso de um
+  ciclo que ainda pode falhar no passo final, e o monitor ficaria calado exatamente sobre a falha que ele
+  existe para ver.
+- **O ping de falha é aguardado antes do `process.exit`.** `exit` não espera promise em voo, então pingar
+  sem await abandonaria a requisição e transformaria uma quebra no outro modo de falha do monitor: o
+  silêncio, que ele acabaria reportando como "nunca rodou".
+- **Nunca fatal, nas duas direções.** Um healthcheck capaz de derrubar um ciclo inverte o próprio
+  propósito: o monitor passa a ser a indisponibilidade. Toda função engole tudo.
+- **`HEALTHCHECK_URL` é opcional**, e é a única env assim. Monitoramento não pode ser requisito para
+  coletar: execução local e CI não têm monitor, e o ciclo tem de se comportar igual com e sem um.
+- **O resumo vai no corpo do ping.** Os serviços guardam e exibem ao lado da execução, então o histórico
+  de alertas passa a responder "quantos membros cada um dos últimos vinte ciclos atualizou" de graça, sem
+  tabela nossa. É a mesma string do log, montada uma vez, porque duas iriam divergir e a do histórico é a
+  que ninguém está por perto para re-derivar.
+- **Barra final tolerada** na URL configurada: URL de monitor colada à mão carrega uma metade das vezes, e
+  `//start` é 404 em todo serviço que fala essa convenção.
 
-Env nova: `HEALTHCHECK_URL`, no serviço da Railway. Módulo novo `src/lib/ops/healthcheck.ts`.
+**Onde ficou:** `src/lib/ops/healthcheck.ts`, `healthcheckUrl` em `lib/env.ts`, e três chamadas em
+`worker/main.ts`.
 
-**Pronto quando:** desligar o worker de propósito gera alerta em menos de 30 min.
+**Verificado:** 7 testes cobrindo os três paths, o corpo, a barra final, a ausência de configuração e o
+monitor inalcançável. **Não verificado:** um alerta real disparando — depende de configurar o monitor e
+deixar um ciclo faltar.
 
-#### 11.2 — Alerta de inatividade no painel
+**Falta configurar em produção:** criar o check no serviço escolhido com janela compatível com a cadência
+de 20 min (sugestão: período 20 min, graça 10 min) e pôr a URL em `HEALTHCHECK_URL` na Railway.
 
-**O problema de definição é a feature.** "Inativo" hoje significa três coisas com três ações
-diferentes, e o painel só conta `active: false`:
+#### 11.2 — Atividade e exclusão na tabela de membros: entregue (2026-07-29)
 
-| Bucket           | Sinal                                                                    | O que o admin faz                                    |
-| ---------------- | ------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **Não sabemos**  | `statsStatus` em `identity_pending` ou `no_data`, ou `statsPaused`        | Conserta o cadastro. Não é ausência, é dado quebrado |
-| **Sem login**    | `discordId` nulo com `collectWithoutLogin = true`                        | Manda o convite. É o legado dos 98 importados        |
-| **Não joga**     | `statsReadAt` recente e nenhum snapshot novo há N dias                   | Chama a pessoa                                       |
+Entregue fora de ordem, antes da 11.1, porque o dono do projeto foi procurar a informação no painel e
+ela não estava lá.
 
-**Decisão que carrega tudo: nunca misturar "não sabemos" com "não jogou".** Um membro cuja identidade
-não resolve aparece como ausente e não é: a gente simplesmente não olhou. É a mesma regra que a §12 já
-aplicou ao card de identidade, onde nulo significa "não observamos", jamais "nunca jogou". Misturar os
-dois produz o admin cobrando presença de quem está esperando conserto de cadastro.
+**O problema de definição é a feature.** "Inativo" significava coisas diferentes com ações diferentes, e
+o painel só contava `active: false`. Pior: a coluna **Stats** *parecia* responder e não respondia. Ela é
+saúde da coleta, e o `readAt` dela é "quando uma leitura deu certo", não "quando a pessoa jogou". Um
+membro lido com sucesso todo ciclo e sem jogar há três semanas aparecia **verde**.
+
+**Cinco estados, e não os três baldes planejados**, numa coluna "Atividade" ao lado de Stats:
+
+| Estado                | Quando                                              | Quem age              |
+| --------------------- | --------------------------------------------------- | --------------------- |
+| (sem badge, só a data)| jogou nos últimos 7 dias                            | ninguém               |
+| `7+ dias sem jogar`   | uma semana quieto                                   | a pessoa              |
+| `14+ dias sem jogar`  | duas semanas                                        | a pessoa              |
+| `Nunca vimos jogar`   | lido sem erro, nenhuma partida registrada           | ninguém ainda         |
+| `Não sabemos`         | inativo, pausado, sem identidade, ou nunca lido     | **o cadastro**        |
+
+Por que cinco e não três: `never_seen` e `unknown` pedem ações diferentes, e juntá-los recriaria
+exatamente a confusão que a fase existe para evitar. E o balde "sem login" ficou de fora porque a coluna
+**Conta** já responde isso — ele era balde de uma visão geral que não tem essa coluna.
+
+**Decisão que carrega tudo: nunca misturar "não sabemos" com "não jogou".** Um membro cuja identidade não
+resolve aparece como ausente e não é: a gente simplesmente não olhou. É a mesma regra da §12 do estudo da
+API, onde nulo significa "não observamos", jamais "nunca jogou". O hover card do `Não sabemos` diz
+explicitamente que o problema é nosso.
 
 **Por que a idade do snapshot mede jogo, e não coleta:** snapshot só é escrito quando `matches` e
-`secondsPlayed` do `gm_all` andam. Um membro lido com sucesso e sem snapshot novo não jogou. Isso já
-está registrado na Fase 3 e é o que faz a métrica ser honesta.
+`secondsPlayed` do `gm_all` andam. Um membro lido com sucesso e sem snapshot novo não jogou.
 
-**Limiares:** 7 dias como risco, 14 como ausente. Constantes num só lugar, ajustáveis sem schema.
+**Limiares:** 7 e 14 dias, em constantes. **E elas moram em `lib/member-activity.ts`, não em
+`lib/queries.ts`**, o que é a armadilha desta entrega: `queries.ts` importa o Prisma, então qualquer
+constante que um Client Component leia como **valor** de lá arrasta o banco para o bundle do navegador.
+Declarei nele primeiro e o sintoma foi `Missing required environment variable: DATABASE_URL` num teste de
+componente, que não se parece nada com problema de bundling. O módulo de rótulos só importa **tipo** de
+volta, que o compilador apaga.
 
-Sem schema novo. `getAdminOverview` ganha os três buckets e o painel ganha uma seção com lista
-clicável.
+**Estado saudável não ganha badge** (decisão de 29/07, depois de ver na tela): quase todo o roster está
+jogando, então um verde em quase toda linha é padrão que o olho para de ler, e os âmbar e vermelho perdem
+o contraste que os torna úteis. Também disputava atenção com o verde "Sincronizando" da coluna vizinha,
+que é outra pergunta com a mesma cor.
 
-**Pronto quando:** os três buckets mais os ativos fecham com o total de elegíveis, sem sobreposição.
+Sem schema novo. `getAdminMembers` ganhou o snapshot mais recente por membro (um `take: 1`) e as
+contagens de histórico.
+
+##### Exclusão de membro
+
+Pedida junto (29/07) e **apagar de verdade**, não desativar, com a decisão tomada sabendo o custo. As
+cascatas de `prisma/schema.prisma` levam junto: todo o `stat_snapshot` (que é a matéria-prima do
+ranking), `member_medal`, `clan_event`, `member_top_item`, `identity_claim` e `member_invite`.
+`profile.memberId` e `highlight.memberId` são `SetNull`, então o login do Discord sobrevive desvinculado.
+Não existe backup.
+
+A segurança não está em recusar, está em três coisas:
+
+- **A confirmação é verificada no SERVIDOR**, comparando o nick digitado com o que o **banco** diz, nunca
+  com um valor que veio no form. Confirmação que vive no cliente é confirmação que um POST forjado pula,
+  e esta é a única ação do painel sem desfazer.
+- **As contagens são específicas.** "Isso apaga o membro" é aviso que ninguém lê; "apaga 412 leituras de
+  stats e 3 medalhas" é número que para a mão.
+- **O botão destrutivo fica desabilitado** até o nick casar exatamente, caixa inclusive.
+
+O diálogo também nomeia a alternativa reversível (`active: false` pelo Editar), porque na maioria dos
+casos é isso que o admin realmente quer, e documentação que ninguém abre neste momento não ajuda.
+
+**Coluna de ações:** Editar e Excluir viraram ícones de 32px lado a lado, em caixas idênticas, para os
+controles caírem no mesmo x em toda linha. O texto "Editar" saiu porque era o que fazia essa coluna ser a
+mais larga da tabela; `title` e `aria-label` carregam o significado que a palavra carregava.
+
+**Verificado:** `lint`, `type-check`, `build` e 590 testes, 25 deles novos: os limiares exatos nas duas
+bordas (6 dias é jogando, 7 é risco), `never_seen` em vez de `absent` sem snapshot, os cinco casos que
+viram `unknown`, o caso do membro inativo **com** snapshot antigo (parece respondível e não é), e o
+diálogo de exclusão inteiro.
+
+**Não verificado:** a exclusão contra o banco real, por motivo óbvio.
 
 #### 11.3 — Candidatura no site e fila no painel
 

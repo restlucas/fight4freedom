@@ -27,6 +27,7 @@
 
 import { db } from "@/lib/db";
 import { serverEnv } from "@/lib/env";
+import { healthcheckFailed, healthcheckStarted, healthcheckSucceeded } from "@/lib/ops/healthcheck";
 import {
   collectStats,
   WORKER_BUDGET_MS,
@@ -64,6 +65,10 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
   console.info(`[worker] ciclo iniciado, orcamento ${WORKER_BUDGET_MS / 1000}s`);
 
+  // Starts the window the monitor measures against. Before any work, so a container
+  // that dies mid-cycle is still a cycle the monitor knows began.
+  await healthcheckStarted();
+
   const report = await collectStats(undefined, {
     budgetMs: WORKER_BUDGET_MS,
     rounds: WORKER_ROUNDS,
@@ -72,6 +77,14 @@ async function main(): Promise<void> {
   });
 
   const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  // Built once and used twice: the log a human reads and the body the monitor stores
+  // beside the run. Two strings would drift, and the one in the alert history is the
+  // one nobody is around to re-derive.
+  const summary =
+    `${report.updated} atualizados, ${report.unchanged} sem mudanca, ` +
+    `${report.noData} sem dado, ${report.identityPending} sem identidade, ` +
+    `${report.deferred} adiados de ${report.eligible} elegiveis | ` +
+    `${report.pointsAccrued} pontos | ${report.gameProfilesRead} perfis | ${seconds}s`;
   console.info(
     `[worker] ciclo concluido em ${seconds}s: ${report.updated} atualizados, ` +
       `${report.unchanged} sem mudanca, ${report.noData} sem dado, ` +
@@ -109,6 +122,11 @@ async function main(): Promise<void> {
   }
 
   if (report.updated > 0) await purgeVitrineCache();
+
+  // LAST, after the purge. Pinging before it would report success for a cycle that
+  // could still fail on its final step, and the monitor would go quiet about exactly
+  // the failure it exists to catch.
+  await healthcheckSucceeded(summary);
 }
 
 // Prisma holds the connection pool open, so the process would hang after main()
@@ -121,6 +139,12 @@ main()
   })
   .catch(async (error: unknown) => {
     console.error("[worker] ciclo falhou:", error);
+    // BEFORE the disconnect and the exit, and awaited: a `process.exit` does not wait
+    // for a promise in flight, so pinging without awaiting here would abandon the
+    // request and turn a crash into the monitor's other failure mode — silence, which
+    // it would eventually report as "never ran". Ran-and-broke is a different problem
+    // with a different fix.
+    await healthcheckFailed(error);
     await db.$disconnect();
     // Non-zero so Railway marks the execution as failed instead of succeeded.
     process.exit(1);

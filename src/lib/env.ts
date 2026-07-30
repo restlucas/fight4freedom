@@ -74,4 +74,17 @@ export const serverEnv = {
   get storageConfigured(): boolean {
     return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL);
   },
+  /**
+   * Base URL of the collection's dead man's switch (see src/lib/ops/healthcheck.ts).
+   *
+   * OPTIONAL, and the only env var here that is, because monitoring must not be a
+   * requirement for collecting: a local run and a CI build have no monitor, and the
+   * cycle has to behave identically with and without one. Absent means the pings are
+   * skipped, never that the run fails.
+   *
+   * Set on the Railway service, not on Vercel: the thing being watched is the worker.
+   */
+  get healthcheckUrl(): string | null {
+    return process.env.HEALTHCHECK_URL ?? null;
+  },
 } as const;

@@ -398,6 +398,97 @@ model MemberInvite {
   @@map("member_invite")
 }
 
+/// Where a candidature stands. Three states, because the queue has three outcomes.
+enum RecruitStatus {
+  pending
+  approved
+  rejected
+
+  @@map("recruit_status")
+}
+
+/// Age brackets, copied VERBATIM from the Google Form the clan already recruits with.
+///
+/// The overlap is theirs and is preserved on purpose: `12 a 17` and `17 a 25` both
+/// contain 17. Tidying it would make the answers collected here incomparable with the
+/// ones already in that spreadsheet, which is the only history the clan has about who
+/// applies. Worth fixing in the form first, then here.
+///
+/// Prefixed because a Prisma enum value cannot start with a digit.
+enum AgeBracket {
+  age_12_17
+  age_17_25
+  age_25_30
+  age_30_40
+  age_40_plus
+
+  @@map("age_bracket")
+}
+
+/// Fase 11.3 — someone asking to join, before they are a member.
+///
+/// A QUEUE, NOT A ROSTER, and that separation is the security model. `/candidatar` is a
+/// public write endpoint, so anything it can create has to be inert: a row here appears
+/// on no vitrine, scores in no ranking and is read by no collector. Only an admin
+/// approving it creates a `member`.
+///
+/// It is also NOT related to `member`. A candidature that becomes a member stores the
+/// resulting id in `memberId` as a plain reference, without a foreign key, because the
+/// two have opposite lifecycles: deleting a member must not delete the record of them
+/// having applied, which is the only thing that explains where a roster row came from.
+///
+/// FIELDS FOLLOW THE CLAN'S EXISTING FORM (see docs/plano.md, Fase 11.3), plus the one
+/// question it never asked: the EA display name. That omission is the origin of the
+/// project's most expensive defect — 23 of 99 members carrying an id that matches no EA
+/// account — because until now the name was typed by an admin guessing rather than by
+/// the person who knows it.
+model Recruit {
+  id       String        @id @default(uuid())
+  status   RecruitStatus @default(pending)
+  /// Real name, as typed. Personal data: never rendered outside the admin panel.
+  realName String        @map("real_name")
+  /// WhatsApp with area code. Personal data, and how the clan actually replies.
+  whatsapp String
+  /// Nick in the game, which is what the clan calls them. Not a lookup key.
+  nickname String
+  platform Platform
+  /// EA display name, the ONLY string EA's search accepts (`/bf6/player/?name=`).
+  ///
+  /// The field the Google Form does not have, and the reason this page exists at all:
+  /// asked of the person who knows the answer instead of guessed by an admin later.
+  /// Verified against EA only on APPROVAL, never on submit — validating here would
+  /// point a public endpoint at a free community API.
+  declaredEaName     String  @map("declared_ea_name")
+  /// EA `username`, the tiebreak between accounts sharing a display name. Optional
+  /// because most people do not know theirs, and a mandatory field they cannot answer
+  /// is how invented values get in.
+  declaredEaUsername String? @map("declared_ea_username")
+  /// Discord handle. Not in the Google Form either, and the clan runs on Discord: the
+  /// invite that follows approval is claimed with a Discord login.
+  discordHandle String?    @map("discord_handle")
+  ageBracket    AgeBracket @map("age_bracket")
+  /// Whether they own the game. `false` means Battle Royale only, which is free — a
+  /// recruitment decision, not a data problem.
+  hasGame       Boolean    @map("has_game")
+  /// How they heard about the clan, as one of the form's options or free text under
+  /// "Outro". Free text rather than an enum: it is read by a human, never branched on,
+  /// and the option list is the clan's to change without a migration.
+  referral      String?
+  /// SHA-256 of the submitter's IP. A HASH and not the address: rate limiting needs to
+  /// know it is the same sender, and nothing here needs to know who.
+  ipHash        String?    @map("ip_hash")
+  reviewedBy    String?    @map("reviewed_by")
+  reviewedAt    DateTime?  @map("reviewed_at") @db.Timestamptz(6)
+  /// The member created on approval. Deliberately NOT a relation: deleting a member
+  /// must not erase the record of them having applied.
+  memberId      String?    @map("member_id")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// The queue reads pending-first, newest-first. Both filters hit this.
+  @@index([status, createdAt], map: "recruit_status_created_idx")
+  @@map("recruit")
+}
+
 model Medal {
   id          String    @id @default(uuid())
   name        String

@@ -36,6 +36,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PlatformIcon } from "@/features/clan/components/platform-icon";
+
+import { DeleteMemberDialog } from "./delete-member-dialog";
+import { MemberActivityCell } from "./member-activity-cell";
 import {
   memberInitials,
   normalizeSearch,
@@ -79,6 +82,32 @@ const PLATFORM_OPTIONS: readonly FilterOption<Platform>[] = PLATFORMS.map((platf
 const SYNC_OPTIONS: readonly FilterOption<MemberSyncState>[] = SYNC_STATES_BY_URGENCY.map(
   (state) => ({ value: state, label: SYNC_LABEL[state].text }),
 );
+
+/**
+ * Join date for the table: `01/10/2025`.
+ *
+ * IN UTC, and that is not a detail. `member.joinedAt` is a date-only column
+ * (`@db.Date`), so Postgres hands back midnight UTC; formatting it in a negative
+ * timezone — every Brazilian one — renders the day BEFORE. This is the one column an
+ * admin might cross-check against the spreadsheet the roster was imported from, so
+ * being off by a day here is worse than being ugly.
+ *
+ * Numeric and short because it sits in a 9% column: "1 de outubro de 2025" is what the
+ * public profile uses, and it does not fit here.
+ */
+const JOINED_FORMAT = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function formatJoinedAt(iso: string | null): string {
+  // A dash, not a blank: an empty cell reads as a rendering bug, and a missing join
+  // date is real — the v1 import did not carry one for every member.
+  if (iso === null) return "—";
+  return JOINED_FORMAT.format(new Date(iso));
+}
 
 /** Off keeps the default order (active first, then nickname). */
 type SyncSort = "off" | "urgent" | "healthy";
@@ -269,11 +298,11 @@ export function MembersTable({ members, medals }: MembersTableProps) {
         <Table className={RESPONSIVE_TABLE}>
           <TableHeader className={STICKY_HEAD}>
             <TableRow>
-              <TableHead className="md:w-[32%]">Membro</TableHead>
-              <TableHead className="hidden lg:table-cell lg:w-[10%]">Cargo</TableHead>
-              <TableHead className="md:w-[14%]">Conta</TableHead>
+              <TableHead className="md:w-[20%]">Membro</TableHead>
+              <TableHead className="hidden lg:table-cell lg:w-[8%]">Cargo</TableHead>
+              <TableHead className="md:w-[11%]">Conta</TableHead>
               <TableHead
-                className="md:w-[18%]"
+                className="md:w-[17%]"
                 // Real table semantics, so screen readers announce the order
                 // instead of relying on the icon.
                 aria-sort={
@@ -309,13 +338,30 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                   )}
                 </Button>
               </TableHead>
-              <TableHead className="md:w-[26%]">Ações</TableHead>
+              {/* Beside Stats, not merged into it: the two answer different
+                  questions and a member can be green in one and red in the
+                  other. See MemberActivityState. */}
+              {/* Beside Atividade on purpose: the two temporal columns read together,
+                  so "entrou em março e não joga há 20 dias" is one glance. */}
+              <TableHead className="md:w-[9%]">Entrou</TableHead>
+              <TableHead className="md:w-[14%]">Atividade</TableHead>
+              {/* A PERCENTAGE PLUS A FLOOR, and the floor is the load-bearing half.
+                  Under `table-fixed` a cell does not grow for its content: it clips,
+                  and the content spills over the next column — which is exactly how
+                  Excluir ended up rendering outside this one. The group needs ~180px
+                  (four controls, gaps and cell padding), so 11rem is the hard minimum
+                  and 21% is what it gets when there is room. Right-aligned, header
+                  included, so the label sits over the controls it names. */}
+              <TableHead className="text-right md:w-[21%] md:min-w-[11rem]">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground h-24 text-center">
+                {/* Seven columns: Membro, Cargo, Conta, Stats,
+                    Entrou, Atividade, Ações. A stale colSpan leaves the empty state boxed
+                    into part of the table instead of centred across it. */}
+                <TableCell colSpan={7} className="text-muted-foreground h-24 text-center">
                   {members.length === 0
                     ? "Nenhum membro cadastrado."
                     : "Nenhum membro encontrado com esses filtros."}
@@ -385,30 +431,47 @@ export function MembersTable({ members, medals }: MembersTableProps) {
                     />
                   </TableCell>
 
+                  <TableCell className="text-muted-foreground text-xs">
+                    {formatJoinedAt(member.joinedAt)}
+                  </TableCell>
+
                   <TableCell>
-                    {/* Each action gets a fixed slot, and the invite slot is
-                        reserved even when there is no invite to show. Otherwise
-                        the medal counter and the missing invite button push the
-                        buttons around and no two rows line up. Left-aligned, so the
-                        buttons sit under the "Ações" header. */}
-                    <div className="flex items-center gap-2 whitespace-nowrap">
-                      <div className="flex w-24">
-                        {member.hasAccount ? null : <InviteDialog member={member} />}
-                      </div>
+                    <MemberActivityCell activity={member.activity} />
+                  </TableCell>
+
+                  <TableCell>
+                    {/* ONE ROW OF ICONS, all the same size and the same `ghost`
+                        variant, pushed to the END of the cell under the header that
+                        names them. Four bordered boxes per row was a toolbar competing
+                        with the data across 99 rows; ghost keeps the row calm and the
+                        hover state still answers "is this a button".
+
+                        Order reads outward from the member: what they HAVE (medalhas),
+                        what they still need (convite), then the two verbs. */}
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                       <MemberMedalsDialog
                         member={member}
                         medals={medals}
                         onChanged={() => router.refresh()}
                       />
+                      {/* Reserved even when there is no invite to show, so the two
+                          verbs after it land on the same x whether or not the member
+                          already has an account. */}
+                      <div className="flex w-8 shrink-0 justify-center">
+                        {member.hasAccount ? null : <InviteDialog member={member} />}
+                      </div>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => setEditing(member)}
-                        className="w-24 justify-start gap-1.5"
+                        title={`Editar ${member.nickname}`}
+                        aria-label={`Editar ${member.nickname}`}
                       >
                         <Pencil className="size-3.5" />
-                        <span className="hidden sm:inline">Editar</span>
                       </Button>
+                      {/* Last, always: the one control here with no undo. The
+                          confirmation dialog carries the weight, not the trigger. */}
+                      <DeleteMemberDialog member={member} onDeleted={() => router.refresh()} />
                     </div>
                   </TableCell>
                 </TableRow>

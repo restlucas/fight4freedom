@@ -14,9 +14,12 @@ import {
 } from "@/lib/auth/invite";
 import { CACHE_TAG, revalidateVitrine } from "@/lib/cache";
 import { db } from "@/lib/db";
-import { gametoolsProvider } from "@/lib/stats/gametools";
 import { eaLookupName } from "@/lib/stats/identity";
 import type { ResolvedIdentity } from "@/lib/stats/provider";
+
+// Moved out of this file so `./recruit-actions.ts` can use them too: a `"use server"`
+// module may only export async functions, so two of the three were unexportable here.
+import { identityData, platformIdFrom, resolveEaIdentity } from "./member-identity";
 
 import {
   actionError,
@@ -37,56 +40,6 @@ function fieldErrorsOf(error: {
     map[key] = [...(map[key] ?? []), issue.message];
   }
   return map;
-}
-
-/**
- * Best-effort resolution of the EA identity from the EA display name (NOT the
- * clan nickname, which is cosmetic and may differ).
- *
- * Registration must never fail because a third-party API is down, so any error
- * becomes null and the scheduled collector self-heals it on the next runs
- * (src/lib/stats/collect.ts). A name matching several distinct accounts also
- * resolves to null — see pickIdentity in src/lib/stats/gametools.ts.
- */
-async function resolveEaIdentity(
-  name: string | null,
-  username: string | null,
-): Promise<ResolvedIdentity | null> {
-  if (!name) return null;
-  try {
-    return await gametoolsProvider.searchPlayer(name, username);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The identity columns to write, or nothing when the lookup did not resolve.
- *
- * `eaUsername` is only filled in when the form left it blank: it is an admin-
- * editable field now, and a resolution must not silently overwrite a value
- * somebody typed to tell two same-named accounts apart.
- */
-function identityData(identity: ResolvedIdentity | null, typedUsername: string | null) {
-  if (!identity) return {};
-  return {
-    eaPersonaId: identity.personaId,
-    eaNucleusId: identity.nucleusId,
-    ...(typedUsername ? {} : { eaUsername: identity.username }),
-  };
-}
-
-/**
- * The form no longer has its own "Id na plataforma" input (removed on request,
- * 2026-07-28): the nick doubles as the public platform handle.
- *
- * Kept as a written column rather than dropped because it is still rendered on
- * the vitrine and in the admin table. Note the consequence, flagged for review:
- * `eaLookupName` falls back to `platformId`, so a member saved with no EA name
- * would be searched on EA BY THEIR CLAN NICKNAME.
- */
-function platformIdFrom(nickname: string): string {
-  return nickname;
 }
 
 export async function createMemberAction(
@@ -303,5 +256,64 @@ export async function toggleMemberStatsAction(
   if (count === 0) return actionError("Membro não encontrado.");
 
   revalidateVitrine(CACHE_TAG.members);
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Deletes a member and everything attached to them. IRREVERSIBLE.
+ *
+ * The clan owner asked for a real delete rather than a deactivation (2026-07-29),
+ * knowing what it costs, so the safety is not in refusing it — it is in making the
+ * cost impossible to miss and the trigger impossible to hit by accident.
+ *
+ * WHAT GOES WITH THEM, by the cascades in prisma/schema.prisma:
+ *
+ *   stat_snapshot     the entire stats history, which is the ranking's raw material
+ *   member_medal      every medal awarded to them
+ *   clan_event        their sessions and promotions, so the activity feed loses them
+ *   member_top_item   weapon, mode, map
+ *   identity_claim    including the record of what they typed, which is the evidence
+ *                     an admin uses to fix a name
+ *   member_invite     any pending invite
+ *
+ * `profile.memberId` and `highlight.memberId` are SetNull, so a Discord login
+ * survives the delete unlinked rather than being destroyed with the member.
+ *
+ * THE TYPED NICKNAME IS CHECKED HERE, not only in the dialog. A confirmation that
+ * lives in the client is a confirmation a crafted POST skips, and this is the one
+ * action in the panel with no undo. There is no backup to restore from.
+ *
+ * Deactivating (`active: false`) remains the reversible path and is still the right
+ * one for a member who left: it takes them off the vitrine and out of the ranking
+ * while keeping the history that their seasons are made of.
+ */
+export async function deleteMemberAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const parsed = memberIdSchema.safeParse({ memberId: formData.get("memberId") });
+  if (!parsed.success) return actionError("Membro inválido.");
+
+  const member = await db.member.findUnique({
+    where: { id: parsed.data.memberId },
+    select: { nickname: true },
+  });
+  if (!member) return actionError("Membro não encontrado.");
+
+  // Compared against what the DATABASE says the nickname is, never against a value
+  // that travelled with the form: otherwise the confirmation is the attacker's own
+  // string matching itself.
+  const confirmation = (formData.get("confirmation")?.toString() ?? "").trim();
+  if (confirmation !== member.nickname) {
+    return actionError(`Digite exatamente "${member.nickname}" para confirmar a exclusão.`);
+  }
+
+  await db.member.delete({ where: { id: parsed.data.memberId } });
+
+  // Every tag: the member leaves /membros and /ranking, and their medals stop being
+  // counted in the catalogue's holders.
+  revalidateVitrine(CACHE_TAG.members, CACHE_TAG.stats, CACHE_TAG.medals);
   return { ok: true, data: undefined };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, LayoutDashboard, LogOut, Medal, Users } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, LogOut, Medal, UserPlus, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -23,6 +23,7 @@ import { memberInitials } from "@/features/clan/lib/format";
 const NAV = [
   { href: "/admin", label: "Visão geral", icon: LayoutDashboard },
   { href: "/admin/membros", label: "Membros", icon: Users },
+  { href: "/admin/candidaturas", label: "Candidaturas", icon: UserPlus },
   { href: "/admin/medalhas", label: "Medalhas", icon: Medal },
 ] as const;
 

@@ -117,17 +117,19 @@ export function MemberMedalsDialog({ member, medals, onChanged }: MemberMedalsDi
         <Button
           variant="ghost"
           size="sm"
-          // Fixed width with the counter in its own slot: a member with medals must
-          // not render a wider button than one without, or the rows stop lining up.
-          className="w-32 justify-start gap-1.5"
+          // The word "Medalhas" dropped with the other labels, but NOT the counter:
+          // that number is data, and it is the only reason to look at this column
+          // without clicking. Fixed width so a member with medals does not render a
+          // wider button than one without, or the rows stop lining up.
+          className="w-14 justify-start gap-1"
+          title={`Medalhas de ${member.nickname}`}
           aria-label={`Medalhas de ${member.nickname}`}
         >
           <Medal className="size-3.5 shrink-0" />
-          <span className="hidden sm:inline">Medalhas</span>
           <span
             className={cn(
-              "bg-secondary ml-auto rounded px-1.5 text-xs tabular-nums",
-              member.awards.length === 0 && "invisible",
+              "text-xs tabular-nums",
+              member.awards.length === 0 && "text-muted-foreground",
             )}
           >
             {member.awards.length}
