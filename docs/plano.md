@@ -186,8 +186,14 @@ recrutamento (healthcheck, alerta de inatividade, candidatura no site), e o Disc
 ideias foram recusadas com o motivo escrito na abertura dessas fases, para não voltarem do zero:
 arsenal do clã, desafios coletivos semanais e vitrine de badges.
 
-**As Fases 9 e 10 estão entregues:** bio editável no próprio perfil, patente do jogo, XP, insígnias e
-dog tags, mais a melhor arma, o modo e o mapa mais jogados. As Fases 11 e 12 seguem como plano.
+**As Fases 9, 10 e 11 estão entregues:** bio editável no próprio perfil, patente do jogo, XP,
+insígnias e dog tags, a melhor arma, o modo e o mapa mais jogados, healthcheck do ciclo, coluna de
+atividade e exclusão de membro no painel, e a candidatura pelo site com fila de aprovação. **Falta a
+Fase 12 (Discord)**, que tem duas decisões abertas registradas nela: canal de fórum ou bot, e dia e
+horário do digest.
+
+Pendência operacional da 11.1: o healthcheck está no código e **inerte** até o check ser criado no
+serviço escolhido e a URL entrar em `HEALTHCHECK_URL` na Railway.
 
 Duas armadilhas dessas fases só apareceram rodando ciclo real contra a fonte, e as duas parecem
 plausíveis na tela: um roll-up (`gm_official`) sendo eleito "modo mais jogado" de todo o roster, e um
@@ -1191,6 +1197,10 @@ fases, e a ordem tem motivo: **o Discord é a última** porque é a única que d
 ao código (canal de fórum ou bot, ver 12.3) e a única que é puro anúncio. Anunciar primeiro e ter
 conteúdo depois é a ordem que produz um canal falando de um site que não mudou.
 
+> **9, 10 e 11 entregues em 29/07; falta a 12.** O estado corrente e as pendências operacionais ficam
+> em Status, no topo do arquivo, e não repetidos aqui — duas contagens de "o que está pronto" divergem
+> na primeira vez que alguém atualiza só uma.
+
 O que sustenta as três primeiras: uma sondagem da fonte feita em 29/07 e registrada em
 `api-gametools.md` §13. O achado que muda o dimensionamento é que o payload que **já baixamos** tem
 721 KB por jogador e carrega `weapons[53]`, `maps[18]`, `gameModes[16]`, `vehicles[22]`, `gadgets[43]`
@@ -1507,8 +1517,8 @@ que é o comportamento correto e ainda assim significa que o caminho rápido nã
 
 Nada nesta fase aparece na vitrine. As três são para quem opera o clã.
 
-**11.1 e 11.2 estão entregues.** A 11.2 saiu primeiro, fora de ordem, porque o dono do projeto foi
-procurar a informação no painel e ela não estava lá. Falta a 11.3.
+**A Fase 11 está entregue por inteiro.** A 11.2 saiu primeiro, fora de ordem, porque o dono do projeto
+foi procurar a informação no painel e ela não estava lá.
 
 #### 11.1 — Healthcheck do ciclo: entregue (2026-07-29)
 
@@ -1636,86 +1646,133 @@ diálogo de exclusão inteiro.
 
 **Não verificado:** a exclusão contra o banco real, por motivo óbvio.
 
-#### 11.3 — Candidatura no site e fila no painel
+#### 11.3 — Candidatura no site e fila no painel: entregue (2026-07-29)
 
 **Decisão de 29/07: o formulário é nosso, não do Google.** Página pública na aplicação, sem header e
-sem footer, formulário simples. Cai o Apps Script, cai o webhook, cai o segredo de transporte.
+sem footer. Cai o Apps Script, cai o webhook, cai o segredo de transporte.
 
 **O ganho real não é digitação, é o nome da EA.** A dívida mais cara do projeto (23 de 99 membros com
-id que não corresponde a conta nenhuma, 27 pendentes de identidade em 29/07) nasceu de admin digitando
-o que achava que era o nome. Quem sabe o nome é a própria pessoa, e o formulário é onde perguntar.
+id que não corresponde a conta nenhuma, dez deles vestindo brevemente a carreira de um estranho) nasceu
+de admin digitando o que achava que era o nome. Quem sabe o nome é a própria pessoa, e o formulário é
+onde perguntar.
 
-**Rota pública:** `src/app/candidatar/page.tsx`, **fora do grupo `(site)`**. Header e footer pertencem
-a `(site)/layout.tsx`, então ficar fora dele já entrega a página limpa, sem `layout` novo. Mesmo
-padrão que `/admin` já usa.
+##### O formulário do Google, auditado
 
-**Campos:** nick no clã, plataforma, **nome de exibição da EA** (obrigatório, é o que resolve a
-identidade), `username` da EA (opcional, desempate entre contas de mesmo nome), handle do Discord, e
-dois opcionais curtos (horário que costuma jogar, como conheceu o clã).
+Buscado e lido em 29/07. São **7 perguntas**, e as 7 foram implementadas **com a redação idêntica**,
+para as respostas seguirem comparáveis com a planilha que já tem anos delas:
 
-**Schema:**
+| Pergunta                        | Tipo                                                     |
+| ------------------------------- | -------------------------------------------------------- |
+| Você tem o jogo comprado?       | Sim / Não, só vou jogar BattleRoyale neste momento        |
+| Qual seu nome?                  | texto                                                    |
+| Qual seu Whatsapp? (Com DDD)    | texto                                                    |
+| Qual seu nick no jogo?          | texto                                                    |
+| Qual a sua plataforma?          | Playstation 5 / Xbox / PC                                 |
+| Quantos anos você tem?          | 12 a 17 / 17 a 25 / 25 a 30 / 30 a 40 / 40+               |
+| Como ficou sabendo do F4F?      | Redes Sociais / Amigos / Pesquisa Google / Youtube / Outro |
 
-```prisma
-enum RecruitStatus {
-  pending
-  approved
-  rejected
+**O achado que justifica a fase: o formulário não pergunta NADA que resolva a conta da EA.** "Nick no
+jogo" é ambíguo — no PlayStation é o PSN ID, no Xbox o gamertag, e nenhum dos dois é o nome que a busca
+da EA indexa. Copiar 1:1 reproduziria o defeito. Duas perguntas foram acrescentadas:
 
-  @@map("recruit_status")
-}
+- **Nome de exibição da EA** (obrigatório), a única string que `/bf6/player/?name=` aceita;
+- **Usuário do Discord** (opcional), porque é por lá que o acesso ao site é liberado.
 
-model Recruit {
-  id             String        @id @default(uuid())
-  nickname       String
-  platform       Platform
-  /// Exatamente o que a pessoa digitou, trimado e nunca normalizado. Mesma regra
-  /// do identity_claim.declaredName: o acento, a tag do clã e a caixa são a
-  /// evidência de que o admin precisa para adivinhar o nome certo.
-  declaredEaName String        @map("declared_ea_name")
-  declaredEaUsername String?   @map("declared_ea_username")
-  discordHandle  String?       @map("discord_handle")
-  answers        Json?
-  status         RecruitStatus @default(pending)
-  /// SHA-256 do IP, para limitar envio em rajada. Hash e não IP: não precisamos
-  /// do endereço, precisamos saber que é o mesmo remetente.
-  ipHash         String?       @map("ip_hash")
-  reviewedBy     String?       @map("reviewed_by")
-  reviewedAt     DateTime?     @map("reviewed_at") @db.Timestamptz(6)
-  /// Preenchido na aprovação.
-  memberId       String?       @map("member_id")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+As duas ficam num bloco destacado, com a explicação do porquê, já que são as que o candidato não
+entenderia sozinho.
 
-  @@index([status, createdAt], map: "recruit_status_created_idx")
-  @@map("recruit")
-}
-```
+##### Schema: diferente do planejado
 
-**Decisões:**
+O plano previa um `answers Json?` para as perguntas "moles". Ficaram **colunas próprias**, porque as 7
+são todas lidas pelo admin na fila e nenhuma é opcional na decisão: `realName`, `whatsapp`, `nickname`,
+`platform`, `ageBracket`, `hasGame`, `referral`, mais os dois campos novos. Jsonb serviria para dado que
+ninguém filtra nem exibe, e não é o caso de nenhum deles.
+
+`AgeBracket` virou enum com as faixas **verbatim do formulário, sobreposição incluída** (`12 a 17` e
+`17 a 25` contêm ambos o 17). Arrumar tornaria as respostas incomparáveis com a planilha, que é o único
+histórico que o clã tem sobre quem se candidata. Vale corrigir no formulário primeiro, depois aqui.
+
+`Recruit` **não é relação de `member`**: a candidatura aprovada guarda o `memberId` como referência
+solta, sem chave estrangeira, porque os ciclos de vida são opostos. Apagar um membro não pode apagar o
+registro de que ele se candidatou, que é a única coisa que explica de onde uma linha do roster veio.
+
+**Custo da alteração de banco: barato.** Tabela nova e dois enums, aditivo, sem migrar dado, sem
+backfill, sem risco para coluna existente. `db:push` aplicou e o `db:enable-rls` cobriu sozinho.
+
+##### Decisões
 
 - **Nunca cria membro direto.** Endpoint público que cria membro é qualquer pessoa poluindo o roster e
   o ranking. Fila de aprovação, e criar continua sendo ação de admin.
-- **Página própria no painel: `/admin/candidaturas`.** Não reusar a tabela de membros. As colunas de lá
-  são diagnóstico de coleta (Stats, sync, identidade) e as de uma fila são outras (o que a pessoa
-  digitou, quando, aprovar ou recusar). É o mesmo motivo pelo qual `identity_claim` é tabela separada
-  em vez de coluna em `member`: uma fila é trabalho a fazer, um roster é estado.
-- **Validar o nome da EA na APROVAÇÃO, não no envio.** `resolveEaIdentity` já existe e é chamado na
-  criação do membro. Validar no envio expõe a fonte comunitária a um endpoint público, que é como se
-  convida abuso. **Melhoria conhecida, não v1:** validar no envio dá ao candidato a chance de se
-  corrigir na hora, que é o que realmente mata o problema na origem; entra se e quando houver rate
-  limit por IP funcionando.
-- **Sem constraint de unicidade.** Não existe id de resposta para dedupe agora. A fila mostra
-  duplicata e a aprovação avisa quando já existe membro com aquele nome de EA. Constraint aqui
-  rejeitaria a segunda tentativa legítima de quem errou na primeira.
-- **Aprovar é um fluxo, não um insert:** cria o `member` com o nome declarado, chama
-  `resolveEaIdentity`, e oferece o link de convite reusando o `invite-dialog` que já existe.
-- **Candidato não é membro.** Nada de `Recruit` entra na vitrine nem no ranking.
+- **Página própria no painel**, não a tabela de membros: as colunas de lá são diagnóstico de coleta e as
+  de uma fila são outras. Mesmo motivo pelo qual `identity_claim` é tabela separada.
+- **Cards, e não tabela, na fila.** Nenhum daqueles campos é comparável entre linhas: o admin lê uma
+  candidatura e decide. Uma tabela colocaria oito colunas de strings soltas truncando justo as duas que
+  carregam a decisão.
+- **Validar o nome da EA na APROVAÇÃO, não no envio.** Validar no envio expõe a fonte comunitária a um
+  endpoint público. Segue como melhoria conhecida: validar no envio dá ao candidato a chance de se
+  corrigir na hora, que é o que mata o problema na origem.
+- **Aviso de duplicata ACIMA dos botões.** Resolvido na query, não no componente: é o que transforma a
+  fila de lista em decisão, porque a mesma pessoa se candidatando duas vezes — ou depois de um admin já
+  tê-la cadastrado — é o caso comum, e aprovar de novo cria dois cadastros que o coletor vincula à mesma
+  conta. Lido depois dos botões seria tarde.
+- **Filtro de três abas, padrão em aberto.** É a única que é trabalho; as outras duas são histórico, e
+  abrir a página numa lista de decisões já tomadas enterra as que esperam. Os contadores vêm da lista
+  inteira, então trocar de aba nunca esconde o número.
+- **Recusar marca, nunca apaga.** "A gente disse não em março" é resposta que o clã vai querer quando a
+  pessoa voltar em junho. Uma recusada pode ser **retomada** (só de `rejected`: retomar uma aprovada
+  convidaria a um segundo membro para a mesma pessoa) ou **excluída de vez**, que é para a linha que não
+  devia existir — spam, duplicata, teste. Sem confirmação digitada, ao contrário de excluir membro: o
+  que se perde é uma candidatura, não uma temporada, e confirmação mais pesada que o dano é confirmação
+  que as pessoas aprendem a clicar no automático.
+- **Aprovar é um fluxo, não um insert:** cria o membro com o nome que o CANDIDATO informou, resolve a
+  identidade e aponta a candidatura para a linha que produziu.
 
-**Armadilha: é escrita pública.** Precisa de honeypot, piso de tempo entre carregar e enviar, limite
-por `ipHash` na última hora, tamanho de payload limitado, e mensagem de erro que não ajude a sondar o
-schema. Nada disso é opcional numa rota que qualquer um encontra.
+##### A escrita pública, e por que quatro barreiras baratas bastam
 
-**Pronto quando:** um envio pela página aparece em `/admin/candidaturas`, e aprovar produz membro com
-identidade resolvida mais link de convite.
+É a **única escrita sem autenticação do projeto**. O que a torna aceitável é a arquitetura, não as
+defesas: um `recruit` é **inerte** — não aparece em vitrine, não pontua, coletor nenhum lê, não dá
+login. O pior que um flood consegue é uma fila para limpar, nunca roster poluído nem board corrompido.
+
+Sobre isso, quatro barreiras que não fingem ser CAPTCHA: **honeypot** (campo que humano não vê),
+**tempo mínimo** de 4 s, **teto de 5 por hora por hash de IP** (hasheado, nunca guardado — o rate limit
+precisa saber que é o mesmo remetente, e nada precisa saber quem) e **todo campo limitado no Zod**.
+Honeypot e timer respondem com a **mesma** mensagem genérica de qualquer erro, porque dizer qual
+armadilha foi acionada é ensinar a passar. CAPTCHA de verdade é dependência de terceiro e banner de
+consentimento para um problema que ninguém tem ainda.
+
+##### Duas armadilhas que valem a leitura
+
+**O form perdia respostas ao ser recusado, e controlar os campos NÃO bastou.** Os textos voltavam e os
+radios perdiam a seleção: o React reseta o form quando a função passada em `action` resolve, e só
+reaplica prop que **mudou** — o estado por trás do radio não tinha mudado, então o reset ganhou. Recusar
+um campo apagava silenciosamente plataforma e idade, que é pior que apagar tudo porque ninguém nota.
+Corrigido com `onSubmit` e `preventDefault`; a validação nativa do navegador continua rodando antes, e
+aquele caminho nunca reseta.
+
+**O texto de ajuda do nome da EA estava errado.** Mandava não incluir a tag do clã ("se no jogo você é
+F4F_Fulano, escreva só Fulano"), o que falha justamente quando a tag **é** parte do nome de exibição.
+Agora manda copiar exatamente, com tag, número, símbolo e acento, porque a busca compara o nome inteiro.
+Há teste afirmando que o texto antigo não volta.
+
+##### Dado pessoal
+
+O formulário coleta **nome real e WhatsApp**, com faixas a partir de 12 anos. Já era assim no Google,
+então não é uma piora — mas passa a ser dado pessoal no nosso banco. Mitigações no lugar: RLS na tabela,
+nenhum caminho de leitura público, e esses campos só aparecem na fila do painel.
+
+##### Onde ficou
+
+`src/features/recruit/` (`lib/schemas.ts`, `lib/actions.ts`, `lib/whatsapp.ts`,
+`components/recruit-form.tsx`), a rota `src/app/candidatar/page.tsx`, e no painel
+`lib/recruit-queries.ts`, `lib/recruit-actions.ts`, `components/recruits-list.tsx` e a rota
+`src/app/admin/candidaturas/page.tsx`. O CTA do site aponta para `JOIN_PATH`; o link do Google virou
+`LEGACY_FORM_URL`, sem uso, porque a planilha dele é o histórico.
+
+**Verificado:** `lint`, `type-check`, `build` e 645 testes. **Não verificado:** um envio real pela
+página pública, com o `x-forwarded-for` de verdade e o rate limit exercitado.
+
+**Divulgação:** se o link do Google estiver publicado fora do site (Instagram, YouTube, grupo do
+WhatsApp), precisa ser trocado por `/candidatar` lá também.
 
 ### Fase 12 — Discord como canal de saída
 
