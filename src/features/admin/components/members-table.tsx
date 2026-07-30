@@ -52,7 +52,13 @@ import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
 
 import { MemberSyncCell } from "@/features/admin/components/member-sync-cell";
-import { SYNC_LABEL, SYNC_STATES_BY_URGENCY, syncUrgency } from "@/features/admin/lib/member-sync";
+import { SYNC_LABEL, SYNC_STATES_BY_URGENCY } from "@/features/admin/lib/member-sync";
+import {
+  nextSort,
+  sortMembers,
+  type MemberSort,
+  type SortColumn,
+} from "@/features/admin/lib/member-sort";
 import type { AdminMedal, AdminMember, MemberSyncState } from "@/features/admin/lib/queries";
 import { MEMBER_ROLES, PLATFORMS } from "@/features/admin/lib/schemas";
 import { RESPONSIVE_TABLE, STICKY_HEAD, TABLE_FRAME } from "@/features/admin/lib/table-styles";
@@ -109,20 +115,83 @@ function formatJoinedAt(iso: string | null): string {
   return JOINED_FORMAT.format(new Date(iso));
 }
 
-/** Off keeps the default order (active first, then nickname). */
-type SyncSort = "off" | "urgent" | "healthy";
-
-const SYNC_SORT_LABEL: Record<SyncSort, string> = {
-  off: "Ordenar por status da coleta",
-  urgent: "Quem precisa de atenção primeiro",
-  healthy: "Quem está sincronizando primeiro",
+/**
+ * What each sortable column is called and what each direction DOES, in words.
+ *
+ * Spelled out per direction instead of assuming an arrow explains itself, because for
+ * three of these five "ascending" is not obvious: nobody reads an up arrow on Cargo and
+ * knows whether it means admins first or last. The strings land in `title` and in the
+ * accessible name, so the answer is available before the click.
+ */
+const SORT_META: Record<SortColumn, { label: string; asc: string; desc: string }> = {
+  nickname: { label: "Membro", asc: "de A a Z", desc: "de Z a A" },
+  role: { label: "Cargo", asc: "do menor para o maior cargo", desc: "do maior para o menor cargo" },
+  joinedAt: { label: "Entrou", asc: "mais antigos primeiro", desc: "mais recentes primeiro" },
+  activity: {
+    label: "Atividade",
+    asc: "quem precisa de atenção primeiro",
+    desc: "quem está jogando primeiro",
+  },
+  sync: {
+    label: "Stats",
+    asc: "quem precisa de atenção primeiro",
+    desc: "quem está sincronizando primeiro",
+  },
 };
 
-const NEXT_SYNC_SORT: Record<SyncSort, SyncSort> = {
-  off: "urgent",
-  urgent: "healthy",
-  healthy: "off",
-};
+/**
+ * A sortable column header.
+ *
+ * One component for all five, so a column cannot end up with a different toggle, a
+ * different icon or a missing `aria-sort` from the others — which is exactly what the
+ * Stats column had while it was the only sortable one.
+ */
+function SortableHead({
+  column,
+  sort,
+  onSort,
+  className,
+}: {
+  column: SortColumn;
+  sort: MemberSort | null;
+  onSort: (column: SortColumn) => void;
+  className?: string;
+}) {
+  const active = sort?.column === column ? sort.direction : null;
+  const meta = SORT_META[column];
+  const next = nextSort(sort, column);
+  // What the NEXT click does, which is what a tooltip should promise.
+  const promise = next === null ? "voltar à ordem padrão" : meta[next.direction];
+
+  return (
+    <TableHead
+      className={className}
+      // Real table semantics, so a screen reader announces the order instead of relying
+      // on the icon.
+      aria-sort={active === "asc" ? "ascending" : active === "desc" ? "descending" : "none"}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onSort(column)}
+        title={`Ordenar ${promise}`}
+        // The visible word comes first, so the accessible name still contains the label
+        // an admin is looking for.
+        aria-label={`${meta.label}: ordenar ${promise}`}
+        className="-ml-2 h-7 gap-1.5 px-2"
+      >
+        {meta.label}
+        {active === "asc" ? (
+          <ArrowDown className="size-3.5" />
+        ) : active === "desc" ? (
+          <ArrowUp className="size-3.5" />
+        ) : (
+          <ArrowDownUp className="size-3.5 opacity-50" />
+        )}
+      </Button>
+    </TableHead>
+  );
+}
 
 /**
  * When the collector last SUCCESSFULLY read any member on the roster.
@@ -152,7 +221,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
   const [roles, setRoles] = useState<MemberRole[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [syncStates, setSyncStates] = useState<MemberSyncState[]>([]);
-  const [syncSort, setSyncSort] = useState<SyncSort>("off");
+  const [sort, setSort] = useState<MemberSort | null>(null);
   const [refreshing, startRefresh] = useTransition();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePersistedState<PageSize>(
@@ -175,20 +244,7 @@ export function MembersTable({ members, medals }: MembersTableProps) {
       (syncStates.length === 0 || syncStates.includes(member.sync.state)),
   );
 
-  // Copy before sorting: `filtered` may be the prop array itself when no filter is
-  // active, and sorting in place would mutate what the server handed us.
-  const sorted =
-    syncSort === "off"
-      ? filtered
-      : [...filtered].sort((a, b) => {
-          const delta = syncUrgency(a.sync.state) - syncUrgency(b.sync.state);
-          // Nickname breaks ties so the order is stable between renders instead
-          // of depending on how the rows came out of the database.
-          return (
-            (syncSort === "urgent" ? delta : -delta) ||
-            a.nickname.localeCompare(b.nickname, "pt-BR")
-          );
-        });
+  const sorted = sortMembers(filtered, sort);
 
   // paginate() clamps, so narrowing the filters while on page 4 lands on the last
   // page that still exists instead of showing an empty table.
@@ -200,6 +256,16 @@ export function MembersTable({ members, medals }: MembersTableProps) {
     setCreating(false);
     setEditing(null);
     router.refresh();
+  }
+
+  /**
+   * Cycles the clicked column through asc, desc and off, and returns to page 1 — a new
+   * order means the rows an admin was looking at are somewhere else, so keeping page 4
+   * would land them in the middle of a list they have not seen.
+   */
+  function applySort(column: SortColumn) {
+    setSort((current) => nextSort(current, column));
+    setPage(1);
   }
 
   /** Any filter change sends the user back to the first page of the new result. */
@@ -298,53 +364,41 @@ export function MembersTable({ members, medals }: MembersTableProps) {
         <Table className={RESPONSIVE_TABLE}>
           <TableHeader className={STICKY_HEAD}>
             <TableRow>
-              <TableHead className="md:w-[20%]">Membro</TableHead>
-              <TableHead className="hidden lg:table-cell lg:w-[8%]">Cargo</TableHead>
+              <SortableHead
+                column="nickname"
+                sort={sort}
+                onSort={applySort}
+                className="md:w-[20%]"
+              />
+              <SortableHead
+                column="role"
+                sort={sort}
+                onSort={applySort}
+                className="hidden lg:table-cell lg:w-[8%]"
+              />
               <TableHead className="md:w-[11%]">Conta</TableHead>
-              <TableHead
-                className="md:w-[17%]"
-                // Real table semantics, so screen readers announce the order
-                // instead of relying on the icon.
-                aria-sort={
-                  syncSort === "urgent"
-                    ? "ascending"
-                    : syncSort === "healthy"
-                      ? "descending"
-                      : "none"
-                }
-              >
-                {/* Sorting by urgency, never alphabetically: alphabetical would
-                    bury "ID não encontrado" between "Fora da coleta" and
-                    "Pausado", which is the opposite of what an admin opens this
-                    column to find. */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => resetTo(setSyncSort)(NEXT_SYNC_SORT[syncSort])}
-                  title={SYNC_SORT_LABEL[NEXT_SYNC_SORT[syncSort]]}
-                  // The filter trigger in the toolbar is also called "Stats", so
-                  // without this both controls share one accessible name. Keeps
-                  // the visible word first, so the name still contains the label.
-                  aria-label={`Stats: ${SYNC_SORT_LABEL[NEXT_SYNC_SORT[syncSort]].toLowerCase()}`}
-                  className="-ml-2 h-7 gap-1.5 px-2"
-                >
-                  Stats
-                  {syncSort === "urgent" ? (
-                    <ArrowDown className="size-3.5" />
-                  ) : syncSort === "healthy" ? (
-                    <ArrowUp className="size-3.5" />
-                  ) : (
-                    <ArrowDownUp className="size-3.5 opacity-50" />
-                  )}
-                </Button>
-              </TableHead>
+              {/* Sorting by urgency, never alphabetically: alphabetical would bury
+                  "ID nao encontrado" between "Fora da coleta" and "Pausado", which is the
+                  opposite of what an admin opens this column to find. That rule now lives
+                  in member-sort.ts, shared with Atividade. */}
+              <SortableHead column="sync" sort={sort} onSort={applySort} className="md:w-[17%]" />
               {/* Beside Stats, not merged into it: the two answer different
                   questions and a member can be green in one and red in the
                   other. See MemberActivityState. */}
               {/* Beside Atividade on purpose: the two temporal columns read together,
                   so "entrou em março e não joga há 20 dias" is one glance. */}
-              <TableHead className="md:w-[9%]">Entrou</TableHead>
-              <TableHead className="md:w-[14%]">Atividade</TableHead>
+              <SortableHead
+                column="joinedAt"
+                sort={sort}
+                onSort={applySort}
+                className="md:w-[9%]"
+              />
+              <SortableHead
+                column="activity"
+                sort={sort}
+                onSort={applySort}
+                className="md:w-[14%]"
+              />
               {/* A PERCENTAGE PLUS A FLOOR, and the floor is the load-bearing half.
                   Under `table-fixed` a cell does not grow for its content: it clips,
                   and the content spills over the next column — which is exactly how

@@ -21,6 +21,30 @@ import type { MemberActivityState } from "./queries";
 export const ACTIVITY_AT_RISK_DAYS = 7;
 export const ACTIVITY_ABSENT_DAYS = 14;
 
+/**
+ * Activity states from "needs attention" to "needs nothing", for the column sort.
+ *
+ * Not alphabetical, for the same reason the sync column is not: alphabetical would put
+ * `absent` next to `at_risk` by accident and bury both under `never_seen`, which is the
+ * opposite of what an admin opens the column to find.
+ *
+ * `playing` is last because there is nothing to do about it. `unknown` sits just before
+ * it — there IS something to do, but it is a record to fix rather than a person to call,
+ * and the Stats column is where that work is already listed.
+ */
+export const ACTIVITY_STATES_BY_URGENCY: readonly MemberActivityState[] = [
+  "absent",
+  "at_risk",
+  "never_seen",
+  "unknown",
+  "playing",
+];
+
+/** Position in the list above. Lower means "look at this first". */
+export function activityUrgency(state: MemberActivityState): number {
+  return ACTIVITY_STATES_BY_URGENCY.indexOf(state);
+}
+
 export type ActivityLabel = {
   /** Text on the badge. */
   text: string;

@@ -107,7 +107,10 @@ describe("MembersTable", () => {
     const user = userEvent.setup();
     renderTable();
 
-    await user.click(screen.getByRole("button", { name: /Cargo/ }));
+    // Exact name, not a substring: the sortable column header is also called "Cargo"
+    // (as "Cargo: ordenar ..."), so /Cargo/ now matches two controls. The two accessible
+    // names are distinct on purpose — see the assertion in "cabeçalhos ordenáveis".
+    await user.click(screen.getByRole("button", { name: "Cargo" }));
     await user.click(screen.getByRole("menuitemcheckbox", { name: "Oficial" }));
 
     expect(rowNames()).toEqual(["Águia"]);
@@ -396,5 +399,95 @@ describe("MembersTable — coluna Entrou", () => {
     // read as a rendering bug.
     renderTable([{ ...member("SemData", "member", "ea"), joinedAt: null }]);
     expect(screen.getByText("—")).toBeInTheDocument();
+  });
+});
+
+describe("MembersTable — cabeçalhos ordenáveis", () => {
+  const rows = [
+    member("Carlos", "member", "ea"),
+    member("Ana", "admin", "xbox"),
+    member("Bruno", "officer", "psn"),
+  ];
+
+  function head(name: RegExp) {
+    return screen.getByRole("button", { name });
+  }
+
+  it("offers a sort on member, cargo, entrou, atividade and stats", () => {
+    renderTable(rows);
+
+    for (const label of [/^Membro:/, /^Cargo:/, /^Entrou:/, /^Atividade:/, /^Stats:/]) {
+      expect(head(label)).toBeInTheDocument();
+    }
+  });
+
+  it("keeps the sort header distinguishable from the filter of the same name", () => {
+    // The toolbar filter is also called "Cargo". Sharing one accessible name would make
+    // both controls ambiguous to a screen reader and to any query.
+    renderTable(rows);
+
+    expect(screen.getByRole("button", { name: "Cargo" })).toBeInTheDocument();
+    expect(head(/^Cargo: ordenar/)).toBeInTheDocument();
+  });
+
+  it("sorts by nickname and reverses on a second click", async () => {
+    const user = userEvent.setup();
+    renderTable(rows);
+
+    await user.click(head(/^Membro:/));
+    expect(rowNames()).toEqual(["Ana", "Bruno", "Carlos"]);
+
+    await user.click(head(/^Membro:/));
+    expect(rowNames()).toEqual(["Carlos", "Bruno", "Ana"]);
+  });
+
+  it("returns to the default order on the third click", async () => {
+    // "Off" is a state on purpose: without it the only way back is reloading the page.
+    const user = userEvent.setup();
+    renderTable(rows);
+    const before = rowNames();
+
+    await user.click(head(/^Membro:/));
+    await user.click(head(/^Membro:/));
+    await user.click(head(/^Membro:/));
+
+    expect(rowNames()).toEqual(before);
+  });
+
+  it("sorts cargo by hierarchy, not alphabetically", async () => {
+    const user = userEvent.setup();
+    renderTable(rows);
+
+    await user.click(head(/^Cargo: ordenar/));
+
+    // member, officer, admin — alphabetical would have started at "admin".
+    expect(rowNames()).toEqual(["Carlos", "Bruno", "Ana"]);
+  });
+
+  it("announces the order with aria-sort, not only with an icon", async () => {
+    const user = userEvent.setup();
+    renderTable(rows);
+
+    const column = head(/^Membro:/).closest("th")!;
+    expect(column).toHaveAttribute("aria-sort", "none");
+
+    await user.click(head(/^Membro:/));
+    expect(column).toHaveAttribute("aria-sort", "ascending");
+
+    await user.click(head(/^Membro:/));
+    expect(column).toHaveAttribute("aria-sort", "descending");
+  });
+
+  it("holds only one sort at a time, so two columns never both claim it", async () => {
+    // The reason the Stats toggle became part of a single state: five independent ones
+    // would have no answer to "sorted by Cargo AND by Entrou, which wins".
+    const user = userEvent.setup();
+    renderTable(rows);
+
+    await user.click(head(/^Membro:/));
+    await user.click(head(/^Cargo: ordenar/));
+
+    expect(head(/^Membro:/).closest("th")).toHaveAttribute("aria-sort", "none");
+    expect(head(/^Cargo: ordenar/).closest("th")).toHaveAttribute("aria-sort", "ascending");
   });
 });
